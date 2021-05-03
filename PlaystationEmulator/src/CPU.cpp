@@ -10,6 +10,52 @@
 namespace PSX
 {
 
+inline void MipsR3000Cpu::MultiplyUnit::MultiplySigned( uint32_t x, uint32_t y )
+{
+	const uint64_t result = static_cast<uint64_t>(
+		static_cast<int64_t>( static_cast<int32_t>( x ) ) *
+		static_cast<int64_t>( static_cast<int32_t>( y ) ) );
+
+	lo = static_cast<uint32_t>( result );
+	hi = static_cast<uint32_t>( result >> 32 );
+}
+
+inline void MipsR3000Cpu::MultiplyUnit::MultiplyUnsigned( uint32_t x, uint32_t y )
+{
+	const uint64_t result = static_cast<uint64_t>( static_cast<uint64_t>( x ) * static_cast<uint64_t>( y ) );
+
+	lo = static_cast<uint32_t>( result );
+	hi = static_cast<uint32_t>( result >> 32 );
+}
+
+inline void MipsR3000Cpu::MultiplyUnit::DivideSigned( uint32_t x, uint32_t y )
+{
+	if ( y != 0 )
+	{
+		lo = x / y;
+		hi = x % y;
+	}
+	else
+	{
+		lo = ( x >= 0 ) ? 0xffffffffu : 1u;
+		hi = x;
+	}
+}
+
+inline void MipsR3000Cpu::MultiplyUnit::DivideUnsigned( uint32_t x, uint32_t y )
+{
+	if ( y != 0 )
+	{
+		lo = x / y;
+		hi = x % y;
+	}
+	else
+	{
+		lo = 0xffffffffu;
+		hi = x;
+	}
+}
+
 #define SET_INSTR_ENTRY( instructionArray, opcode, function, nameArray, name )						\
 [this]{																								\
 	auto& p = instructionArray[ static_cast<std::size_t>( opcode ) ];								\
@@ -493,12 +539,12 @@ void MipsR3000Cpu::MoveFromCoprocessor( Instruction  ) noexcept
 
 void MipsR3000Cpu::MoveFromHi( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rd(), m_multiplyUnit.registers.hi );
+	m_registers.Set( instr.rd(), m_multiplyUnit.hi );
 }
 
 void MipsR3000Cpu::MoveFromLo( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rd(), m_multiplyUnit.registers.lo );
+	m_registers.Set( instr.rd(), m_multiplyUnit.lo );
 }
 
 void MipsR3000Cpu::MoveToCoprocessor( Instruction  ) noexcept
@@ -508,12 +554,12 @@ void MipsR3000Cpu::MoveToCoprocessor( Instruction  ) noexcept
 
 void MipsR3000Cpu::MoveToHi( Instruction instr ) noexcept
 {
-	m_multiplyUnit.registers.hi = m_registers[ instr.rs() ];
+	m_multiplyUnit.hi = m_registers[ instr.rs() ];
 }
 
 void MipsR3000Cpu::MoveToLo( Instruction instr ) noexcept
 {
-	m_multiplyUnit.registers.lo = m_registers[ instr.rs() ];
+	m_multiplyUnit.lo = m_registers[ instr.rs() ];
 }
 
 void MipsR3000Cpu::Multiply( Instruction instr ) noexcept

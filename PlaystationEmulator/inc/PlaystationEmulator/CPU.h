@@ -7,7 +7,6 @@
 
 #include <array>
 #include <cstdint>
-#include <cstdlib>
 #include <optional>
 
 namespace PSX
@@ -36,41 +35,13 @@ private:
 
 	struct MultiplyUnit
 	{
-		void MultiplySigned( uint32_t x, uint32_t y )
-		{
-			result = static_cast<uint64_t>(
-				static_cast<int64_t>( static_cast<int32_t>( x ) ) *
-				static_cast<int64_t>( static_cast<int32_t>( y ) ) );
-		}
+		void MultiplySigned( uint32_t x, uint32_t y );
+		void MultiplyUnsigned( uint32_t x, uint32_t y );
+		void DivideSigned( uint32_t x, uint32_t y );
+		void DivideUnsigned( uint32_t x, uint32_t y );
 
-		void MultiplyUnsigned( uint32_t x, uint32_t y )
-		{
-			result = static_cast<uint64_t>( static_cast<uint64_t>( x ) * static_cast<uint64_t>( y ) );
-		}
-
-		void DivideSigned( uint32_t x, uint32_t y )
-		{
-			const auto divresult = std::div( static_cast<int32_t>( x ), static_cast<int32_t>( y ) );
-			registers.lo = static_cast<uint32_t>( divresult.quot );
-			registers.hi = static_cast<uint32_t>( divresult.rem );
-		}
-
-		void DivideUnsigned( uint32_t x, uint32_t y )
-		{
-			const auto divresult = std::div( static_cast<int64_t>( x ), static_cast<int64_t>( y ) );
-			registers.lo = static_cast<uint32_t>( divresult.quot );
-			registers.hi = static_cast<uint32_t>( divresult.rem );
-		}
-
-		union
-		{
-			uint64_t result;
-			struct
-			{
-				uint32_t lo;
-				uint32_t hi;
-			} registers;
-		};
+		uint32_t lo;
+		uint32_t hi;
 	};
 
 	class Registers
