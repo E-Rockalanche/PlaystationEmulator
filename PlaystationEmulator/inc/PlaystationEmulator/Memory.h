@@ -12,21 +12,15 @@ template <size_t MemorySize>
 class Memory
 {
 	static_assert( MemorySize % 4 == 0 );
-public:
-	using value_type = char;
-	using size_type = uint32_t;
-	using pointer = char*;
-	using const_pointer = const char*;
-	using reference = char&;
-	using const_reference = const char&;
 
-	char& operator[]( size_type offset ) noexcept
+public:
+	char& operator[]( uint32_t offset ) noexcept
 	{
 		dbExpects( offset < MemorySize );
 		return m_data[ offset ];
 	}
 
-	const char& operator[]( size_type offset ) const noexcept
+	const char& operator[]( uint32_t offset ) const noexcept
 	{
 		dbExpects( offset < MemorySize );
 		return m_data[ offset ];
@@ -37,16 +31,18 @@ public:
 	const char* Data() const noexcept { return m_data; }
 
 	template <typename T>
-	T Read( size_type offset ) const noexcept
+	T Read( uint32_t offset ) const noexcept
 	{
-		dbExpects( offset <= MemorySize - sizeof( T ) );
+		dbExpects( offset % sizeof( T ) == 0 );
+		dbExpects( offset < MemorySize );
 		return *reinterpret_cast<const T*>( m_data + offset );
 	}
 
 	template <typename T>
-	void Write( size_type offset, T value ) noexcept
+	void Write( uint32_t offset, T value ) noexcept
 	{
-		dbExpects( offset <= MemorySize - sizeof( T ) );
+		dbExpects( offset % sizeof( T ) == 0 );
+		dbExpects( offset < MemorySize );
 		*reinterpret_cast<T*>( m_data + offset ) = value;
 	}
 
@@ -63,7 +59,7 @@ public:
 			*data = value;
 	}
 
-	static constexpr size_type Size() noexcept { return static_cast<uint32_t>( MemorySize ); }
+	static constexpr uint32_t Size() noexcept { return static_cast<uint32_t>( MemorySize ); }
 
 private:
 	char m_data[ MemorySize ];

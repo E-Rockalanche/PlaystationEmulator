@@ -7,150 +7,122 @@
 #include <fstream>
 #include <type_traits>
 
+#if LOG_INSTRUCTIONS
+#define LogInstruction( ... ) dbLog( __VA_ARGS__ )
+#else
+#define LogInstruction( ... ) do{}while(false)
+#endif
+
 namespace PSX
 {
 
-inline void MipsR3000Cpu::MultiplyUnit::MultiplySigned( uint32_t x, uint32_t y )
+void MipsR3000Cpu::RaiseException( Cop0::ExceptionCause cause, uint32_t coprocessor, bool branch ) noexcept
 {
-	const uint64_t result = static_cast<uint64_t>(
-		static_cast<int64_t>( static_cast<int32_t>( x ) ) *
-		static_cast<int64_t>( static_cast<int32_t>( y ) ) );
+	// exceptions in delay slot return to branch instruction
+	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
 
-	lo = static_cast<uint32_t>( result );
-	hi = static_cast<uint32_t>( result >> 32 );
+	m_cop0.SetException( returnAddress, cause, coprocessor, branch );
+
+	// exception jumps don't have a delay slot
+	m_pc = m_cop0.GetExceptionVector();
+	m_nextPC = m_pc + 4;
+	dbAssert( m_pc % 4 == 0 );
 }
 
-inline void MipsR3000Cpu::MultiplyUnit::MultiplyUnsigned( uint32_t x, uint32_t y )
-{
-	const uint64_t result = static_cast<uint64_t>( static_cast<uint64_t>( x ) * static_cast<uint64_t>( y ) );
+#define DEF_FUN( arr, index, function )	\
+	dbAssert( arr[ index ] == nullptr );	\
+	arr[ index ] = &MipsR3000Cpu::function;
 
-	lo = static_cast<uint32_t>( result );
-	hi = static_cast<uint32_t>( result >> 32 );
-}
+#define DEF_OP_EXT( opcode, function ) DEF_FUN( m_opcodes, static_cast<size_t>( Opcode::opcode ), function )
+#define DEF_SP_OP_EXT( opcode, function ) DEF_FUN( m_specialOpcodes, static_cast<size_t>( SpecialOpcode::opcode ), function )
 
-inline void MipsR3000Cpu::MultiplyUnit::DivideSigned( uint32_t x, uint32_t y )
-{
-	if ( y != 0 )
-	{
-		lo = x / y;
-		hi = x % y;
-	}
-	else
-	{
-		lo = ( x >= 0 ) ? 0xffffffffu : 1u;
-		hi = x;
-	}
-}
-
-inline void MipsR3000Cpu::MultiplyUnit::DivideUnsigned( uint32_t x, uint32_t y )
-{
-	if ( y != 0 )
-	{
-		lo = x / y;
-		hi = x % y;
-	}
-	else
-	{
-		lo = 0xffffffffu;
-		hi = x;
-	}
-}
-
-#define SET_INSTR_ENTRY( instructionArray, opcode, function, nameArray, name )						\
-[this]{																								\
-	auto& p = instructionArray[ static_cast<std::size_t>( opcode ) ];								\
-	dbAssertMessage( p == nullptr, #opcode " [%X] already set", static_cast<uint32_t>( opcode ) );	\
-	p = &MipsR3000Cpu::function;																	\
-	nameArray[ static_cast<std::size_t>( opcode ) ] = name;											\
-}()
-
-#define SET_INSTR_EXT( name, opcode, function ) SET_INSTR_ENTRY( m_instructions, Opcode::opcode, function, m_instructionNames, name )
-#define SET_SP_INSTR_EXT( name, opcode, function ) SET_INSTR_ENTRY( m_specialInstructions, SpecialOpcode::opcode, function, m_specialInstructionNames, name )
-
-#define SET_INSTR( name, func ) SET_INSTR_EXT( name, func, func )
-#define SET_SP_INSTR( name, func ) SET_SP_INSTR_EXT( name, func, func )
+#define DEF_OP( opcode ) DEF_OP_EXT( opcode, opcode )
+#define DEF_SP_OP( opcode ) DEF_SP_OP_EXT( opcode, opcode )
 
 MipsR3000Cpu::MipsR3000Cpu( MemoryMap& memoryMap ) : m_memoryMap{ memoryMap }
 {
-	SET_INSTR( "SPECIAL", Special );
-	SET_INSTR( "ADDI", AddImmediate );
-	SET_INSTR( "ADDIU", AddImmediateUnsigned );
-	SET_INSTR( "ANDI", AndImmediate );
-	SET_INSTR( "BE", BranchEqual );
-	SET_INSTR( "BGTZ", BranchGreaterThanZero );
-	SET_INSTR( "BLEZ", BranchLessEqualZero );
-	SET_INSTR( "BNE", BranchNotEqual );
-	SET_INSTR( "J", Jump );
-	SET_INSTR( "JAL", JumpAndLink );
-	SET_INSTR( "LB", LoadByte );
-	SET_INSTR( "LBU", LoadByteUnsigned );
-	SET_INSTR( "LH", LoadHalfword );
-	SET_INSTR( "LHU", LoadHalfwordUnsigned );
-	SET_INSTR( "LUI", LoadUpperImmediate );
-	SET_INSTR( "LW", LoadWord );
-	SET_INSTR( "LWL", LoadWordLeft );
-	SET_INSTR( "LWR", LoadWordRight );
-	SET_INSTR( "ORI", BitwiseOrImmediate );
-	SET_INSTR( "SB", StoreByte );
-	SET_INSTR( "SH", StoreHalfword );
-	SET_INSTR( "SLTI", SetLessThanImmediate );
-	SET_INSTR( "SLTIU", SetLessThanImmediateUnsigned );
-	SET_INSTR( "SW", StoreWord );
-	SET_INSTR( "SWL", StoreWordLeft );
-	SET_INSTR( "SWR", StoreWordRight );
-	SET_INSTR( "XORI", BitwiseXorImmediate );
+	DEF_OP( Special );
 
-	SET_INSTR_EXT( "COP0", CoprocessorUnit0, CoprocessorUnit );
-	SET_INSTR_EXT( "COP1", CoprocessorUnit1, CoprocessorUnit );
-	SET_INSTR_EXT( "COP2", CoprocessorUnit2, CoprocessorUnit );
-	SET_INSTR_EXT( "COP3", CoprocessorUnit3, CoprocessorUnit );
+	DEF_OP( RegisterImmediate );
 
-	SET_INSTR_EXT( "LWC0", LoadWordToCoprocessor0, LoadWordToCoprocessor );
-	SET_INSTR_EXT( "LWC1", LoadWordToCoprocessor1, LoadWordToCoprocessor );
-	SET_INSTR_EXT( "LWC2", LoadWordToCoprocessor2, LoadWordToCoprocessor );
-	SET_INSTR_EXT( "LWC3", LoadWordToCoprocessor3, LoadWordToCoprocessor );
+	DEF_OP( AddImmediate );
+	DEF_OP( AddImmediateUnsigned );
+	DEF_OP( BitwiseAndImmediate );
+	DEF_OP( BranchEqual );
+	DEF_OP( BranchGreaterThanZero );
+	DEF_OP( BranchLessEqualZero );
+	DEF_OP( BranchNotEqual );
+	DEF_OP( Jump );
+	DEF_OP( JumpAndLink );
+	DEF_OP( LoadByte );
+	DEF_OP( LoadByteUnsigned );
+	DEF_OP( LoadHalfword );
+	DEF_OP( LoadHalfwordUnsigned );
+	DEF_OP( LoadUpperImmediate );
+	DEF_OP( LoadWord );
+	DEF_OP( LoadWordLeft );
+	DEF_OP( LoadWordRight );
+	DEF_OP( BitwiseOrImmediate );
+	DEF_OP( StoreByte );
+	DEF_OP( StoreHalfword );
+	DEF_OP( SetLessThanImmediate );
+	DEF_OP( SetLessThanImmediateUnsigned );
+	DEF_OP( StoreWord );
+	DEF_OP( StoreWordLeft );
+	DEF_OP( StoreWordRight );
+	DEF_OP( BitwiseXorImmediate );
 
-	SET_INSTR_EXT( "SWC0", StoreWordFromCoprocessor0, StoreWordFromCoprocessor );
-	SET_INSTR_EXT( "SWC1", StoreWordFromCoprocessor1, StoreWordFromCoprocessor );
-	SET_INSTR_EXT( "SWC2", StoreWordFromCoprocessor2, StoreWordFromCoprocessor );
-	SET_INSTR_EXT( "SWC3", StoreWordFromCoprocessor3, StoreWordFromCoprocessor );
+	DEF_OP_EXT( CoprocessorUnit0, CoprocessorUnit );
+	DEF_OP_EXT( CoprocessorUnit1, CoprocessorUnit );
+	DEF_OP_EXT( CoprocessorUnit2, CoprocessorUnit );
+	DEF_OP_EXT( CoprocessorUnit3, CoprocessorUnit );
 
-	for ( auto& p : m_instructions )
+	DEF_OP_EXT( LoadWordToCoprocessor0, LoadWordToCoprocessor );
+	DEF_OP_EXT( LoadWordToCoprocessor1, LoadWordToCoprocessor );
+	DEF_OP_EXT( LoadWordToCoprocessor2, LoadWordToCoprocessor );
+	DEF_OP_EXT( LoadWordToCoprocessor3, LoadWordToCoprocessor );
+
+	DEF_OP_EXT( StoreWordFromCoprocessor0, StoreWordFromCoprocessor );
+	DEF_OP_EXT( StoreWordFromCoprocessor1, StoreWordFromCoprocessor );
+	DEF_OP_EXT( StoreWordFromCoprocessor2, StoreWordFromCoprocessor );
+	DEF_OP_EXT( StoreWordFromCoprocessor3, StoreWordFromCoprocessor );
+
+	for ( auto& p : m_opcodes )
 		if ( p == nullptr )
-			p = &MipsR3000Cpu::UnhandledInstruction;
+			p = &MipsR3000Cpu::IllegalInstruction;
 
-	SET_SP_INSTR( "ADD", Add );
-	SET_SP_INSTR( "ADDU", AddUnsigned );
-	SET_SP_INSTR( "AND", BitwiseAnd );
-	SET_SP_INSTR( "BREAK", Break );
-	SET_SP_INSTR( "DIV", Divide );
-	SET_SP_INSTR( "DIVU", DivideUnsigned );
-	SET_SP_INSTR( "JALR", JumpAndLinkRegister );
-	SET_SP_INSTR( "JR", JumpRegister );
-	SET_SP_INSTR( "MFHI", MoveFromHi );
-	SET_SP_INSTR( "MFLO", MoveFromLo );
-	SET_SP_INSTR( "MTHI", MoveToHi );
-	SET_SP_INSTR( "MTLO", MoveToLo );
-	SET_SP_INSTR( "MULT", Multiply );
-	SET_SP_INSTR( "MULTU", MultiplyUnsigned );
-	SET_SP_INSTR( "NOR", BitwiseNor );
-	SET_SP_INSTR( "OR", BitwiseOr );
-	SET_SP_INSTR( "SLL", ShiftLeftLogical );
-	SET_SP_INSTR( "SLLV", ShiftLeftLogicalVariable );
-	SET_SP_INSTR( "SLT", SetLessThan );
-	SET_SP_INSTR( "SLTU", SetLessThanUnsigned );
-	SET_SP_INSTR( "SRA", ShiftRightArithmetic );
-	SET_SP_INSTR( "SRAV", ShiftRightArithmeticVariable );
-	SET_SP_INSTR( "SRL", ShiftRightLogical );
-	SET_SP_INSTR( "SRLV", ShiftRightLogicalVariable );
-	SET_SP_INSTR( "SUB", Subtract );
-	SET_SP_INSTR( "SUBU", SubtractUnsigned );
-	SET_SP_INSTR( "SYSTEM", SystemCall );
-	SET_SP_INSTR( "XOR", BitwiseXor );
+	DEF_SP_OP( Add );
+	DEF_SP_OP( AddUnsigned );
+	DEF_SP_OP( BitwiseAnd );
+	DEF_SP_OP( Break );
+	DEF_SP_OP( Divide );
+	DEF_SP_OP( DivideUnsigned );
+	DEF_SP_OP( JumpAndLinkRegister );
+	DEF_SP_OP( JumpRegister );
+	DEF_SP_OP( MoveFromHi );
+	DEF_SP_OP( MoveFromLo );
+	DEF_SP_OP( MoveToHi );
+	DEF_SP_OP( MoveToLo );
+	DEF_SP_OP( Multiply );
+	DEF_SP_OP( MultiplyUnsigned );
+	DEF_SP_OP( BitwiseNor );
+	DEF_SP_OP( BitwiseOr );
+	DEF_SP_OP( ShiftLeftLogical );
+	DEF_SP_OP( ShiftLeftLogicalVariable );
+	DEF_SP_OP( SetLessThan );
+	DEF_SP_OP( SetLessThanUnsigned );
+	DEF_SP_OP( ShiftRightArithmetic );
+	DEF_SP_OP( ShiftRightArithmeticVariable );
+	DEF_SP_OP( ShiftRightLogical );
+	DEF_SP_OP( ShiftRightLogicalVariable );
+	DEF_SP_OP( Subtract );
+	DEF_SP_OP( SubtractUnsigned );
+	DEF_SP_OP( SystemCall );
+	DEF_SP_OP( BitwiseXor );
 
-	for ( auto& p : m_specialInstructions )
+	for ( auto& p : m_specialOpcodes )
 		if ( p == nullptr )
-			p = &MipsR3000Cpu::UnhandledInstruction;
+			p = &MipsR3000Cpu::IllegalInstruction;
 
 	Reset();
 }
@@ -163,28 +135,64 @@ MipsR3000Cpu::MipsR3000Cpu( MemoryMap& memoryMap ) : m_memoryMap{ memoryMap }
 
 void MipsR3000Cpu::Reset()
 {
+	m_currentPC = 0;
 	m_pc = 0xbfc00000;
+	m_nextPC = m_pc + 4;
+
+	m_inBranch = false;
+	m_inDelaySlot = false;
 
 	m_registers.Reset();
+
+	m_lo = 0;
+	m_hi = 0;
+
+	m_cop0.Reset();
 }
 
 void MipsR3000Cpu::Tick() noexcept
 {
 	// the MIPS cpu is pipelined. The next instruction is fetched while the current one executes
-	const Instruction curInstr = m_nextInstruction;
-	m_nextInstruction = m_memoryMap.Read<uint32_t>( m_pc );
-	m_pc += 4;
+	// this causes instructions after branches and jumps to always be executed
 
-	const uint32_t opcode = curInstr.op();
+	m_currentPC = m_pc;
+	m_pc = m_nextPC;
+	m_nextPC += 4;
 
-	if ( curInstr.value == 0 )
-		dbLog( "NOP" );
-	else if ( opcode == 0 )
-		dbLog( "%s\trs:%u\trt:%u\trd:%u\tshamt:%u", m_specialInstructionNames[ curInstr.funct() ], curInstr.rs(), curInstr.rt(), curInstr.rd(), curInstr.shamt() );
-	else
-		dbLog( "%s\trs:%u\trt:%u\timmediate:%i", m_instructionNames[ opcode ], curInstr.rs(), curInstr.rt(), static_cast<int32_t>( curInstr.immediate() ) );
+	m_inDelaySlot = m_inBranch;
+	m_inBranch = false;
 
-	std::invoke( m_instructions[ opcode ], this, curInstr );
+	const Instruction instr{ m_memoryMap.Read<uint32_t>( m_currentPC ) };
+
+	const uint32_t opcode = instr.op();
+
+#if LOG_INSTRUCTIONS
+	auto[ name, args ] = GetInstructionDisplay( instr );
+	switch ( args )
+	{
+		case Operands::None:		dbLog( "%s", name );																								break;
+		case Operands::RsRtRd:		dbLog( "%s\trs:%u\trt:%u\trd:%u", name, instr.rs(), instr.rt(), instr.rd() );										break;
+		case Operands::RsRtImm:		dbLog( "%s\trs:%u\trt:%u\timm:%i", name, instr.rs(), instr.rt(), static_cast<int32_t>( instr.immediateSigned() ) );	break;
+		case Operands::RsRtOff:		dbLog( "%s\trs:%u\trt:%u\toff:%i", name, instr.rs(), instr.rt(), static_cast<int32_t>( instr.offset() ) );			break;
+		case Operands::RsOff:		dbLog( "%s\trs:%u\toff:%i", name, instr.rs(), static_cast<int32_t>( instr.offset() ) );								break;
+		case Operands::Code:		dbLog( "%s\tcode:%u", name, instr.code() );																			break;
+		case Operands::RtRd:		dbLog( "%s\trt:%u\trd:%u", name, instr.rt(), instr.rd() );															break;
+		case Operands::RsRt:		dbLog( "%s\trs:%u\trt:%u", name, instr.rs(), instr.rt() );															break;
+		case Operands::Target:		dbLog( "%s\ttarget:%X", name, instr.target() );																		break;
+		case Operands::RsRd:		dbLog( "%s\trs:%u\trd:%u", name, instr.rs(), instr.rd() );															break;
+		case Operands::Rs:			dbLog( "%s\trs:%u", name, instr.rs() );																				break;
+		case Operands::BaseRtOff:	dbLog( "%s\tbase:%u\trt:%u\toff:%i", name, instr.base(), instr.rt(), static_cast<int32_t>( instr.offset() ) );		break;
+		case Operands::RtImm:		dbLog( "%s\trt:%u\timm:%i", name, instr.rt(), static_cast<int32_t>( instr.immediateSigned() ) );					break;
+		case Operands::Rd:			dbLog( "%s\trd:%u", name, instr.rd() );																				break;
+		case Operands::RtRdSa:		dbLog( "%s\trs:%u\trd:%u\tsa:%u", name, instr.rt(), instr.rd(), instr.shamt() );									break;
+		case Operands::ZCofun:		dbLog( "%s\tz:%u\tcofun:%u", name, instr.z(), instr.cofun() );														break;
+		case Operands::ZRtRd:		dbLog( "%s\tz:%u\trt:%u\trd:%u", name, instr.z(), instr.rt(), instr.rd() );											break;
+		case Operands::ZBaseRtOff:	dbLog( "%s\tz:%u\tbase:%u\trt:%u\toff:%u", name, instr.z(), instr.base(), instr.rt(), instr.offset() );				break;
+		default: dbBreak(); break;
+	}
+#endif
+
+	std::invoke( m_opcodes[ opcode ], this, instr );
 
 	m_registers.Update();
 }
@@ -201,7 +209,7 @@ inline void MipsR3000Cpu::AddTrap( uint32_t x, uint32_t y, uint32_t destRegister
 	}
 	else
 	{
-		// TODO: trap
+		RaiseException( Cop0::ExceptionCause::ArithmeticOverflow );
 	}
 }
 
@@ -217,39 +225,38 @@ inline void MipsR3000Cpu::SubtractTrap( uint32_t x, uint32_t y, uint32_t destReg
 	}
 	else
 	{
-		// TODO: trap
+		RaiseException( Cop0::ExceptionCause::ArithmeticOverflow );
 	}
 }
 
-inline void MipsR3000Cpu::BranchImp( bool condition, int16_t offset ) noexcept
+inline void MipsR3000Cpu::BranchImp( bool condition, uint32_t signedOffset ) noexcept
 {
+	m_inBranch = true;
 	if ( condition )
 	{
 		// offset is added to address of delay slot
-		// PC is at instruction after delay slot
-		m_pc = ( m_pc - 4 ) + ( Extend( offset ) << 2 );
+		m_nextPC = ( m_currentPC + 4 ) + ( signedOffset << 2 );
+		dbAssert( m_nextPC % 4 == 0 );
 	}
 }
 
 inline void MipsR3000Cpu::JumpImp( uint32_t target ) noexcept
 {
-	// PC is at instruction after delay slot
-	// TODO: check if 4 should be subtracted from PC
-	m_pc = ( m_pc & 0xf0000000 ) | target;
-}
+	dbExpects( target % 4 == 0 ); // target must be word aligned
 
-inline void MipsR3000Cpu::CheckProgramCounterAlignment() noexcept
-{
-	// TODO: check if PC is in bounds
-	if ( ( ( m_pc & 0x3 ) != 0 ) )
-	{
-		// TODO: trap
-	}
+	m_inBranch = true;
+
+	// 26 bit target is left shifted 2 bits and combined with the high-order bits of the address of the delay slot
+
+	m_nextPC = ( ( m_currentPC + 4 ) & 0xf0000000 ) | target;
+	LogInstruction( "jumped to %X", m_nextPC );
+
+	CheckProgramCounterAlignment();
 }
 
 void MipsR3000Cpu::Special( Instruction instr ) noexcept
 {
-	std::invoke( m_specialInstructions[ instr.funct() ], this, instr );
+	std::invoke( m_specialOpcodes[ instr.funct() ], this, instr );
 }
 
 void MipsR3000Cpu::RegisterImmediate( Instruction instr ) noexcept
@@ -286,7 +293,7 @@ void MipsR3000Cpu::CoprocessorUnit( Instruction instr ) noexcept
 			MoveControlFromCoprocessor( instr );
 			break;
 
-		case CoprocessorOpcode::MoveControlToProcessor:
+		case CoprocessorOpcode::MoveControlToCoprocessor:
 			MoveControlToCoprocessor( instr );
 			break;
 
@@ -300,10 +307,10 @@ void MipsR3000Cpu::CoprocessorUnit( Instruction instr ) noexcept
 
 		default:
 		{
-			if ( instr.subop() & 0b100000 )
+			if ( instr.subop() & 0b10000 )
 				CoprocessorOperation( instr );
 			else
-				dbBreakMessage( "Invalid coprocessor subop: %X", static_cast<uint32_t>( instr.rs() ) );
+				dbBreakMessage( "Invalid coprocessor subop: %X", static_cast<uint32_t>( instr.subop() ) );
 		}
 	}
 }
@@ -315,12 +322,12 @@ void MipsR3000Cpu::Add( Instruction instr ) noexcept
 
 void MipsR3000Cpu::AddImmediate( Instruction instr ) noexcept
 {
-	AddTrap( m_registers[ instr.rs() ], Extend( instr.immediate() ), instr.rt() );
+	AddTrap( m_registers[ instr.rs() ], instr.immediateSigned(), instr.rt() );
 }
 
 void MipsR3000Cpu::AddImmediateUnsigned( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] + Extend( instr.immediate() ) );
+	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] + instr.immediateSigned() );
 }
 
 void MipsR3000Cpu::AddUnsigned( Instruction instr ) noexcept
@@ -333,9 +340,9 @@ void MipsR3000Cpu::BitwiseAnd( Instruction instr ) noexcept
 	m_registers.Set( instr.rd(), m_registers[ instr.rs() ] & m_registers[ instr.rt() ] );
 }
 
-void MipsR3000Cpu::AndImmediate( Instruction instr ) noexcept
+void MipsR3000Cpu::BitwiseAndImmediate( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] & static_cast<uint32_t>( instr.immediate() ) );
+	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] & instr.immediateUnsigned() );
 }
 
 void MipsR3000Cpu::BranchEqual( Instruction instr ) noexcept
@@ -343,40 +350,40 @@ void MipsR3000Cpu::BranchEqual( Instruction instr ) noexcept
 	BranchImp( m_registers[ instr.rs() ] == m_registers[ instr.rt() ], instr.offset() );
 }
 
-void MipsR3000Cpu::BranchGreaterEqualZero( Instruction instr ) noexcept
+inline void MipsR3000Cpu::BranchGreaterEqualZero( Instruction instr ) noexcept
 {
-	BranchImp( m_registers[ instr.rs() ] >= 0, instr.offset() );
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) >= 0, instr.offset() );
 }
 
-void MipsR3000Cpu::BranchGreaterEqualZeroAndLink( Instruction instr ) noexcept
+inline void MipsR3000Cpu::BranchGreaterEqualZeroAndLink( Instruction instr ) noexcept
 {
 	// store return address after delay slot
-	// PC is already after delay slot
-	m_registers.Set( Registers::ReturnAddress, m_pc );
-	BranchImp( m_registers[ instr.rs() ] >= 0, instr.offset() );
+	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) >= 0, instr.offset() );
 }
 
 void MipsR3000Cpu::BranchGreaterThanZero( Instruction instr ) noexcept
 {
-	BranchImp( m_registers[ instr.rs() ] > 0, instr.offset() );
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) > 0, instr.offset() );
 }
 
 void MipsR3000Cpu::BranchLessEqualZero( Instruction instr ) noexcept
 {
-	BranchImp( m_registers[ instr.rs() ] <= 0, instr.offset() );
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) <= 0, instr.offset() );
 }
 
-void MipsR3000Cpu::BranchLessThanZero( Instruction instr ) noexcept
+inline void MipsR3000Cpu::BranchLessThanZero( Instruction instr ) noexcept
 {
-	BranchImp( m_registers[ instr.rs() ] < 0, instr.offset() );
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) < 0, instr.offset() );
 }
 
-void MipsR3000Cpu::BranchLessThanZeroAndLink( Instruction instr ) noexcept
+inline void MipsR3000Cpu::BranchLessThanZeroAndLink( Instruction instr ) noexcept
 {
+	dbExpects( instr.rs() != Registers::ReturnAddress );
+
 	// store return address after delay slot
-	// PC is already after delay slot
-	m_registers.Set( Registers::ReturnAddress, m_pc );
-	BranchImp( m_registers[ instr.rs() ] < 0, instr.offset() );
+	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) < 0, instr.offset() );
 }
 
 void MipsR3000Cpu::BranchNotEqual( Instruction instr ) noexcept
@@ -386,36 +393,72 @@ void MipsR3000Cpu::BranchNotEqual( Instruction instr ) noexcept
 
 void MipsR3000Cpu::Break( Instruction ) noexcept
 {
-	// TODO: breakpoint trap occurs, immediately and unconditionally transferring control to exception handler
-	// code field is available for use as software parameters, but is retrieved by the exception handler only by loading the contents of the memory word containging the instruction
+	RaiseException( Cop0::ExceptionCause::Breakpoint );
 }
 
-void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction ) noexcept
+void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction instr ) noexcept
 {
 	// TODO: the contents of coprocessor control register rd of coprocessor unit are loaded into general register rt
-	// instruction is invalid for CP0
+
+	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
 }
 
-void MipsR3000Cpu::CoprocessorOperation( Instruction ) noexcept
+void MipsR3000Cpu::CoprocessorOperation( Instruction instr ) noexcept
 {
 	// TODO: a coprocessor operation is performed. The operation may specify and reference internal coprocessor registers, and may change the state of the coprocessor condition line,
 	// but does not modify state within the processor or the cache/memory system
+
+	switch ( instr.z() )
+	{
+		case 0:
+			m_cop0.PrepareReturnFromException();
+			break;
+
+		default:
+			dbBreak(); // TODO
+			break;
+	}
 }
 
-void MipsR3000Cpu::MoveControlToCoprocessor( Instruction  ) noexcept
+void MipsR3000Cpu::MoveControlToCoprocessor( Instruction instr ) noexcept
 {
 	// TODO: the contents of general register rt are loaded into control register rd of coprocessor unit
-	// instruction is invalid for CP0
+
+	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
 }
 
 void MipsR3000Cpu::Divide( Instruction instr ) noexcept
 {
-	m_multiplyUnit.DivideSigned( m_registers[ instr.rs() ], m_registers[ instr.rt() ] );
+	const int32_t x = static_cast<int32_t>( m_registers[ instr.rs() ] );
+	const int32_t y = static_cast<int32_t>( m_registers[ instr.rt() ] );
+
+	if ( y != 0 )
+	{
+		m_lo = static_cast<uint32_t>( x / y );
+		m_hi = static_cast<uint32_t>( x % y );
+	}
+	else
+	{
+		m_lo = ( x >= 0 ) ? 0xffffffffu : 1u;
+		m_hi = static_cast<uint32_t>( x );
+	}
 }
 
 void MipsR3000Cpu::DivideUnsigned( Instruction instr ) noexcept
 {
-	m_multiplyUnit.DivideUnsigned( m_registers[ instr.rs() ], m_registers[ instr.rt() ] );
+	const uint32_t x = m_registers[ instr.rs() ];
+	const uint32_t y = m_registers[ instr.rt() ];
+
+	if ( y != 0 )
+	{
+		m_lo = x / y;
+		m_hi = x % y;
+	}
+	else
+	{
+		m_lo = 0xffffffffu;
+		m_hi = x;
+	}
 }
 
 void MipsR3000Cpu::Jump( Instruction instr ) noexcept
@@ -427,7 +470,8 @@ void MipsR3000Cpu::JumpAndLink( Instruction instr ) noexcept
 {
 	// store return address after delay slot
 	// PC is already after delay slot
-	m_registers.Set( Registers::ReturnAddress, m_pc );
+	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
+	LogInstruction( "set return address to %X", ( m_currentPC + 8 ) );
 	JumpImp( instr.target() );
 }
 
@@ -435,51 +479,69 @@ void MipsR3000Cpu::JumpAndLinkRegister( Instruction instr ) noexcept
 {
 	// store return address after delay slot
 	// PC is already after delay slot
-	m_registers.Set( instr.rd(), m_pc );
-	m_pc = m_registers[ instr.rs() ];
+	m_inBranch = true;
+	m_registers.Set( instr.rd(), m_currentPC + 8 );
+	m_nextPC = m_registers[ instr.rs() ];
+	LogInstruction( "jumped to %X", m_nextPC );
+
 	CheckProgramCounterAlignment();
 }
 
 void MipsR3000Cpu::JumpRegister( Instruction instr ) noexcept
 {
-	m_pc = m_registers[ instr.rs() ];
+	m_inBranch = true;
+	m_nextPC = m_registers[ instr.rs() ];
+	LogInstruction( "jumped to %X", m_nextPC );
+
 	CheckProgramCounterAlignment();
 }
 
 void MipsR3000Cpu::LoadByte( Instruction instr ) noexcept
 {
-	m_registers.Load( instr.rt(), LoadImp<int8_t>( instr ) );
+	LoadImp<int8_t>( instr );
 }
 
 void MipsR3000Cpu::LoadByteUnsigned( Instruction instr ) noexcept
 {
-	m_registers.Load( instr.rt(), LoadImp<uint8_t>( instr ) );
+	LoadImp<uint8_t>( instr );
 }
 
 void MipsR3000Cpu::LoadHalfword( Instruction instr ) noexcept
 {
-	m_registers.Load( instr.rt(), LoadImp<int16_t>( instr ) );
+	LoadImp<int16_t>( instr );
 }
 
 void MipsR3000Cpu::LoadHalfwordUnsigned( Instruction instr ) noexcept
 {
-	m_registers.Load( instr.rt(), LoadImp<uint16_t>( instr ) );
+	LoadImp<uint16_t>( instr );
 }
 
 void MipsR3000Cpu::LoadUpperImmediate( Instruction instr ) noexcept
 {
-	m_registers.Load( instr.rt(), static_cast<uint32_t>( instr.immediate() ) << 16 );
+	m_registers.Set( instr.rt(), static_cast<uint32_t>( instr.immediateUnsigned() ) << 16 );
 }
 
 void MipsR3000Cpu::LoadWord( Instruction instr ) noexcept
 {
-	m_registers.Load( instr.rt(), LoadImp<int32_t>( instr ) );
+	LoadImp<int32_t>( instr );
 }
 
 void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 {
-	const auto value = LoadImp<int32_t>( instr );
-	// TODO: make the value available to coprocessor unit
+	dbExpects( instr.z() != 0 ); // instruction not valid for coprocessor 0
+
+	const auto address = GetVAddr( instr );
+	if ( address % 4 == 0 )
+	{
+		const auto value = LoadImp<int32_t>( address );
+
+		// TODO: make the value available to coprocessor unit
+		(void)value;
+	}
+	else
+	{
+		RaiseException( Cop0::ExceptionCause::AddressErrorLoad );
+	}
 }
 
 void MipsR3000Cpu::LoadWordLeft( Instruction instr ) noexcept
@@ -500,7 +562,7 @@ void MipsR3000Cpu::LoadWordLeft( Instruction instr ) noexcept
 	uint8_t* regByte = regBytes;
 	do
 	{
-		*regByte++ = m_memoryMap.Read<uint8_t>( addr++ );
+		*regByte++ = LoadImp<uint8_t>( addr++ );
 	}
 	while ( addr % 4 != 0 );
 
@@ -525,51 +587,85 @@ void MipsR3000Cpu::LoadWordRight( Instruction instr ) noexcept
 	uint8_t* regByte = regBytes + 3;
 	do
 	{
-		*regByte-- = m_memoryMap.Read<uint8_t>( addr-- );
+		*regByte-- = LoadImp<uint8_t>( addr-- );
 	}
 	while ( addr % 4 != 3 );
 
 	m_registers.Load( instr.rt(), reg );
 }
 
-void MipsR3000Cpu::MoveFromCoprocessor( Instruction  ) noexcept
+void MipsR3000Cpu::MoveFromCoprocessor( Instruction instr ) noexcept
 {
-	// TODO: the contents of coprocessor register rd of coprocessor unit are loaded into general register rt
+	uint32_t value;
+	switch ( instr.z() )
+	{
+		case 0:
+			value = m_cop0.Read( instr.rd() );
+			break;
+
+		default:
+			dbBreak();
+			value = 0;
+			break;
+	}
+	m_registers.Load( instr.rt(), value );
 }
 
 void MipsR3000Cpu::MoveFromHi( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rd(), m_multiplyUnit.hi );
+	m_registers.Set( instr.rd(), m_hi );
 }
 
 void MipsR3000Cpu::MoveFromLo( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rd(), m_multiplyUnit.lo );
+	m_registers.Set( instr.rd(), m_lo );
 }
 
-void MipsR3000Cpu::MoveToCoprocessor( Instruction  ) noexcept
+void MipsR3000Cpu::MoveToCoprocessor( Instruction instr ) noexcept
 {
-	// TODO: the contents of general register rt are loaded into coprocessor register rd of coprocessor unit
+	const uint32_t value = m_registers[ instr.rt() ];
+	switch ( instr.z() )
+	{
+		case 0:
+			m_cop0.Write( instr.rd(), value );
+			break;
+
+		default:
+			dbBreak();
+			break;
+	}
 }
 
 void MipsR3000Cpu::MoveToHi( Instruction instr ) noexcept
 {
-	m_multiplyUnit.hi = m_registers[ instr.rs() ];
+	m_hi = m_registers[ instr.rs() ];
 }
 
 void MipsR3000Cpu::MoveToLo( Instruction instr ) noexcept
 {
-	m_multiplyUnit.lo = m_registers[ instr.rs() ];
+	m_lo = m_registers[ instr.rs() ];
 }
 
 void MipsR3000Cpu::Multiply( Instruction instr ) noexcept
 {
-	m_multiplyUnit.MultiplySigned( m_registers[ instr.rs() ], m_registers[ instr.rt() ] );
+	const auto x = static_cast<int64_t>( static_cast<int32_t>( m_registers[ instr.rs() ] ) );
+	const auto y = static_cast<int64_t>( static_cast<int32_t>( m_registers[ instr.rt() ] ) );
+
+	const int64_t result = x * y;
+
+	m_lo = static_cast<uint32_t>( result );
+	m_hi = static_cast<uint32_t>( result >> 32 );
 }
 
 void MipsR3000Cpu::MultiplyUnsigned( Instruction instr ) noexcept
 {
-	m_multiplyUnit.MultiplyUnsigned( m_registers[ instr.rs() ], m_registers[ instr.rt() ] );
+	const auto x = static_cast<uint64_t>( m_registers[ instr.rs() ] );
+	const auto y = static_cast<uint64_t>( m_registers[ instr.rt() ] );
+
+	const uint64_t result = x * y;
+
+	m_lo = static_cast<uint32_t>( result );
+	m_hi = static_cast<uint32_t>( result >> 32 );
 }
 
 void MipsR3000Cpu::BitwiseNor( Instruction instr ) noexcept
@@ -584,17 +680,17 @@ void MipsR3000Cpu::BitwiseOr( Instruction instr ) noexcept
 
 void MipsR3000Cpu::BitwiseOrImmediate( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] | static_cast<uint32_t>( instr.immediate() ) );
+	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] | instr.immediateUnsigned() );
 }
 
 void MipsR3000Cpu::StoreByte( Instruction instr ) noexcept
 {
-	StoreImp( instr.rs(), instr.immediate(), static_cast<uint8_t>( m_registers[ instr.rt() ] ) );
+	StoreImp<uint8_t>( instr );
 }
 
 void MipsR3000Cpu::StoreHalfword( Instruction instr ) noexcept
 {
-	StoreImp( instr.rs(), instr.immediate(), static_cast<uint16_t>( m_registers[ instr.rt() ] ) );
+	StoreImp<uint16_t>( instr );
 }
 
 void MipsR3000Cpu::ShiftLeftLogical( Instruction instr ) noexcept
@@ -606,31 +702,31 @@ void MipsR3000Cpu::ShiftLeftLogical( Instruction instr ) noexcept
 
 void MipsR3000Cpu::ShiftLeftLogicalVariable( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rd(), m_registers[ instr.rt() ] << m_registers[ instr.rs() ] );
+	m_registers.Set( instr.rd(), m_registers[ instr.rt() ] << ( m_registers[ instr.rs() ] & 0x1f ) );
 }
 
 void MipsR3000Cpu::SetLessThan( Instruction instr ) noexcept
 {
 	const bool set = static_cast<int32_t>( m_registers[ instr.rs() ] ) < static_cast<int32_t>( m_registers[ instr.rt() ] );
-	m_registers.Set( instr.rd(), set ? 1 : 0 );
+	m_registers.Set( instr.rd(), static_cast<uint32_t>( set ) );
 }
 
 void MipsR3000Cpu::SetLessThanImmediate( Instruction instr ) noexcept
 {
-	const bool set = static_cast<int32_t>( m_registers[ instr.rs() ] ) < Extend( instr.immediate() );
-	m_registers.Set( instr.rt(), set ? 1 : 0 );
+	const bool set = static_cast<int32_t>( m_registers[ instr.rs() ] ) < instr.immediateSigned();
+	m_registers.Set( instr.rt(), static_cast<uint32_t>( set ) );
 }
 
 void MipsR3000Cpu::SetLessThanImmediateUnsigned( Instruction instr ) noexcept
 {
-	const bool set = m_registers[ instr.rs() ] < static_cast<uint32_t>( Extend( instr.immediate() ) );
-	m_registers.Set( instr.rt(), set ? 1 : 0 );
+	const bool set = m_registers[ instr.rs() ] < instr.immediateSigned();
+	m_registers.Set( instr.rt(), static_cast<uint32_t>( set ) );
 }
 
 void MipsR3000Cpu::SetLessThanUnsigned( Instruction instr ) noexcept
 {
 	const bool set = m_registers[ instr.rs() ] < m_registers[ instr.rt() ];
-	m_registers.Set( instr.rd(), set ? 1 : 0 );
+	m_registers.Set( instr.rd(), static_cast<uint32_t>( set ) );
 }
 
 void MipsR3000Cpu::ShiftRightArithmetic( Instruction instr ) noexcept
@@ -642,7 +738,7 @@ void MipsR3000Cpu::ShiftRightArithmetic( Instruction instr ) noexcept
 void MipsR3000Cpu::ShiftRightArithmeticVariable( Instruction instr ) noexcept
 {
 	// TODO: check compiler for arithemtic shift right
-	m_registers.Set( instr.rd(), static_cast<int32_t>( m_registers[ instr.rt() ] ) >> m_registers[ instr.rs() ] );
+	m_registers.Set( instr.rd(), static_cast<int32_t>( m_registers[ instr.rt() ] ) >> ( m_registers[ instr.rs() ] & 0x1f ) );
 }
 
 void MipsR3000Cpu::ShiftRightLogical( Instruction instr ) noexcept
@@ -652,13 +748,12 @@ void MipsR3000Cpu::ShiftRightLogical( Instruction instr ) noexcept
 
 void MipsR3000Cpu::ShiftRightLogicalVariable( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rd(), m_registers[ instr.rt() ] >> m_registers[ instr.rs() ] );
+	m_registers.Set( instr.rd(), m_registers[ instr.rt() ] >> ( m_registers[ instr.rs() ] & 0x1f ) );
 }
 
 void MipsR3000Cpu::Subtract( Instruction instr ) noexcept
 {
-	if ( instr.rd() != 0 )
-		SubtractTrap( m_registers[ instr.rs() ], m_registers[ instr.rt() ], m_registers[ instr.rd() ] );
+	SubtractTrap( m_registers[ instr.rs() ], m_registers[ instr.rt() ], m_registers[ instr.rd() ] );
 }
 
 void MipsR3000Cpu::SubtractUnsigned( Instruction instr ) noexcept
@@ -668,11 +763,16 @@ void MipsR3000Cpu::SubtractUnsigned( Instruction instr ) noexcept
 
 void MipsR3000Cpu::StoreWord( Instruction instr ) noexcept
 {
-	m_memoryMap.Write<uint32_t>( GetVAddr( instr ), m_registers[ instr.rt() ] );
+	StoreImp<uint32_t>( instr );
 }
 
-void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction ) noexcept
+void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction instr ) noexcept
 {
+	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
+
+	const uint32_t address = GetVAddr( instr );
+	dbExpects( address % 4 == 0 ); // exception for non word-aligned address
+
 	// TODO: coprocessor unit sources a word, which the processor writes tothe addressed memory
 }
 
@@ -690,7 +790,7 @@ void MipsR3000Cpu::StoreWordLeft( Instruction instr ) noexcept
 	const uint8_t* regByte = regBytes;
 	do
 	{
-		m_memoryMap.Write( addr++, *( regByte++ ) );
+		StoreImp<uint8_t>( addr++, *( regByte++ ) );
 	}
 	while ( addr % 4 != 0 );
 }
@@ -709,14 +809,14 @@ void MipsR3000Cpu::StoreWordRight( Instruction instr ) noexcept
 	const uint8_t* regByte = regBytes + 3;
 	do
 	{
-		m_memoryMap.Write( addr--, *( regByte-- ) );
+		StoreImp<uint8_t>( addr--, *( regByte-- ) );
 	}
 	while ( addr % 4 != 3 );
 }
 
 void MipsR3000Cpu::SystemCall( Instruction ) noexcept
 {
-	// a system call exception occurs, immediately and unconditionally transferring control to the exception handler
+	RaiseException( Cop0::ExceptionCause::Syscall );
 }
 
 void MipsR3000Cpu::BitwiseXor( Instruction instr ) noexcept
@@ -726,12 +826,13 @@ void MipsR3000Cpu::BitwiseXor( Instruction instr ) noexcept
 
 void MipsR3000Cpu::BitwiseXorImmediate( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] ^ static_cast<uint32_t>( instr.immediate() ) );
+	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] ^ instr.immediateUnsigned() );
 }
 
-void MipsR3000Cpu::UnhandledInstruction( Instruction instr ) noexcept
+void MipsR3000Cpu::IllegalInstruction( Instruction instr ) noexcept
 {
-	dbBreakMessage( "Unhandled instruction: %X", instr.value );
+	dbBreakMessage( "Illegal instruction [%X]", instr.value );
+	RaiseException( Cop0::ExceptionCause::ReservedInstruction );
 }
 
 }

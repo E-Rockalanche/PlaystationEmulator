@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
 
 namespace PSX
 {
@@ -9,7 +10,7 @@ struct Instruction
 {
 	Instruction() noexcept = default; // NOP (SSL by 0 into reg 0)
 
-	Instruction( uint32_t instr ) noexcept : value{ instr } {};
+	explicit Instruction( uint32_t instr ) noexcept : value{ instr } {};
 
 	uint32_t value = 0;
 
@@ -25,9 +26,10 @@ struct Instruction
 
 	uint32_t op() const noexcept { return ( value >> 26 ); }
 
-	int16_t immediate() const noexcept { return static_cast<int16_t>( value ); }
+	uint32_t immediateSigned() const noexcept { return static_cast<uint32_t>( static_cast<int32_t>( static_cast<int16_t>( value ) ) ); }
+	uint32_t immediateUnsigned() const noexcept { return value & 0x0000ffff; }
 
-	int16_t offset() const noexcept { return static_cast<int16_t>( value ); }
+	uint32_t offset() const noexcept { return immediateSigned(); }
 
 	uint32_t base() const noexcept { return ( value >> 21 ) & 0x0000001f; }
 
@@ -42,13 +44,26 @@ struct Instruction
 	uint32_t cofun() const noexcept { return value & 0x001fffff; }
 };
 
-enum class InstructionType
+enum class Operands
 {
-	Opcode,
-	SpecialOpcode,
-	Jump,
-	RegImm,
-	Coprocessor
+	None,
+	RsRtRd,
+	RsRtImm,
+	RsRtOff,
+	RsOff,
+	Code,
+	RtRd,
+	RsRt,
+	Target,
+	RsRd,
+	Rs,
+	BaseRtOff,
+	RtImm,
+	Rd,
+	RtRdSa,
+	ZCofun,
+	ZRtRd,
+	ZBaseRtOff
 };
 
 enum class Opcode : uint32_t
@@ -59,7 +74,7 @@ enum class Opcode : uint32_t
 
 	AddImmediate = 0b001000,
 	AddImmediateUnsigned = 0b001001,
-	AndImmediate = 0b001100,
+	BitwiseAndImmediate = 0b001100,
 	BranchEqual = 0b000100,
 	BranchGreaterThanZero = 0b000111,
 	BranchLessEqualZero = 0b000110,
@@ -146,7 +161,7 @@ enum class CoprocessorOpcode : uint32_t
 {
 	MoveControlFromCoprocessor = 0b00010,
 	// CoprocessorOperation = 0b1xxxx,
-	MoveControlToProcessor = 0b00110,
+	MoveControlToCoprocessor = 0b00110,
 	MoveFromCoprocessor = 0b00000,
 	MoveToCoprocessor = 0b00100,
 };
@@ -159,5 +174,7 @@ enum class Cop0Opcode
 	WriteIndexedTlbEntry = 0b000010,
 	WriteRandomTlbEntry = 0b000110,
 };
+
+std::pair<const char*, Operands> GetInstructionDisplay( Instruction instruction ) noexcept;
 
 }

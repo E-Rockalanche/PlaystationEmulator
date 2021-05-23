@@ -134,14 +134,19 @@
     <ClInclude Include="inc\PlaystationEmulator\assert.h" />
     <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
     <ClInclude Include="inc\PlaystationEmulator\compiler.h" />
+    <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
     <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />
     <ClInclude Include="inc\PlaystationEmulator\Memory.h" />
+    <ClInclude Include="inc\PlaystationEmulator\MemoryControl.h" />
     <ClInclude Include="inc\PlaystationEmulator\MemoryMap.h" />
+    <ClInclude Include="inc\PlaystationEmulator\Playstation.h" />
+    <ClInclude Include="inc\PlaystationEmulator\SPU.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\BIOS.cpp" />
     <ClCompile Include="src\CPU.cpp" />
+    <ClCompile Include="src\Instruction.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\MemoryMap.cpp" />
   </ItemGroup>

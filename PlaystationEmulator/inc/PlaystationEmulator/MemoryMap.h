@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BIOS.h"
+#include "MemoryControl.h"
 
 #include "assert.h"
 
@@ -11,22 +12,30 @@ namespace PSX
 {
 
 using Ram = Memory<2 * 1024 * 1024>;
+using Scratchpad = Memory<1024>;
 
 struct Range
 {
+	constexpr Range( uint32_t start_, uint32_t size_ ) noexcept : start{ start_ }, size{ size_ } {}
+
+	constexpr std::optional<uint32_t> Contains( uint32_t address ) const noexcept
+	{
+		return ( start <= address && address < start + size ) ? std::optional{ address - start } : std::nullopt;
+	}
+
 	uint32_t start;
 	uint32_t size;
-
-	constexpr bool Contains( uint32_t address ) const noexcept
-	{
-		return ( start <= address && address < start + size );
-	}
 };
 
 class MemoryMap
 {
 public:
-	MemoryMap( Bios& bios, Ram& ram ) : m_bios{ bios }, m_ram{ ram } {}
+	MemoryMap( Ram& ram, Scratchpad& scratchpad, MemoryControl& memControl, Bios& bios )
+		: m_ram{ ram }
+		, m_scratchpad{ scratchpad }
+		, m_memoryControl{ memControl }
+		, m_bios{ bios }
+	{}
 
 	template <typename T>
 	T Read( uint32_t address ) const noexcept;
@@ -35,79 +44,61 @@ public:
 	void Write( uint32_t address, T value ) const noexcept;
 
 private:
-	/*
-	struct Mapping
-	{
-		constexpr Mapping( uint32_t ramStart, uint32_t expansionStart, uint32_t scratchStart, uint32_t registersStart, uint32_t biosStart )
-			: ram{ ramStart, RamSize }
-			, expansion{ expansionStart, ExpansionSize }
-			, scratchpad{ scratchStart, ScratchpadSize }
-			, hardwareRegisters{ registersStart, HardwareRegistersSize }
-			, bios{ biosStart, BiosSize }
-		{}
+	static constexpr Range RamRange{ 0x00000000, Ram::Size() };
+	static constexpr Range ExpansionRange{ 0x1f000000, 8 * 1024 * 1024 };
+	static constexpr Range ScratchpadRange{ 0x1f800000, Scratchpad::Size() };
+	static constexpr Range MemControlRange{ 0x1f801000, 0x24 };
+	static constexpr Range RamSizeRange{ 0x1f801060, 4 };
+	static constexpr Range InterruptControlRange{ 0x1f801070, 8 };
+	static constexpr Range DmaChannelsRange{ 0x1f801080, 128 };
+	static constexpr Range TimersRange{ 0x1f801100, 48 };
+	static constexpr Range GpuRange{ 0x1f801810, 8 };
+	static constexpr Range SpuRange{ 0x1f801c00, 1024 };
+	static constexpr Range ExpansionRange2{ 0x1f802000, 128 };
+	static constexpr Range BiosRange{ 0x1fc00000, 512 * 1024 };
+	static constexpr Range CacheControlRange{ 0xfffe0130, 4 };
 
-		Range ram;
-		Range expansion;
-		Range scratchpad;
-		Range hardwareRegisters;
-		Range bios;
-	};
-	*/
-
-	enum class SegmentType : uint32_t // ordered
+	enum class Segment
 	{
-		Ram,
+		Invalid = -1,
+
+		Ram = 0,
 		Expansion,
 		Scratchpad,
-		HardwareRegisters,
+		MemControl,
+		RamSize,
+		InterruptControl,
+		DmaChannels,
+		Timers,
+		Gpu,
+		Spu,
+		Expansion2,
 		Bios,
-		IoPorts,
-		Invalid
+		CacheControl,
+
+		Count
 	};
 
-	static constexpr uint32_t RamStart = 0x00000000;
-	static constexpr uint32_t RamSize = 2 * 1024 * 1024;
-
-	static constexpr uint32_t ExpansionStart = 0x1f000000;
-	static constexpr uint32_t ExpansionSize = 8 * 1024 * 1024;
-
-	static constexpr uint32_t ScratchpadStart = 0x1f800000;
-	static constexpr uint32_t ScratchpadSize = 1024;
-
-	static constexpr uint32_t HardwareRegistersStart = 0x1f801000;
-	static constexpr uint32_t HardwareRegistersSize = 8 * 1024;
-
-	static constexpr uint32_t BiosStart = 0x1fc00000;
-	static constexpr uint32_t BiosSize = 512 * 1024;
-
-	// only in Kseg2
-	static constexpr uint32_t IoStart = 0xfffe0000;
-	static constexpr uint32_t IoSize = 512;
-
-	std::pair<SegmentType, uint32_t> TranslateAddress( uint32_t address ) const noexcept;
-
-private:
-	Bios& m_bios;
-	Ram& m_ram;
-
-	/*
-	const Mapping Kuseg{ 0x00000000, 0x1f000000, 0x1f800000, 0x1f801000, 0x1fc00000 };
-	const Mapping Kseg0{ 0x80000000, 0x9f000000, 0x9f800000, 0x9f801000, 0x9fc00000 };
-	const Mapping Kseg1{ 0xa0000000, 0xbf000000, 0xbf800000, 0xbf801000, 0xbfc00000 };
-	*/
-
-	const std::array<Range, 5> Regions
+	static constexpr std::array<Range, static_cast<size_t>( Segment::Count )> Segments
 	{
-		Range{ RamStart, RamSize },
-		Range{ ExpansionStart, ExpansionSize },
-		Range{ ScratchpadStart, ScratchpadSize },
-		Range{ HardwareRegistersStart, HardwareRegistersSize },
-		Range{ BiosStart, BiosSize }
+		RamRange,
+		ExpansionRange,
+		ScratchpadRange,
+		MemControlRange,
+		RamSizeRange,
+		InterruptControlRange,
+		DmaChannelsRange,
+		TimersRange,
+		GpuRange,
+		SpuRange,
+		ExpansionRange2,
+		BiosRange,
+		CacheControlRange
 	};
 
 	// masks help strip region bits from virtual address to make a physical address
 	// KSEG2 doesn't mirror the other regions so it's essentially ignored
-	const std::array<uint32_t, 8> RegionMasks
+	static constexpr std::array<uint32_t, 8> RegionMasks
 	{
 		// KUSEG
 		0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
@@ -118,6 +109,21 @@ private:
 		// KSEG2
 		0xffffffff, 0xffffffff
 	};
+
+	std::pair<MemoryMap::Segment, uint32_t> TranslateAddress( uint32_t address ) const noexcept;
+	
+	// shift value if writing to register with non-aligned address
+	template <typename RegType, typename T>
+	static constexpr RegType ShiftValueForRegister( uint32_t address, T value ) noexcept
+	{
+		return static_cast<RegType>( value ) << ( address & ( sizeof( RegType ) - 1 ) ) * 8;
+	}
+
+private:
+	Ram& m_ram;
+	Scratchpad& m_scratchpad;
+	MemoryControl& m_memoryControl;
+	Bios& m_bios;
 };
 
 template <typename T>
@@ -125,33 +131,62 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 {
 	dbExpects( ( address % sizeof( T ) == 0 ) );
 
-	auto[ region, offset ] = TranslateAddress( address );
+	const auto[ region, offset ] = TranslateAddress( address );
 	switch ( region )
 	{
-		case SegmentType::Bios:
-			return m_bios.Read<T>( offset );
-
-		case SegmentType::Ram:
+		case Segment::Ram:
+			// TODO: RAM can be mirrored to first 8MB (enabled by default)
 			return m_ram.Read<T>( offset );
 
-		case SegmentType::Expansion:
-			return static_cast<T>( -1 ); // TODO
+		case Segment::Expansion:
+			dbLog( "read from expansion 1 [%X]", address );
+			return static_cast<T>( -1 ); // send all ones for missing expansion
 
-		case SegmentType::Scratchpad:
-		case SegmentType::HardwareRegisters:
-			// TODO
+		case Segment::Scratchpad:
+			// TODO: not mirrored in KSEG1
+			return m_scratchpad.Read<T>( offset );
+
+		case Segment::MemControl:
+			return static_cast<T>( m_memoryControl.Read( offset / 4 ) );
+
+		case Segment::RamSize:
+			return static_cast<T>( m_memoryControl.ReadRamSize() );
+
+		case Segment::InterruptControl:
+			dbLog( "read from interrupt control [%X]", address );
+			return 0; // TODO
+
+		case Segment::DmaChannels:
+			dbLog( "read from DMA channel [%X]", address );
+			return 0; // TODO
+
+		case Segment::Timers:
+			dbLog( "read from timer [%X]", address );
+			return 0; // TODO
+
+		case Segment::Gpu:
+			dbLog( "read from gpu [%X]", address );
+			return static_cast<T>( 0x10000000 ); // TODO
+
+		case Segment::Spu:
+			dbLog( "read SPU register [%X]", address );
+			return 0; // TODO
+
+		case Segment::Expansion2:
+			dbLog( "read from expansion 2 [%X]", address );
+			return static_cast<T>( -1 ); // send all ones for missing expansion
+
+		case Segment::Bios:
+			// TODO: bios can be mirrored to last 4MB (disabled by default)
+			return m_bios.Read<T>( offset );
+
+		case Segment::CacheControl:
+			return static_cast<T>( m_memoryControl.ReadCacheControl() );
+
+		default:
+			dbBreakMessage( "Unhandled memory read [%X]", address );
 			return 0;
-
-		case SegmentType::IoPorts:
-			// TODO
-			return 0;
-
-		case SegmentType::Invalid:
-			break;
 	}
-
-	dbLog( "Unhandled memory read [%X]", address );
-	return 0;
 }
 
 template <typename T>
@@ -162,29 +197,64 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 	auto[ region, offset ] = TranslateAddress( address );
 	switch ( region )
 	{
-		case SegmentType::Bios:
+		case Segment::Bios:
 			// BIOS is read-only
-			return;
+			dbBreakMessage( "write to BIOS [%X <- %X]", address, value );
+			break;
 
-		case SegmentType::Ram:
+		case Segment::Ram:
 			m_ram.Write<T>( offset, value );
-			return;
+			break;
 
-		case SegmentType::Expansion:
-		case SegmentType::Scratchpad:
-		case SegmentType::HardwareRegisters:
-			// TODO
-			return;
+		case Segment::Expansion:
+			dbLog( "write to expansion 1 [%X <- %X]", address, value );
+			break; // ignore writes to missing expansion
 
-		case SegmentType::IoPorts:
-			// TODO
-			return;
+		case Segment::Scratchpad:
+			// TODO: not mirrored in KSEG1
+			m_scratchpad.Write<T>( offset, value );
+			break;
 
-		case SegmentType::Invalid:
+		case Segment::MemControl:
+			m_memoryControl.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
+			break;
+
+		case Segment::RamSize:
+			m_memoryControl.WriteRamSize( ShiftValueForRegister<uint32_t>( offset, value ) );
+			break;
+
+		case Segment::InterruptControl:
+			dbLog( "write to interrupt control [%X <- %X]", address, value );
+			break; // TODO
+
+		case Segment::DmaChannels:
+			dbLog( "write to DMA channel [%X <- %X]", address, value );
+			break; // TODO
+
+		case Segment::Timers:
+			dbLog( "write to timer [%X <- %X]", address, value );
+			break; // TODO
+
+		case Segment::Gpu:
+			dbLog( "write to gpu [%X <- %X]", address, value );
+			break;
+
+		case Segment::Spu:
+			dbLog( "write to SPU register [%X <- %X]", address, value );
+			break;
+
+		case Segment::Expansion2:
+			dbLog( "write to expansion 2 [%X <- %X]", address, value );
+			break;
+
+		case Segment::CacheControl:
+			m_memoryControl.WriteCacheControl( ShiftValueForRegister<uint32_t>( offset, value ) );
+			break;
+
+		default:
+			dbBreakMessage( "Unhandled memory write [%X <- %X]", address, value );
 			break;
 	}
-
-	dbLog( "Unhandled memory write [%X]", address );
 }
 
 }

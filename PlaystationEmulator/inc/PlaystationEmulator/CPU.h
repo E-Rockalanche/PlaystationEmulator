@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Cop0.h"
 #include "Instruction.h"
 #include "MemoryMap.h"
 
@@ -9,15 +10,10 @@
 #include <cstdint>
 #include <optional>
 
+#define LOG_INSTRUCTIONS false
+
 namespace PSX
 {
-
-template <typename T>
-static inline constexpr uint32_t Extend( T value ) noexcept
-{
-	using ExtendedType = std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>;
-	return static_cast<uint32_t>( static_cast<ExtendedType>( value ) );
-}
 
 class MipsR3000Cpu
 {
@@ -32,17 +28,6 @@ public:
 	void Tick() noexcept;
 
 private:
-
-	struct MultiplyUnit
-	{
-		void MultiplySigned( uint32_t x, uint32_t y );
-		void MultiplyUnsigned( uint32_t x, uint32_t y );
-		void DivideSigned( uint32_t x, uint32_t y );
-		void DivideUnsigned( uint32_t x, uint32_t y );
-
-		uint32_t lo;
-		uint32_t hi;
-	};
 
 	class Registers
 	{
@@ -115,30 +100,78 @@ private:
 
 	void SubtractTrap( uint32_t x, uint32_t y, uint32_t destRegister ) noexcept;
 
-	void BranchImp( bool condition, int16_t offset ) noexcept;
+	void BranchImp( bool condition, uint32_t signedOffset ) noexcept;
 
 	void JumpImp( uint32_t target ) noexcept;
 
-	void CheckProgramCounterAlignment() noexcept;
+	void CheckProgramCounterAlignment() noexcept
+	{
+		if ( m_nextPC % 4 != 0 )
+			RaiseException( Cop0::ExceptionCause::AddressErrorLoad );
+	}
 
-private: // READ / WRITE
+	void RaiseException( Cop0::ExceptionCause cause, uint32_t coprocessor = 0, bool branch = false ) noexcept;
 
 	uint32_t GetVAddr( Instruction instr ) const noexcept
 	{
-		return m_registers[ instr.base() ] + Extend( instr.immediate() );
+		return m_registers[ instr.base() ] + instr.immediateSigned();
 	}
 
 	template <typename T>
-	uint32_t LoadImp( Instruction instr )
+	T LoadImp( uint32_t address ) const noexcept
 	{
-		return Extend( m_memoryMap.Read<T>( GetVAddr( instr ) ) );
+		dbExpects( address % sizeof( T ) == 0 );
+		if ( !m_cop0.GetIsolateCache() )
+		{
+			return m_memoryMap.Read<T>( address );
+		}
+		else
+		{
+			dbLog( "read from cache" );
+			return 0;
+		}
 	}
 
 	template <typename T>
-	void StoreImp( uint32_t base, int16_t offset, T value )
+	void LoadImp( Instruction instr ) noexcept
 	{
-		const uint32_t virtualAddress = m_registers[ base ] + Extend( offset );
-		m_memoryMap.Write<T>( virtualAddress, value );
+		const uint32_t addr = GetVAddr( instr );
+		if ( addr % sizeof( T ) == 0 )
+		{
+			using ExtendedType = std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>;
+			const auto value = static_cast<uint32_t>( static_cast<ExtendedType>( LoadImp<T>( addr ) ) );
+			m_registers.Load( instr.rt(), value );
+		}
+		else
+		{
+			RaiseException( Cop0::ExceptionCause::AddressErrorLoad );
+		}
+	}
+
+	template <typename T>
+	void StoreImp( uint32_t address, T value ) noexcept
+	{
+		if ( address % sizeof( T ) == 0 )
+		{
+			if ( !m_cop0.GetIsolateCache() )
+			{
+				m_memoryMap.Write<T>( address, value );
+			}
+			else
+			{
+				dbLog( "write to cache" );
+			}
+		}
+		else
+		{
+			RaiseException( Cop0::ExceptionCause::AddressErrorStore );
+		}
+	}
+
+	template <typename T>
+	void StoreImp( Instruction instr ) noexcept
+	{
+		StoreImp<T>( GetVAddr( instr ), static_cast<T>( m_registers[ instr.rt() ] ) );
 	}
 
 private: // instructions
@@ -167,8 +200,8 @@ private: // instructions
 	// AND
 	void BitwiseAnd( Instruction ) noexcept;
 
-	// AND
-	void AndImmediate( Instruction ) noexcept;
+	// ANDI
+	void BitwiseAndImmediate( Instruction ) noexcept;
 
 	// BEQ
 	void BranchEqual( Instruction ) noexcept;
@@ -347,26 +380,31 @@ private: // instructions
 	// XORI
 	void BitwiseXorImmediate( Instruction ) noexcept;
 
-	void UnhandledInstruction( Instruction ) noexcept;
+	void IllegalInstruction( Instruction ) noexcept;
+
+private:
+
+	using InstructionFunction = void( MipsR3000Cpu::* )( Instruction ) noexcept;
 
 private:
 	MemoryMap& m_memoryMap;
 
-	uint32_t m_pc;
+	uint32_t m_currentPC; // pc of instruction being executed
+	uint32_t m_pc; // pc of instruction being fetched
+	uint32_t m_nextPC;
 
-	Instruction m_nextInstruction;
+	bool m_inBranch = false;
+	bool m_inDelaySlot = false;
 
 	Registers m_registers;
 
-	MultiplyUnit m_multiplyUnit;
+	uint32_t m_hi;
+	uint32_t m_lo;
 
-	using InstructionFunction = void( MipsR3000Cpu::* )( Instruction ) noexcept;
+	Cop0 m_cop0;
 
-	std::array<InstructionFunction, 64> m_instructions{};
-	std::array<InstructionFunction, 64> m_specialInstructions{};
-
-	std::array<const char*, 64> m_instructionNames{};
-	std::array<const char*, 64> m_specialInstructionNames{};
+	std::array<InstructionFunction, 64> m_opcodes{};
+	std::array<InstructionFunction, 64> m_specialOpcodes{};
 };
 
 }
