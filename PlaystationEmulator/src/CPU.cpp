@@ -16,19 +16,6 @@
 namespace PSX
 {
 
-void MipsR3000Cpu::RaiseException( Cop0::ExceptionCause cause, uint32_t coprocessor, bool branch ) noexcept
-{
-	// exceptions in delay slot return to branch instruction
-	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
-
-	m_cop0.SetException( returnAddress, cause, coprocessor, branch );
-
-	// exception jumps don't have a delay slot
-	m_pc = m_cop0.GetExceptionVector();
-	m_nextPC = m_pc + 4;
-	dbAssert( m_pc % 4 == 0 );
-}
-
 #define DEF_FUN( arr, index, function )	\
 	dbAssert( arr[ index ] == nullptr );	\
 	arr[ index ] = &MipsR3000Cpu::function;
@@ -148,6 +135,8 @@ void MipsR3000Cpu::Reset()
 	m_hi = 0;
 
 	m_cop0.Reset();
+
+	m_memoryMap.Reset();
 }
 
 void MipsR3000Cpu::Tick() noexcept
@@ -195,6 +184,19 @@ void MipsR3000Cpu::Tick() noexcept
 	std::invoke( m_opcodes[ opcode ], this, instr );
 
 	m_registers.Update();
+}
+
+void MipsR3000Cpu::RaiseException( Cop0::ExceptionCause cause, uint32_t coprocessor, bool branch ) noexcept
+{
+	// exceptions in delay slot return to branch instruction
+	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
+
+	m_cop0.SetException( returnAddress, cause, coprocessor, branch );
+
+	// exception jumps don't have a delay slot
+	m_pc = m_cop0.GetExceptionVector();
+	dbAssert( m_pc % 4 == 0 );
+	m_nextPC = m_pc + 4;
 }
 
 inline void MipsR3000Cpu::AddTrap( uint32_t x, uint32_t y, uint32_t destRegister ) noexcept

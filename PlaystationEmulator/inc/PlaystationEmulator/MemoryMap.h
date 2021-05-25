@@ -1,7 +1,10 @@
 #pragma once
 
 #include "BIOS.h"
+#include "DMA.h"
+#include "GPU.h"
 #include "MemoryControl.h"
+#include "RAM.h"
 
 #include "assert.h"
 
@@ -10,9 +13,6 @@
 
 namespace PSX
 {
-
-using Ram = Memory<2 * 1024 * 1024>;
-using Scratchpad = Memory<1024>;
 
 struct Range
 {
@@ -30,12 +30,16 @@ struct Range
 class MemoryMap
 {
 public:
-	MemoryMap( Ram& ram, Scratchpad& scratchpad, MemoryControl& memControl, Bios& bios )
+	MemoryMap( Ram& ram, Scratchpad& scratchpad, MemoryControl& memControl, Dma& dma, Gpu& gpu, Bios& bios )
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
 		, m_memoryControl{ memControl }
+		, m_dma{ dma }
+		, m_gpu{ gpu }
 		, m_bios{ bios }
 	{}
+
+	void Reset();
 
 	template <typename T>
 	T Read( uint32_t address ) const noexcept;
@@ -123,6 +127,8 @@ private:
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
 	MemoryControl& m_memoryControl;
+	Dma& m_dma;
+	Gpu& m_gpu;
 	Bios& m_bios;
 };
 
@@ -157,16 +163,14 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 			return 0; // TODO
 
 		case Segment::DmaChannels:
-			dbLog( "read from DMA channel [%X]", address );
-			return 0; // TODO
+			return static_cast<T>( m_dma.Read( offset / 4 ) );
 
 		case Segment::Timers:
 			dbLog( "read from timer [%X]", address );
 			return 0; // TODO
 
 		case Segment::Gpu:
-			dbLog( "read from gpu [%X]", address );
-			return static_cast<T>( 0x10000000 ); // TODO
+			return static_cast<T>( m_gpu.Read( offset / 4 ) );
 
 		case Segment::Spu:
 			dbLog( "read SPU register [%X]", address );
@@ -228,15 +232,14 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			break; // TODO
 
 		case Segment::DmaChannels:
-			dbLog( "write to DMA channel [%X <- %X]", address, value );
-			break; // TODO
+			m_dma.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
 
 		case Segment::Timers:
 			dbLog( "write to timer [%X <- %X]", address, value );
 			break; // TODO
 
 		case Segment::Gpu:
-			dbLog( "write to gpu [%X <- %X]", address, value );
+			m_gpu.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
 			break;
 
 		case Segment::Spu:

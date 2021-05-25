@@ -21,9 +21,15 @@ int main( int, char** )
 
 	auto memControl = std::make_unique<PSX::MemoryControl>();
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, *memControl, *bios };
+	auto dmaRegisters = std::make_unique<PSX::Dma>( *ram );
+
+	auto gpu = std::make_unique<PSX::Gpu>();
+
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, *memControl, *dmaRegisters, *gpu, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap );
+
+	cpu->Reset();
 
 	while ( true )
 	{

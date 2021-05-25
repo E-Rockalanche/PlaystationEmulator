@@ -35,6 +35,14 @@ public:
 		CodeCacheEnable = 0x00000800,
 	};
 
+public:
+	void Reset()
+	{
+		m_registers.fill( 0 );
+		m_ramSize = 0;
+		m_cacheControl = 0;
+	}
+
 	uint32_t Read( uint32_t index ) const noexcept
 	{
 		return m_registers[ index ];
