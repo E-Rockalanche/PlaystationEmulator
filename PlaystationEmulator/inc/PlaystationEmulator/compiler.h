@@ -48,6 +48,8 @@ using enable_if_t = typename enable_if<Condition, T>::type;
 #define STDX_unlikely( expression ) ( expression )
 #define STDX_unreachable() __assume( 0 )
 
+#pragma warning( disable:4201 ) // nonstandard extension: nameless struct/union
+
 #elif defined __GNUC__
 
 #define STDX_assume( expression ) ( ( expression ) ? (void)0 : __builtin_unreachable() )

@@ -133,6 +133,7 @@
   <ItemGroup>
     <ClInclude Include="inc\PlaystationEmulator\assert.h" />
     <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
+    <ClInclude Include="inc\PlaystationEmulator\bit.h" />
     <ClInclude Include="inc\PlaystationEmulator\compiler.h" />
     <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
     <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
@@ -151,6 +152,7 @@
     <ClCompile Include="src\Cop0.cpp" />
     <ClCompile Include="src\CPU.cpp" />
     <ClCompile Include="src\DMA.cpp" />
+    <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\MemoryMap.cpp" />

@@ -170,7 +170,15 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 			return 0; // TODO
 
 		case Segment::Gpu:
-			return static_cast<T>( m_gpu.Read( offset / 4 ) );
+		{
+			switch ( offset / 4 )
+			{
+				case 0: return static_cast<T>( m_gpu.GpuRead() );
+				case 1: return static_cast<T>( m_gpu.GpuStatus() );
+				default: dbBreak(); return 0;
+			}
+			break;
+		}
 
 		case Segment::Spu:
 			dbLog( "read SPU register [%X]", address );
@@ -239,8 +247,16 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			break; // TODO
 
 		case Segment::Gpu:
-			m_gpu.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
+		{
+			const uint32_t shifted = ShiftValueForRegister<uint32_t>( offset, value );
+			switch ( offset / 4 )
+			{
+				case 0: m_gpu.WriteGP0( shifted );	break;
+				case 1: m_gpu.WriteGP1( shifted );	break;
+				default: dbBreak(); break;
+			}
 			break;
+		}
 
 		case Segment::Spu:
 			dbLog( "write to SPU register [%X <- %X]", address, value );

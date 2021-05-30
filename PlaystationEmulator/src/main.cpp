@@ -21,9 +21,9 @@ int main( int, char** )
 
 	auto memControl = std::make_unique<PSX::MemoryControl>();
 
-	auto dmaRegisters = std::make_unique<PSX::Dma>( *ram );
-
 	auto gpu = std::make_unique<PSX::Gpu>();
+
+	auto dmaRegisters = std::make_unique<PSX::Dma>( *ram, *gpu );
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, *memControl, *dmaRegisters, *gpu, *bios };
 

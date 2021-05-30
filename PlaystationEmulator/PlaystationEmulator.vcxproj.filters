@@ -51,6 +51,9 @@
     <ClInclude Include="inc\PlaystationEmulator\GPU.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\bit.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">
@@ -72,6 +75,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\Cop0.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GPU.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

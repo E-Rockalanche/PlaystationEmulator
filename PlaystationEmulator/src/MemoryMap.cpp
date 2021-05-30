@@ -9,6 +9,7 @@ void MemoryMap::Reset()
 	m_scratchpad.Fill( char( -1 ) );
 	m_memoryControl.Reset();
 	m_dma.Reset();
+	m_gpu.Reset();
 }
 
 std::pair<MemoryMap::Segment, uint32_t> MemoryMap::TranslateAddress( uint32_t address ) const noexcept

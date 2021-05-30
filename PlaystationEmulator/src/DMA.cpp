@@ -3,7 +3,6 @@
 namespace PSX
 {
 
-
 void Dma::Channel::Reset()
 {
 	m_baseAddress = 0;
@@ -154,21 +153,71 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 	if ( channel.GetTransferDirection() == Channel::TransferDirection::ToMainRam )
 	{
-		if ( channelIndex == ChannelIndex::RamOrderTable )
+		switch ( channelIndex )
 		{
-			for ( ; wordCount > 1; --wordCount, address += increment )
-				m_ram.Write<uint32_t>( address, address + increment );
+			case ChannelIndex::RamOrderTable:
+			{
+				for ( ; wordCount > 1; --wordCount, address += increment )
+					m_ram.Write<uint32_t>( address, address + increment );
 
-			m_ram.Write<uint32_t>( address, LinkedListTerminator );
+				m_ram.Write<uint32_t>( address, LinkedListTerminator );
+				break;
+			}
+
+			default:
+				dbBreakMessage( "unhandled DMA transfer from channel %u to RAM", channelIndex );
+				break;
+		}
+	}
+	else
+	{
+		switch ( channelIndex )
+		{
+			case ChannelIndex::Gpu:
+			{
+				for ( ; wordCount > 0; --wordCount, address += increment )
+					dbLog( "write to GPU [%x]", m_ram.Read<uint32_t>( address ) );
+
+				break;
+			}
+
+			default:
+				dbBreakMessage( "unhandled DMA transfer from RAM to channel %u", channelIndex );
+				break;
 		}
 	}
 
 	channel.SetTransferComplete();
 }
 
-void Dma::DoLinkedListTransfer( uint32_t channel ) noexcept
+void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 {
-	dbBreakMessage( "linked list DMA transfer [%X]", channel );
+	dbLog( "Linked list transfer on port %u", channelIndex );
+	dbAssert( channelIndex == ChannelIndex::Gpu );
+
+	auto& channel = m_channels[ channelIndex ];
+	dbAssert( channel.GetTransferDirection() == Channel::TransferDirection::FromMainRam );
+
+	uint32_t address = channel.GetBaseAddress();
+	dbAssert( address % 4 == 0 );
+
+	do
+	{
+		uint32_t header = m_ram.Read<uint32_t>( address );
+		address += 4;
+
+		const uint32_t wordCount = header >> 24;
+		const uint32_t end = address + wordCount * 4;
+		for ( ; address != end; address += 4 )
+		{
+			m_gpu.WriteGP0( m_ram.Read<uint32_t>( address ) );
+		}
+
+		address = header & 0x00ffffff;
+	}
+	while ( address != 0x00ffffff );
+
+	channel.SetTransferComplete();
 }
 
 }

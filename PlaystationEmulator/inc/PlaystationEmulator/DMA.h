@@ -2,6 +2,7 @@
 
 #include "assert.h"
 
+#include "GPU.h"
 #include "RAM.h"
 
 #include <array>
@@ -170,7 +171,7 @@ public:
 	};
 
 public:
-	Dma( Ram& ram ) : m_ram{ ram } {}
+	Dma( Ram& ram, Gpu& gpu ) : m_ram{ ram }, m_gpu{ gpu } {}
 
 	void Reset();
 
@@ -211,6 +212,7 @@ private:
 
 private:
 	Ram& m_ram;
+	Gpu& m_gpu;
 
 	std::array<Channel, 7> m_channels;
 
