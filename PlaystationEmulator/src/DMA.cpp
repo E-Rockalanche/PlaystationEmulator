@@ -176,7 +176,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 			case ChannelIndex::Gpu:
 			{
 				for ( ; wordCount > 0; --wordCount, address += increment )
-					dbLog( "write to GPU [%x]", m_ram.Read<uint32_t>( address ) );
+					m_gpu.WriteGP0( m_ram.Read<uint32_t>( address ) );
 
 				break;
 			}

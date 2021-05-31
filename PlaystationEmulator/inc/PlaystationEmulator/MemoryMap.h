@@ -56,6 +56,7 @@ private:
 	static constexpr Range InterruptControlRange{ 0x1f801070, 8 };
 	static constexpr Range DmaChannelsRange{ 0x1f801080, 128 };
 	static constexpr Range TimersRange{ 0x1f801100, 48 };
+	static constexpr Range CDRomRegisters{ 0x1f801800, 4 };
 	static constexpr Range GpuRange{ 0x1f801810, 8 };
 	static constexpr Range SpuRange{ 0x1f801c00, 1024 };
 	static constexpr Range ExpansionRange2{ 0x1f802000, 128 };
@@ -74,6 +75,7 @@ private:
 		InterruptControl,
 		DmaChannels,
 		Timers,
+		CDRomRegisters,
 		Gpu,
 		Spu,
 		Expansion2,
@@ -93,6 +95,7 @@ private:
 		InterruptControlRange,
 		DmaChannelsRange,
 		TimersRange,
+		CDRomRegisters,
 		GpuRange,
 		SpuRange,
 		ExpansionRange2,
@@ -167,6 +170,10 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 
 		case Segment::Timers:
 			dbLog( "read from timer [%X]", address );
+			return 0; // TODO
+
+		case Segment::CDRomRegisters:
+			dbLog( "read from CDROM [%X]", address );
 			return 0; // TODO
 
 		case Segment::Gpu:
@@ -244,6 +251,10 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 
 		case Segment::Timers:
 			dbLog( "write to timer [%X <- %X]", address, value );
+			break; // TODO
+
+		case Segment::CDRomRegisters:
+			dbLog( "write to CDROM [%X <- %X]", address, value );
 			break; // TODO
 
 		case Segment::Gpu:

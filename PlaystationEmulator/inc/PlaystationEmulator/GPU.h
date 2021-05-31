@@ -118,7 +118,11 @@ public:
 
 	void Reset();
 
-	void WriteGP0( uint32_t value ) noexcept;
+	void WriteGP0( uint32_t value ) noexcept
+	{
+		std::invoke( m_gp0Mode, this, value );
+	}
+
 	void WriteGP1( uint32_t value ) noexcept;
 
 	uint32_t GpuRead() const noexcept
@@ -128,7 +132,11 @@ public:
 
 	uint32_t GpuStatus() const noexcept
 	{
-		return m_status.value;
+		return m_status.value
+
+			// return vertical resolution as 240 so that the BIOS doesn't infinite loop waiting for even/odd line flag to change
+			// TODO: revert when status bit 31 is implemented
+			& ~( 1u << 19 );
 	}
 
 	uint32_t GetHorizontalResolution() const noexcept;
@@ -139,6 +147,79 @@ public:
 	}
 
 private:
+	using GP0Function = void( Gpu::* )( uint32_t ) noexcept;
+
+	using CommandFunction = void( Gpu::* )( ) noexcept;
+
+	struct CommandBuffer
+	{
+	public:
+		static constexpr uint32_t MaxSize = 16;
+
+		void Push( uint32_t value ) noexcept
+		{
+			dbExpects( m_size < MaxSize );
+			m_buffer[ m_size++ ] = value;
+		}
+
+		const uint32_t& operator[]( size_t index ) const noexcept
+		{
+			dbExpects( index < m_size );
+			return m_buffer[ index ];
+		}
+
+		size_t Size() const noexcept { return m_size; }
+
+		void Clear() { m_size = 0; }
+
+	private:
+		uint32_t m_buffer[ MaxSize ];
+		uint32_t m_size = 0;
+	};
+
+	void ClearCommandBuffer()
+	{
+		m_commandBuffer.Clear();
+		m_remainingWords = 0;
+		m_commandFunction = nullptr;
+
+		m_gp0Mode = &Gpu::GP0Command;
+	}
+
+	void InitCommand( uint32_t command, uint32_t remainingWords, CommandFunction function )
+	{
+		dbExpects( m_commandBuffer.Size() == 0 );
+		m_commandBuffer.Push( command );
+		m_remainingWords = remainingWords;
+		m_commandFunction = function;
+
+		m_gp0Mode = &Gpu::GP0Params;
+	}
+
+	// GP0 modes
+	void GP0Command( uint32_t ) noexcept;
+	void GP0Params( uint32_t ) noexcept;
+	void GP0PolyLine( uint32_t ) noexcept;
+	void GP0ImageLoad( uint32_t ) noexcept;
+
+	// command functions
+	void FillRectangle() noexcept;
+	void CopyRectangle() noexcept;
+	void CopyRectangleToVram() noexcept;
+	void CopyRectangleFromVram() noexcept;
+
+	void TempFinishCommandParams() noexcept
+	{
+		ClearCommandBuffer();
+	}
+
+private:
+	CommandBuffer m_commandBuffer;
+	uint32_t m_remainingWords;
+	CommandFunction m_commandFunction;
+
+	GP0Function m_gp0Mode;
+
 	uint32_t m_gpuRead;
 
 	Status m_status;
@@ -159,7 +240,6 @@ private:
 	uint16_t m_drawAreaRight;
 	uint16_t m_drawAreaBottom;
 
-	// drawing offset
 	int16_t m_drawOffsetX;
 	int16_t m_drawOffsetY;
 

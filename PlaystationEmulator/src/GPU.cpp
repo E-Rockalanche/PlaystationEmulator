@@ -8,19 +8,25 @@ namespace PSX
 namespace
 {
 
-struct GpuCommand
+struct RenderCommand
 {
 	enum : uint32_t
 	{
-		TextureMode = 1u << 24, // textured polygon/rect only
+		TextureMode = 1u << 24, // textured polygon/rect only (0=blended, 1=raw)
 		SemiTransparency = 1u << 25, // all render types
-		Texturemapping = 1u << 26, // polygon/ract only
+		TextureMapping = 1u << 26, // polygon/rect only
 		RectSizeMask = 0x3u << 27, // rect only
-		NumVertices = 1u << 27, // polygon only
-		NumLines = 1u << 27, // line only
+		NumVertices = 1u << 27, // polygon only (0=3, 1=4)
+		NumLines = 1u << 27, // line only (0=1, 1=poly?)
 		Shading = 1u << 28, // polygon/line only
 		PrimitiveTypeMask = 0x7u << 29
 	};
+};
+
+enum class TextureMode
+{
+	Blended,
+	Raw
 };
 
 enum class RectangleSize
@@ -36,23 +42,6 @@ enum class PrimitiveType
 	Polygon = 1,
 	Line = 2,
 	Rectangle = 3,
-};
-
-enum class GpuDisplayControlCommand : uint8_t
-{
-	ResetGpu = 0x00,
-	ResetCommandBuffer = 0x01,
-	AckGpuInterrupt = 0x02,
-	DisplayEnable = 0x03,
-	DmaDirection = 0x04,
-	StartOfDisplayArea = 0x05,
-	HorizontalDisplayRange = 0x06,
-	VerticalDisplayRange = 0x07,
-	DisplayMode = 0x08,
-	GetGpuInfo = 0x10,
-	NewTextureDisable = 0x09,
-	SpecialTextureDisable = 0x20,
-	Unknown = 0x0b,
 };
 
 struct Vertex
@@ -87,6 +76,10 @@ struct Color
 
 void Gpu::Reset()
 {
+	m_gp0Mode = &Gpu::GP0Command;
+
+	ClearCommandBuffer();
+
 	m_gpuRead = 0;
 
 	m_status.value = 0;
@@ -141,7 +134,7 @@ uint32_t Gpu::GetHorizontalResolution() const noexcept
 	}
 }
 
-void Gpu::WriteGP0( uint32_t value ) noexcept
+void Gpu::GP0Command( uint32_t value ) noexcept
 {
 	const uint8_t opcode = static_cast<uint8_t>( value >> 24 );
 	switch ( opcode )
@@ -207,18 +200,22 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 
 		case 0x02: // fill rectangle in VRAM
 			dbLog( "fill rectangle in VRAM [%x]", value );
+			InitCommand( value, 2, &Gpu::FillRectangle );
 			break;
 
 		case 0x80: // copy rectangle (VRAM to VRAM)
 			dbLog( "copy rectangle (VRAM to VRAM) [%x]", value );
+			InitCommand( value, 3, &Gpu::CopyRectangle );
 			break;
 
 		case 0xa0: // copy rectangle (CPU to VRAM)
 			dbLog( "copy rectangle (CPU to VRAM) [%x]", value );
+			InitCommand( value, 2, &Gpu::CopyRectangleToVram );
 			break;
 
 		case 0xc0: // copy rectangle (VRAM to CPU)
 			dbLog( "copy rectangle (VRAM to CPU) [%x]", value );
+			InitCommand( value, 2, &Gpu::CopyRectangleFromVram );
 			break;
 
 		case 0x1f: // interrupt request
@@ -238,8 +235,90 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 			break; // NOP
 
 		default:
-			dbBreakMessage( "unhandled GP0 opcode [%x]", opcode );
+		{
+			switch ( static_cast<PrimitiveType>( ( value & RenderCommand::PrimitiveTypeMask ) >> 29 ) )
+			{
+				case PrimitiveType::Polygon:
+				{
+					const bool quad = value & RenderCommand::NumVertices;
+					const bool textureMapping = value & RenderCommand::TextureMapping;
+					const bool shading = value & RenderCommand::Shading;
+
+					uint32_t params = quad ? 4 : 3;
+					params *= 1 + textureMapping + shading;
+					params -= shading; // first color for shaded polygons is in command
+
+					InitCommand( value, params, &Gpu::TempFinishCommandParams );
+					break;
+				}
+
+				case PrimitiveType::Line:
+				{
+					m_commandBuffer.Push( value );
+					m_commandFunction = &Gpu::TempFinishCommandParams;
+					if ( value & RenderCommand::NumLines )
+					{
+						m_gp0Mode = &Gpu::GP0PolyLine;
+					}
+					else
+					{
+						m_remainingWords = ( value & RenderCommand::Shading ) ? 3 : 2;
+						m_gp0Mode = &Gpu::GP0Params;
+					}
+
+					break;
+				}
+
+				case PrimitiveType::Rectangle:
+				{
+					const auto rectSize = static_cast<RectangleSize>( ( value & RenderCommand::RectSizeMask ) >> 27 );
+					const bool textureMapping = value & RenderCommand::TextureMapping;
+
+					const uint32_t params = 1 + ( rectSize == RectangleSize::Variable ) + textureMapping;
+					InitCommand( value, params, &Gpu::TempFinishCommandParams );
+					break;
+				}
+
+				default:
+					dbBreakMessage( "unhandled GP0 opcode [%x]", opcode );
+					break;
+			}
 			break;
+		}
+	}
+}
+
+void Gpu::GP0Params( uint32_t param ) noexcept
+{
+	dbExpects( m_remainingWords > 0 );
+	m_commandBuffer.Push( param );
+	if ( --m_remainingWords == 0 )
+	{
+		std::invoke( m_commandFunction, this );
+
+		// command function must clear buffer and set GP0 mode
+	}
+}
+
+void Gpu::GP0PolyLine( uint32_t param ) noexcept
+{
+	if ( param != 0x55555555 )
+	{
+		m_commandBuffer.Push( param );
+	}
+	else
+	{
+		std::invoke( m_commandFunction, this );
+		ClearCommandBuffer();
+	}
+}
+
+void Gpu::GP0ImageLoad( uint32_t ) noexcept
+{
+	dbExpects( m_remainingWords > 0 );
+	if ( --m_remainingWords == 0 )
+	{
+		ClearCommandBuffer();
 	}
 }
 
@@ -279,19 +358,23 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_drawOffsetX = 0;
 			m_drawOffsetY = 0;
 
-
 			m_horDisplayRange1 = 0x200;
 			m_horDisplayRange2 = 0x200 + 256 * 10;
 			m_verDisplayRange1 = 0x10;
 			m_verDisplayRange2 = 0x10 + 240;
 
-			// TODO: set display address?
-			// TODO: clear FIFO
+			m_displayAreaStartX = 0;
+			m_displayAreaStartY = 0;
+
+			ClearCommandBuffer();
+
 			// TODO: clear cache?
+
+			break;
 		}
 
 		case 0x01: // reset command buffer
-			dbLog( "reset command buffer" );
+			ClearCommandBuffer();
 			break;
 
 		case 0x02: // ack GPU interrupt
@@ -326,6 +409,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			m_verDisplayRange1 = value & 0x3ff;
 			m_verDisplayRange2 = ( value >> 10 ) & 0x3ff;
+			break;
 		}
 
 		case 0x08: // display mode
@@ -381,4 +465,42 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 	}
 }
 
+void Gpu::FillRectangle() noexcept
+{
+	dbBreak();
 }
+
+void Gpu::CopyRectangle() noexcept
+{
+	dbBreak();
+}
+
+void Gpu::CopyRectangleToVram() noexcept
+{
+	// dimensions counted in halfwords
+	auto& dimensions = m_commandBuffer[ 2 ];
+	const uint32_t width = dimensions & 0xffff;
+	const uint32_t height = dimensions >> 16;
+
+	const uint32_t halfwords = width * height;
+	m_remainingWords = halfwords / 2;
+	if ( halfwords % 1 )
+		++m_remainingWords;
+
+	m_gp0Mode = &Gpu::GP0ImageLoad;
+}
+
+void Gpu::CopyRectangleFromVram() noexcept
+{
+	auto& dimensions = m_commandBuffer[ 2 ];
+	const uint32_t width = dimensions & 0xffff;
+	const uint32_t height = dimensions >> 16;
+
+	dbLog( "copy rectangle from VRAM to CPU [%ux%u]", width, height );
+
+	// TODO: provide data on GPUREAD
+
+	ClearCommandBuffer();
+}
+
+} // namespace PSX

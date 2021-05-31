@@ -51,7 +51,7 @@ public:
 				TransferDirection = 1u << 0,
 				MemoryAddressStep = 1u << 1,
 				ChoppingEnable = 1u << 8,
-				SyncModeMask = 0x2u << 9,
+				SyncModeMask = 0x3u << 9,
 				ChoppingDmaWindowSize = 0x7u << 16,
 				ChoppingCpuWindowSize = 0x7u << 20,
 				StartBusy = 1u << 24, // cleared on DMA completion

@@ -7,6 +7,9 @@
     <Filter Include="src">
       <UniqueIdentifier>{eb09ef32-0125-4a25-b4f3-2f36c7c27ef7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\external">
+      <UniqueIdentifier>{ce406ad5-abcd-4318-8b95-0ebd3a37e56e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationEmulator\CPU.h">
@@ -79,6 +82,9 @@
     </ClCompile>
     <ClCompile Include="src\GPU.cpp">
       <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Glad\src\glad.c">
+      <Filter>src\external</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
