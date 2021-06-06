@@ -12,6 +12,8 @@ namespace PSX
 
 struct Position
 {
+	Position() = default;
+
 	Position( int16_t x_, int16_t y_ ) : x{ x_ }, y{ y_ } {}
 
 	explicit Position( uint32_t value )
@@ -25,6 +27,8 @@ struct Position
 
 struct Color
 {
+	Color() = default;
+
 	Color( uint8_t r_, uint8_t g_, uint8_t b_ ) : r{ r_ }, g{ g_ }, b{ b_ } {}
 
 	explicit Color( uint32_t value )
@@ -53,9 +57,14 @@ public:
 	void SetDisplaySize( uint16_t w, uint16_t h );
 	void SetAlpha( float alpha );
 
-	void PushTriangle( const Vertex& v1, const Vertex v2, const Vertex& v3 );
+	void PushTriangle( const Vertex vertices[ 3 ] );
 
 	void DrawBatch();
+
+	bool DrawFrame()
+	{
+		return std::exchange( m_drawFrame, false );
+	}
 
 private:
 	Render::VertexArrayObject m_vao;
@@ -67,6 +76,8 @@ private:
 	Render::UniformLocation m_alphaLoc = -1;
 
 	std::vector<Vertex> m_vertices;
+
+	bool m_drawFrame = false;
 };
 
 }

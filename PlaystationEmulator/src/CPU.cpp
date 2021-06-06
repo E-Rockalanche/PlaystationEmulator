@@ -831,7 +831,7 @@ void MipsR3000Cpu::BitwiseXorImmediate( Instruction instr ) noexcept
 	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] ^ instr.immediateUnsigned() );
 }
 
-void MipsR3000Cpu::IllegalInstruction( Instruction instr ) noexcept
+void MipsR3000Cpu::IllegalInstruction( [[maybe_unused]] Instruction instr ) noexcept
 {
 	dbBreakMessage( "Illegal instruction [%X]", instr.value );
 	RaiseException( Cop0::ExceptionCause::ReservedInstruction );

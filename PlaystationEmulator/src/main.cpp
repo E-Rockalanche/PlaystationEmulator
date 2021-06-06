@@ -32,8 +32,8 @@ int main( int, char** )
 	SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 3 );
 
 	dbLog( "creating window" );
-	int windowWidth = 256;
-	int windowHeight = 224;
+	int windowWidth = 640;
+	int windowHeight = 480;
 	const auto windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
 	SDL_Window* window = SDL_CreateWindow( "PSX Emulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, windowFlags );
 	if ( !window )
@@ -65,6 +65,7 @@ int main( int, char** )
 	glEnable( GL_BLEND );
 	glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
+	/*
 	PSX::Renderer renderer;
 
 	const PSX::Color red{ 0x0000ffu };
@@ -105,9 +106,10 @@ int main( int, char** )
 
 		SDL_Delay( 1000 / 60 );
 	}
+	*/
 
-
-	/*
+	PSX::Renderer renderer;
+	
 	auto bios = std::make_unique<PSX::Bios>();
 	if ( !PSX::LoadBios( "bios.bin", *bios ) )
 	{
@@ -123,7 +125,7 @@ int main( int, char** )
 
 	auto memControl = std::make_unique<PSX::MemoryControl>();
 
-	auto gpu = std::make_unique<PSX::Gpu>();
+	auto gpu = std::make_unique<PSX::Gpu>( renderer );
 
 	auto dmaRegisters = std::make_unique<PSX::Dma>( *ram, *gpu );
 
@@ -133,11 +135,38 @@ int main( int, char** )
 
 	cpu->Reset();
 
-	while ( true )
+	bool quit = false;
+	while ( !quit )
 	{
-		cpu->Tick();
+		const uint32_t frameStart = SDL_GetTicks();
+
+		SDL_Event event;
+		while ( SDL_PollEvent( &event ) )
+		{
+			switch ( event.type )
+			{
+				case SDL_QUIT:	quit = true;	break;
+			}
+		}
+
+		while ( !renderer.DrawFrame() )
+		{
+			cpu->Tick();
+		}
+
+		renderer.DrawBatch();
+
+		SDL_GL_SwapWindow( window );
+
+		Render::CheckErrors();
+
+		const uint32_t elapsed = SDL_GetTicks() - frameStart;
+
+		static constexpr uint32_t TargetMilliseconds = 1000 / 60;
+		if ( elapsed < TargetMilliseconds )
+			SDL_Delay( TargetMilliseconds - elapsed );
 	}
-	*/
+	
 
 	SDL_GL_DeleteContext( glContext );
 	SDL_DestroyWindow( window );

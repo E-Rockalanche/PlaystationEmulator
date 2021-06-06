@@ -157,6 +157,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		{
 			case ChannelIndex::RamOrderTable:
 			{
+				dbAssert( increment == -4 );
 				for ( ; wordCount > 1; --wordCount, address += increment )
 					m_ram.Write<uint32_t>( address, address + increment );
 

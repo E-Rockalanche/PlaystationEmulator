@@ -41,7 +41,7 @@ void main()
 }
 )glsl";
 
-constexpr size_t VertexBufferSize = 3;
+constexpr size_t VertexBufferSize = 1024;
 
 }
 
@@ -64,7 +64,7 @@ Renderer::Renderer()
 	m_alphaLoc = m_shader.GetUniformLocation( "alpha" );
 
 	SetOrigin( 0, 0 );
-	SetDisplaySize( 256, 224 );
+	SetDisplaySize( 640, 480 );
 	SetAlpha( 1.0f );
 }
 
@@ -72,6 +72,7 @@ void Renderer::SetOrigin( int16_t x, int16_t y )
 {
 	std::cout << "origin: " << x << ", " << y << std::endl;
 	glUniform2f( m_originLoc, x, y );
+	m_drawFrame = true;
 }
 
 void Renderer::SetDisplaySize( uint16_t w, uint16_t h )
@@ -86,21 +87,22 @@ void Renderer::SetAlpha( float alpha )
 	glUniform1f( m_alphaLoc, alpha );
 }
 
-void Renderer::PushTriangle( const Vertex& v1, const Vertex v2, const Vertex& v3 )
+void Renderer::PushTriangle( const Vertex vertices[3] )
 {
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
 
-	m_vertices.push_back( v1 );
-	m_vertices.push_back( v2 );
-	m_vertices.push_back( v3 );
+	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
 }
 
 void Renderer::DrawBatch()
 {
-	m_vbo.SubData( 0, m_vertices.size() * sizeof( Vertex ), m_vertices.data() );
-	glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
-	m_vertices.clear();
+	if ( !m_vertices.empty() )
+	{
+		m_vbo.SubData( 0, m_vertices.size() * sizeof( Vertex ), m_vertices.data() );
+		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
+		m_vertices.clear();
+	}
 }
 
 }

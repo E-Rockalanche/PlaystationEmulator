@@ -199,6 +199,8 @@ private:
 		m_gp0Mode = &Gpu::GP0Params;
 	}
 
+	void SetDrawOffset( int16_t x, int16_t y ) noexcept;
+
 	// GP0 modes
 	void GP0Command( uint32_t ) noexcept;
 	void GP0Params( uint32_t ) noexcept;
@@ -210,6 +212,10 @@ private:
 	void CopyRectangle() noexcept;
 	void CopyRectangleToVram() noexcept;
 	void CopyRectangleFromVram() noexcept;
+
+	// render commands
+	void RenderPolygon() noexcept;
+	void RenderRectangle() noexcept;
 
 	void TempFinishCommandParams() noexcept
 	{
@@ -247,7 +253,6 @@ private:
 
 	int16_t m_drawOffsetX;
 	int16_t m_drawOffsetY;
-	void SetDrawOffset( int16_t x, int16_t y );
 
 	// start of display area
 	uint16_t m_displayAreaStartX;

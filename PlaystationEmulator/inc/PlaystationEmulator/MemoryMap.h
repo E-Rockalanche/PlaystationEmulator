@@ -148,7 +148,7 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 			return m_ram.Read<T>( offset );
 
 		case Segment::Expansion:
-			dbLog( "read from expansion 1 [%X]", address );
+			// dbLog( "read from expansion 1 [%X]", address );
 			return static_cast<T>( -1 ); // send all ones for missing expansion
 
 		case Segment::Scratchpad:
@@ -188,11 +188,11 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 		}
 
 		case Segment::Spu:
-			dbLog( "read SPU register [%X]", address );
+			// dbLog( "read SPU register [%X]", address );
 			return 0; // TODO
 
 		case Segment::Expansion2:
-			dbLog( "read from expansion 2 [%X]", address );
+			// dbLog( "read from expansion 2 [%X]", address );
 			return static_cast<T>( -1 ); // send all ones for missing expansion
 
 		case Segment::Bios:
@@ -226,7 +226,7 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			break;
 
 		case Segment::Expansion:
-			dbLog( "write to expansion 1 [%X <- %X]", address, value );
+			// dbLog( "write to expansion 1 [%X <- %X]", address, value );
 			break; // ignore writes to missing expansion
 
 		case Segment::Scratchpad:
@@ -248,6 +248,7 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 
 		case Segment::DmaChannels:
 			m_dma.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
+			break;
 
 		case Segment::Timers:
 			dbLog( "write to timer [%X <- %X]", address, value );
@@ -270,11 +271,11 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 		}
 
 		case Segment::Spu:
-			dbLog( "write to SPU register [%X <- %X]", address, value );
+			// dbLog( "write to SPU register [%X <- %X]", address, value );
 			break;
 
 		case Segment::Expansion2:
-			dbLog( "write to expansion 2 [%X <- %X]", address, value );
+			// dbLog( "write to expansion 2 [%X <- %X]", address, value );
 			break;
 
 		case Segment::CacheControl:

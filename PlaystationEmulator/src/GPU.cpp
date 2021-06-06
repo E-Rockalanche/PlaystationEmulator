@@ -23,20 +23,19 @@ struct RenderCommand
 		Shading = 1u << 28, // polygon/line only
 		PrimitiveTypeMask = 0x7u << 29
 	};
-};
 
-enum class TextureMode
-{
-	Blended,
-	Raw
+	static constexpr uint32_t GetVertices( uint32_t command )
+	{
+		return ( command & NumVertices ) ? 4 : 3;
+	}
 };
 
 enum class RectangleSize
 {
 	Variable,
-	OneByOne,
-	EightByEight,
-	SixteenBySixteen,
+	One,
+	Eight,
+	Sixteen,
 };
 
 enum class PrimitiveType
@@ -46,6 +45,7 @@ enum class PrimitiveType
 	Rectangle = 3,
 };
 
+/*
 struct Vertex
 {
 	Vertex( uint32_t value )
@@ -73,6 +73,7 @@ struct Color
 	uint8_t g;
 	uint8_t b;
 };
+*/
 
 }
 
@@ -115,6 +116,13 @@ void Gpu::Reset()
 	m_verDisplayRange2 = 0;
 
 	m_vram.Fill( char( -1 ) );
+}
+
+void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
+{
+	m_drawOffsetX = x;
+	m_drawOffsetY = y;
+	m_renderer.SetOrigin( x - m_drawAreaLeft, y - m_drawAreaTop );
 }
 
 uint32_t Gpu::GetHorizontalResolution() const noexcept
@@ -234,6 +242,40 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 		case 0xef:
 			break; // NOP
 
+		/*
+		case 0x20:
+		case 0x22:
+		case 0x28:
+		case 0x2a:
+			InitCommand( value, RenderCommand::GetVertices( value ), &Gpu::RenderPolygon< );
+			break;
+
+		case 0x24:
+		case 0x25:
+		case 0x26:
+		case 0x27:
+		case 0x2c:
+		case 0x2d:
+		case 0x2e:
+		case 0x2f:
+			InitCommand( value, RenderCommand::GetVertices( value ) * 2, &Gpu::TexturedPolygon );
+			break;
+
+		case 0x30:
+		case 0x32:
+		case 0x38:
+		case 0x3a:
+			InitCommand( value, RenderCommand::GetVertices( value ) * 2 - 1, &Gpu::ShadedPolygon );
+			break;
+
+		case 0x34:
+		case 0x36:
+		case 0x3c:
+		case 0x3e:
+			InitCommand( value, RenderCommand::GetVertices( value ) * 3 - 1, &Gpu::ShadedTexturedPolygon );
+			break;
+		*/
+
 		default:
 		{
 			switch ( static_cast<PrimitiveType>( ( value & RenderCommand::PrimitiveTypeMask ) >> 29 ) )
@@ -248,7 +290,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 					params *= 1 + textureMapping + shading;
 					params -= shading; // first color for shaded polygons is in command
 
-					InitCommand( value, params, &Gpu::TempFinishCommandParams );
+					InitCommand( value, params, &Gpu::RenderPolygon );
 					break;
 				}
 
@@ -275,7 +317,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 					const bool textureMapping = value & RenderCommand::TextureMapping;
 
 					const uint32_t params = 1 + ( rectSize == RectangleSize::Variable ) + textureMapping;
-					InitCommand( value, params, &Gpu::TempFinishCommandParams );
+					InitCommand( value, params, &Gpu::RenderRectangle );
 					break;
 				}
 
@@ -367,7 +409,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 			ClearCommandBuffer();
 
-			// TODO: clear cache?
+			// TODO: clear texture cache?
 
 			break;
 		}
@@ -502,11 +544,91 @@ void Gpu::CopyRectangleFromVram() noexcept
 	ClearCommandBuffer();
 }
 
-void Gpu::SetDrawOffset( int16_t x, int16_t y )
+void Gpu::RenderPolygon() noexcept
 {
-	m_drawOffsetX = x;
-	m_drawOffsetY = y;
-	m_renderer.SetOrigin( x, y );
+	const uint32_t command = m_commandBuffer[ 0 ];
+
+	const bool Quad = command & RenderCommand::NumVertices;
+	const bool Shaded = command & RenderCommand::Shading;
+	const bool Textured = command & RenderCommand::TextureMapping;
+	const bool Raw = command & RenderCommand::TextureMode;
+
+	Vertex vertices[ 4 ];
+
+	size_t bufferIndex = Shaded ? 0 : 1;
+
+	const size_t NumVertices = Quad ? 4 : 3;
+	for ( size_t i = 0; i < NumVertices; ++i )
+	{
+		auto& v = vertices[ i ];
+
+		if ( Shaded )
+			v.color = Color{ m_commandBuffer[ bufferIndex++ ] };
+		else if ( Raw )
+			v.color = Color{ 0xffffff };
+		else
+			v.color = Color{ command };
+
+		v.position = Position{ m_commandBuffer[ bufferIndex++ ] };
+
+		if ( Textured )
+			bufferIndex++; // ignore texture coordinates for now
+	}
+
+	m_renderer.PushTriangle( vertices );
+	if ( Quad )
+		m_renderer.PushTriangle( vertices + 1 );
+
+	ClearCommandBuffer();
+}
+
+void Gpu::RenderRectangle() noexcept
+{
+	uint32_t bufferIndex = 0;
+
+	const uint32_t command = m_commandBuffer[ bufferIndex++ ];
+
+	const bool Raw = command & RenderCommand::TextureMode;
+
+	const Color color{ Raw ? 0xffffff : command };
+	const Position pos{ m_commandBuffer[ bufferIndex++ ] };
+
+	if ( command & RenderCommand::TextureMapping )
+		bufferIndex++; // ignore textures for now
+
+	Position size;
+
+	switch ( static_cast<RectangleSize>( command >> 27 ) )
+	{
+		case RectangleSize::Variable:
+			size = Position{ m_commandBuffer[ bufferIndex ] };
+			break;
+
+		case RectangleSize::One:
+			size = Position{ 1, 1 };
+			break;
+
+		case RectangleSize::Eight:
+			size = Position{ 8, 8 };
+			break;
+
+		case RectangleSize::Sixteen:
+			size = Position{ 16, 16 };
+			break;
+
+		default:
+			dbBreak();
+			size = Position{ 0, 0 };
+	}
+
+	Vertex vertices[ 4 ];
+	vertices[ 0 ] = Vertex{ pos, color };
+	vertices[ 1 ] = Vertex{ Position{ pos.x, pos.y + size.y }, color };
+	vertices[ 2 ] = Vertex{ Position{ pos.x + size.x, pos.y }, color };
+	vertices[ 3 ] = Vertex{ Position{ pos.x + size.x, pos.y + size.y }, color };
+
+	m_renderer.PushTriangle( vertices );
+	m_renderer.PushTriangle( vertices + 1 );
 }
 
 } // namespace PSX
