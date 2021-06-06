@@ -2,9 +2,14 @@
 
 #include "MemoryMap.h"
 
+#include "Renderer.h"
+
+#include <Render/Error.h>
+
 #include <SDL.h>
 #include <glad/glad.h>
 
+#include <cmath>
 #include <memory>
 #include <iostream>
 
@@ -24,11 +29,13 @@ int main( int, char** )
 	}
 
 	SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
-	SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 2 );
+	SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 3 );
 
 	dbLog( "creating window" );
+	int windowWidth = 256;
+	int windowHeight = 224;
 	const auto windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
-	SDL_Window* window = SDL_CreateWindow( "PSX Emulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1024, 512, windowFlags );
+	SDL_Window* window = SDL_CreateWindow( "PSX Emulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, windowFlags );
 	if ( !window )
 	{
 		PrintSdlError( "failed to create window" );
@@ -47,14 +54,60 @@ int main( int, char** )
 	gladLoadGLLoader( SDL_GL_GetProcAddress );
 
 	std::cout << "vendor: " << glGetString( GL_VENDOR ) << '\n';
-	std::cout << "renderer: " << glGetString( GL_VENDOR ) << '\n';
-	std::cout << "version: " << glGetString( GL_VENDOR ) << '\n';
+	std::cout << "renderer: " << glGetString( GL_RENDERER ) << '\n';
+	std::cout << "version: " << glGetString( GL_VERSION ) << '\n';
+
+	glViewport( 0, 0, windowWidth, windowHeight );
 
 	glClearColor( 0, 0, 0, 1 );
 	glClear( GL_COLOR_BUFFER_BIT );
 
-	SDL_GL_SwapWindow( window );
+	glEnable( GL_BLEND );
+	glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
+	PSX::Renderer renderer;
+
+	const PSX::Color red{ 0x0000ffu };
+	const PSX::Color green{ 0x00ff00u };
+	const PSX::Color blue{ 0xff0000u };
+
+	PSX::Vertex vertices[]
+	{
+		PSX::Vertex{ PSX::Position( 64, 64 ), red },
+		PSX::Vertex{ PSX::Position( 256-64, 64 ), green },
+		PSX::Vertex{ PSX::Position( 256-64, 224-64 ), blue }
+	};
+
+	bool quit = false;
+	while ( !quit )
+	{
+		const auto time = SDL_GetTicks();
+
+		SDL_Event event;
+		while ( SDL_PollEvent( &event ) )
+		{
+			switch ( event.type )
+			{
+				case SDL_QUIT:
+					quit = true;
+					break;
+			}
+		}
+
+		glClear( GL_COLOR_BUFFER_BIT );
+		
+		renderer.PushTriangle( vertices[ 0 ], vertices[ 1 ], vertices[ 2 ] );
+		renderer.DrawBatch();
+
+		SDL_GL_SwapWindow( window );
+
+		Render::CheckErrors();
+
+		SDL_Delay( 1000 / 60 );
+	}
+
+
+	/*
 	auto bios = std::make_unique<PSX::Bios>();
 	if ( !PSX::LoadBios( "bios.bin", *bios ) )
 	{
@@ -84,7 +137,9 @@ int main( int, char** )
 	{
 		cpu->Tick();
 	}
+	*/
 
+	SDL_GL_DeleteContext( glContext );
 	SDL_DestroyWindow( window );
 	SDL_Quit();
 	return 0;

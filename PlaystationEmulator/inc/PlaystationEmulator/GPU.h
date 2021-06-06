@@ -8,6 +8,7 @@
 namespace PSX
 {
 
+class Renderer;
 
 class Gpu
 {
@@ -116,6 +117,8 @@ public:
 		};
 	};
 
+	Gpu( Renderer& renderer ) : m_renderer{ renderer } {}
+
 	void Reset();
 
 	void WriteGP0( uint32_t value ) noexcept
@@ -214,6 +217,8 @@ private:
 	}
 
 private:
+	Renderer& m_renderer;
+
 	CommandBuffer m_commandBuffer;
 	uint32_t m_remainingWords;
 	CommandFunction m_commandFunction;
@@ -242,6 +247,7 @@ private:
 
 	int16_t m_drawOffsetX;
 	int16_t m_drawOffsetY;
+	void SetDrawOffset( int16_t x, int16_t y );
 
 	// start of display area
 	uint16_t m_displayAreaStartX;

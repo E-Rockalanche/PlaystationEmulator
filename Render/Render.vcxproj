@@ -20,36 +20,36 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
-    <ProjectGuid>{3F7572D6-2220-42E3-8C9A-463132223454}</ProjectGuid>
-    <RootNamespace>PlaystationEmulator</RootNamespace>
+    <ProjectGuid>{1F311D5C-AE12-4939-B969-286785653870}</ProjectGuid>
+    <RootNamespace>Render</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v141</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v141</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -69,121 +69,80 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>E:\vclib\SDL2-2.0.14\include;$(IncludePath)</IncludePath>
-    <LibraryPath>E:\vclib\SDL2-2.0.14\lib\x86;$(LibraryPath)</LibraryPath>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>E:\vclib\SDL2-2.0.14\include;$(IncludePath)</IncludePath>
-    <LibraryPath>E:\vclib\SDL2-2.0.14\lib\x86;$(LibraryPath)</LibraryPath>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>E:\vclib\SDL2-2.0.14\include;$(IncludePath)</IncludePath>
-    <LibraryPath>E:\vclib\SDL2-2.0.14\lib\x64;$(LibraryPath)</LibraryPath>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>E:\vclib\SDL2-2.0.14\include;$(IncludePath)</IncludePath>
-    <LibraryPath>E:\vclib\SDL2-2.0.14\lib\x64;$(LibraryPath)</LibraryPath>
-  </PropertyGroup>
+  <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/Render;glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalLibraryDirectories>../SDL2/lib/x86</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>inc/Render;glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/Render;glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>../SDL2/lib/x86</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>inc/Render;glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="inc\PlaystationEmulator\assert.h" />
-    <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
-    <ClInclude Include="inc\PlaystationEmulator\bit.h" />
-    <ClInclude Include="inc\PlaystationEmulator\compiler.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
-    <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
-    <ClInclude Include="inc\PlaystationEmulator\DMA.h" />
-    <ClInclude Include="inc\PlaystationEmulator\GPU.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Memory.h" />
-    <ClInclude Include="inc\PlaystationEmulator\MemoryControl.h" />
-    <ClInclude Include="inc\PlaystationEmulator\MemoryMap.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Playstation.h" />
-    <ClInclude Include="inc\PlaystationEmulator\RAM.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Renderer.h" />
-    <ClInclude Include="inc\PlaystationEmulator\SPU.h" />
+    <ClCompile Include="Glad\src\glad.c" />
+    <ClCompile Include="src\Error.cpp" />
+    <ClCompile Include="src\Shader.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\BIOS.cpp" />
-    <ClCompile Include="src\Cop0.cpp" />
-    <ClCompile Include="src\CPU.cpp" />
-    <ClCompile Include="src\DMA.cpp" />
-    <ClCompile Include="src\GPU.cpp" />
-    <ClCompile Include="src\Instruction.cpp" />
-    <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\MemoryMap.cpp" />
-    <ClCompile Include="src\Renderer.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Render\Render.vcxproj">
-      <Project>{1f311d5c-ae12-4939-b969-286785653870}</Project>
-    </ProjectReference>
+    <ClInclude Include="Glad\include\glad\glad.h" />
+    <ClInclude Include="Glad\include\KHR\khrplatform.h" />
+    <ClInclude Include="inc\Render\Buffer.h" />
+    <ClInclude Include="inc\Render\Error.h" />
+    <ClInclude Include="inc\Render\Shader.h" />
+    <ClInclude Include="inc\Render\Types.h" />
+    <ClInclude Include="inc\Render\VertexArrayObject.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

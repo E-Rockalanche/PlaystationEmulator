@@ -1,5 +1,7 @@
 #include "GPU.h"
 
+#include "Renderer.h"
+
 #include "bit.h"
 
 namespace PSX
@@ -101,8 +103,7 @@ void Gpu::Reset()
 	m_drawAreaRight = 0;
 	m_drawAreaBottom = 0;
 
-	m_drawOffsetX = 0;
-	m_drawOffsetY = 0;
+	SetDrawOffset( 0, 0 );
 
 	m_displayAreaStartX = 0;
 	m_displayAreaStartY = 0;
@@ -182,8 +183,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 				return static_cast<int16_t>( sign ? ( value | 0xfffff800 ) : value );
 			};
 
-			m_drawOffsetX = signExtend( value & 0x7ff );
-			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
+			SetDrawOffset( signExtend( value & 0x7ff ), signExtend( ( value >> 11 ) & 0x7ff ) );
 			break;
 		}
 
@@ -355,8 +355,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_drawAreaRight = 0;
 			m_drawAreaBottom = 0;
 
-			m_drawOffsetX = 0;
-			m_drawOffsetY = 0;
+			SetDrawOffset( 0, 0 );
 
 			m_horDisplayRange1 = 0x200;
 			m_horDisplayRange2 = 0x200 + 256 * 10;
@@ -501,6 +500,13 @@ void Gpu::CopyRectangleFromVram() noexcept
 	// TODO: provide data on GPUREAD
 
 	ClearCommandBuffer();
+}
+
+void Gpu::SetDrawOffset( int16_t x, int16_t y )
+{
+	m_drawOffsetX = x;
+	m_drawOffsetY = y;
+	m_renderer.SetOrigin( x, y );
 }
 
 } // namespace PSX
