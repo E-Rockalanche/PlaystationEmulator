@@ -114,8 +114,16 @@ void Gpu::Reset()
 
 	m_verDisplayRange1 = 0;
 	m_verDisplayRange2 = 0;
+}
 
-	m_vram.Fill( char( -1 ) );
+void Gpu::UpdateTimerState() const noexcept
+{
+	m_timers.Update(); // update clocks until now
+
+	const auto refreshRate = m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC;
+	const auto scanlines = m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC;
+
+	m_timers.SetGpuState( refreshRate, scanlines, GetHorizontalResolution() );
 }
 
 void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
@@ -136,11 +144,10 @@ uint32_t Gpu::GetHorizontalResolution() const noexcept
 		case 1:	return 320;
 		case 2:	return 512;
 		case 3:	return 640;
-
-		default:
-			dbBreak();
-			return 0;
 	}
+
+	dbBreak();
+	return 0;
 }
 
 void Gpu::GP0Command( uint32_t value ) noexcept
@@ -173,6 +180,8 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 		{
 			m_drawAreaLeft = value & 0x3ff;
 			m_drawAreaTop = ( value >> 10 ) & 0x1ff;
+
+			// TODO: does this affect hblanking?
 			break;
 		}
 
@@ -180,6 +189,8 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 		{
 			m_drawAreaRight = value & 0x3ff;
 			m_drawAreaBottom = ( value >> 10 ) & 0x1ff;
+
+			// TODO: does this affect hblanking?
 			break;
 		}
 
@@ -241,40 +252,6 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 		case 0xe7:
 		case 0xef:
 			break; // NOP
-
-		/*
-		case 0x20:
-		case 0x22:
-		case 0x28:
-		case 0x2a:
-			InitCommand( value, RenderCommand::GetVertices( value ), &Gpu::RenderPolygon< );
-			break;
-
-		case 0x24:
-		case 0x25:
-		case 0x26:
-		case 0x27:
-		case 0x2c:
-		case 0x2d:
-		case 0x2e:
-		case 0x2f:
-			InitCommand( value, RenderCommand::GetVertices( value ) * 2, &Gpu::TexturedPolygon );
-			break;
-
-		case 0x30:
-		case 0x32:
-		case 0x38:
-		case 0x3a:
-			InitCommand( value, RenderCommand::GetVertices( value ) * 2 - 1, &Gpu::ShadedPolygon );
-			break;
-
-		case 0x34:
-		case 0x36:
-		case 0x3c:
-		case 0x3e:
-			InitCommand( value, RenderCommand::GetVertices( value ) * 3 - 1, &Gpu::ShadedTexturedPolygon );
-			break;
-		*/
 
 		default:
 		{
@@ -392,6 +369,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_textureWindowOffsetX = 0;
 			m_textureWindowOffsetY = 0;
 
+			// TODO: does this affect hblanking?
 			m_drawAreaLeft = 0;
 			m_drawAreaTop = 0;
 			m_drawAreaRight = 0;
@@ -459,12 +437,13 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_status.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
 			m_status.horizontalResolution2 = ( value >> 6 ) & 1;
 			m_status.reverseFlag = ( value >> 7 ) & 1;
+			UpdateTimerState();
 			break;
 		}
 
 		case 0x10: // get GPU info
 		{
-			switch ( value & 0x7 )
+			switch ( value % 8 )
 			{
 				default:
 					break; // return nothing
@@ -518,8 +497,12 @@ void Gpu::CopyRectangle() noexcept
 
 void Gpu::CopyRectangleToVram() noexcept
 {
+	// TODO
+	m_commandBuffer.Pop();
+	m_commandBuffer.Pop();
+
 	// dimensions counted in halfwords
-	auto& dimensions = m_commandBuffer[ 2 ];
+	auto dimensions = m_commandBuffer.Pop();
 	const uint32_t width = dimensions & 0xffff;
 	const uint32_t height = dimensions >> 16;
 
@@ -533,7 +516,11 @@ void Gpu::CopyRectangleToVram() noexcept
 
 void Gpu::CopyRectangleFromVram() noexcept
 {
-	auto& dimensions = m_commandBuffer[ 2 ];
+	// TODO
+	m_commandBuffer.Pop();
+	m_commandBuffer.Pop();
+
+	auto dimensions = m_commandBuffer.Pop();
 	const uint32_t width = dimensions & 0xffff;
 	const uint32_t height = dimensions >> 16;
 
@@ -546,7 +533,7 @@ void Gpu::CopyRectangleFromVram() noexcept
 
 void Gpu::RenderPolygon() noexcept
 {
-	const uint32_t command = m_commandBuffer[ 0 ];
+	const uint32_t command = m_commandBuffer.Pop();
 
 	const bool Quad = command & RenderCommand::NumVertices;
 	const bool Shaded = command & RenderCommand::Shading;
@@ -555,7 +542,8 @@ void Gpu::RenderPolygon() noexcept
 
 	Vertex vertices[ 4 ];
 
-	size_t bufferIndex = Shaded ? 0 : 1;
+	if ( Shaded )
+		m_commandBuffer.Unpop();
 
 	const size_t NumVertices = Quad ? 4 : 3;
 	for ( size_t i = 0; i < NumVertices; ++i )
@@ -563,16 +551,16 @@ void Gpu::RenderPolygon() noexcept
 		auto& v = vertices[ i ];
 
 		if ( Shaded )
-			v.color = Color{ m_commandBuffer[ bufferIndex++ ] };
+			v.color = Color{ m_commandBuffer.Pop() };
 		else if ( Raw )
 			v.color = Color{ 0xffffff };
 		else
 			v.color = Color{ command };
 
-		v.position = Position{ m_commandBuffer[ bufferIndex++ ] };
+		v.position = Position{ m_commandBuffer.Pop() };
 
 		if ( Textured )
-			bufferIndex++; // ignore texture coordinates for now
+			m_commandBuffer.Pop(); // ignore texture coordinates for now
 	}
 
 	m_renderer.PushTriangle( vertices );
@@ -584,24 +572,22 @@ void Gpu::RenderPolygon() noexcept
 
 void Gpu::RenderRectangle() noexcept
 {
-	uint32_t bufferIndex = 0;
-
-	const uint32_t command = m_commandBuffer[ bufferIndex++ ];
+	const uint32_t command = m_commandBuffer.Pop();
 
 	const bool Raw = command & RenderCommand::TextureMode;
 
 	const Color color{ Raw ? 0xffffff : command };
-	const Position pos{ m_commandBuffer[ bufferIndex++ ] };
+	const Position pos{ m_commandBuffer.Pop() };
 
 	if ( command & RenderCommand::TextureMapping )
-		bufferIndex++; // ignore textures for now
+		m_commandBuffer.Pop(); // ignore textures for now
 
 	Position size;
 
 	switch ( static_cast<RectangleSize>( command >> 27 ) )
 	{
 		case RectangleSize::Variable:
-			size = Position{ m_commandBuffer[ bufferIndex ] };
+			size = Position{ m_commandBuffer.Pop() };
 			break;
 
 		case RectangleSize::One:

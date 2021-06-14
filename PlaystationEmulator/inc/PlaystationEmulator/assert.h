@@ -52,7 +52,7 @@
 
 #define dbAssert( condition )	\
 	MULTI_LINE_MACRO_BEGIN	\
-	if ( !( condition ) ) {	\
+	if ( STDX_unlikely( !( condition ) ) ) {	\
 		dbAssertFail();	\
 		dbBreak();	\
 	}	\
@@ -60,7 +60,7 @@
 
 #define dbAssertMessage( condition, ... )	\
 	MULTI_LINE_MACRO_BEGIN	\
-	if ( !( condition ) ) {	\
+	if ( STDX_unlikely( !( condition ) ) ) {	\
 		dbAssertFail();	\
 		dbLogToStdErr( __VA_ARGS__ );	\
 		dbBreak();	\
@@ -74,7 +74,7 @@
 // safe to use in constexpr function
 #define dbExpects( condition )	\
 	MULTI_LINE_MACRO_BEGIN	\
-	if ( !( condition ) ) {	\
+	if ( STDX_unlikely( !( condition ) ) ) {	\
 		dbAssertFail();	\
 		dbBreak();	\
 	}	\
@@ -82,7 +82,7 @@
 
 #define dbEnsures( condition )	\
 	MULTI_LINE_MACRO_BEGIN	\
-	if ( !( condition ) ) {	\
+	if ( STDX_unlikely( !( condition ) ) ) {	\
 		dbAssertFail();	\
 		dbBreak();	\
 	}	\

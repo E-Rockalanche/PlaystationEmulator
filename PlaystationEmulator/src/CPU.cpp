@@ -7,118 +7,8 @@
 #include <fstream>
 #include <type_traits>
 
-#if LOG_INSTRUCTIONS
-#define LogInstruction( ... ) dbLog( __VA_ARGS__ )
-#else
-#define LogInstruction( ... ) do{}while(false)
-#endif
-
 namespace PSX
 {
-
-#define DEF_FUN( arr, index, function )	\
-	dbAssert( arr[ index ] == nullptr );	\
-	arr[ index ] = &MipsR3000Cpu::function;
-
-#define DEF_OP_EXT( opcode, function ) DEF_FUN( m_opcodes, static_cast<size_t>( Opcode::opcode ), function )
-#define DEF_SP_OP_EXT( opcode, function ) DEF_FUN( m_specialOpcodes, static_cast<size_t>( SpecialOpcode::opcode ), function )
-
-#define DEF_OP( opcode ) DEF_OP_EXT( opcode, opcode )
-#define DEF_SP_OP( opcode ) DEF_SP_OP_EXT( opcode, opcode )
-
-MipsR3000Cpu::MipsR3000Cpu( MemoryMap& memoryMap ) : m_memoryMap{ memoryMap }
-{
-	DEF_OP( Special );
-
-	DEF_OP( RegisterImmediate );
-
-	DEF_OP( AddImmediate );
-	DEF_OP( AddImmediateUnsigned );
-	DEF_OP( BitwiseAndImmediate );
-	DEF_OP( BranchEqual );
-	DEF_OP( BranchGreaterThanZero );
-	DEF_OP( BranchLessEqualZero );
-	DEF_OP( BranchNotEqual );
-	DEF_OP( Jump );
-	DEF_OP( JumpAndLink );
-	DEF_OP( LoadByte );
-	DEF_OP( LoadByteUnsigned );
-	DEF_OP( LoadHalfword );
-	DEF_OP( LoadHalfwordUnsigned );
-	DEF_OP( LoadUpperImmediate );
-	DEF_OP( LoadWord );
-	DEF_OP( LoadWordLeft );
-	DEF_OP( LoadWordRight );
-	DEF_OP( BitwiseOrImmediate );
-	DEF_OP( StoreByte );
-	DEF_OP( StoreHalfword );
-	DEF_OP( SetLessThanImmediate );
-	DEF_OP( SetLessThanImmediateUnsigned );
-	DEF_OP( StoreWord );
-	DEF_OP( StoreWordLeft );
-	DEF_OP( StoreWordRight );
-	DEF_OP( BitwiseXorImmediate );
-
-	DEF_OP_EXT( CoprocessorUnit0, CoprocessorUnit );
-	DEF_OP_EXT( CoprocessorUnit1, CoprocessorUnit );
-	DEF_OP_EXT( CoprocessorUnit2, CoprocessorUnit );
-	DEF_OP_EXT( CoprocessorUnit3, CoprocessorUnit );
-
-	DEF_OP_EXT( LoadWordToCoprocessor0, LoadWordToCoprocessor );
-	DEF_OP_EXT( LoadWordToCoprocessor1, LoadWordToCoprocessor );
-	DEF_OP_EXT( LoadWordToCoprocessor2, LoadWordToCoprocessor );
-	DEF_OP_EXT( LoadWordToCoprocessor3, LoadWordToCoprocessor );
-
-	DEF_OP_EXT( StoreWordFromCoprocessor0, StoreWordFromCoprocessor );
-	DEF_OP_EXT( StoreWordFromCoprocessor1, StoreWordFromCoprocessor );
-	DEF_OP_EXT( StoreWordFromCoprocessor2, StoreWordFromCoprocessor );
-	DEF_OP_EXT( StoreWordFromCoprocessor3, StoreWordFromCoprocessor );
-
-	for ( auto& p : m_opcodes )
-		if ( p == nullptr )
-			p = &MipsR3000Cpu::IllegalInstruction;
-
-	DEF_SP_OP( Add );
-	DEF_SP_OP( AddUnsigned );
-	DEF_SP_OP( BitwiseAnd );
-	DEF_SP_OP( Break );
-	DEF_SP_OP( Divide );
-	DEF_SP_OP( DivideUnsigned );
-	DEF_SP_OP( JumpAndLinkRegister );
-	DEF_SP_OP( JumpRegister );
-	DEF_SP_OP( MoveFromHi );
-	DEF_SP_OP( MoveFromLo );
-	DEF_SP_OP( MoveToHi );
-	DEF_SP_OP( MoveToLo );
-	DEF_SP_OP( Multiply );
-	DEF_SP_OP( MultiplyUnsigned );
-	DEF_SP_OP( BitwiseNor );
-	DEF_SP_OP( BitwiseOr );
-	DEF_SP_OP( ShiftLeftLogical );
-	DEF_SP_OP( ShiftLeftLogicalVariable );
-	DEF_SP_OP( SetLessThan );
-	DEF_SP_OP( SetLessThanUnsigned );
-	DEF_SP_OP( ShiftRightArithmetic );
-	DEF_SP_OP( ShiftRightArithmeticVariable );
-	DEF_SP_OP( ShiftRightLogical );
-	DEF_SP_OP( ShiftRightLogicalVariable );
-	DEF_SP_OP( Subtract );
-	DEF_SP_OP( SubtractUnsigned );
-	DEF_SP_OP( SystemCall );
-	DEF_SP_OP( BitwiseXor );
-
-	for ( auto& p : m_specialOpcodes )
-		if ( p == nullptr )
-			p = &MipsR3000Cpu::IllegalInstruction;
-
-	Reset();
-}
-
-#undef SET_INSTR
-#undef SET_SP_INSTR
-#undef SET_INSTR_EXT
-#undef SET_SP_INSTR_EXT
-#undef SET_INSTR_ENTRY
 
 void MipsR3000Cpu::Reset()
 {
@@ -151,47 +41,85 @@ void MipsR3000Cpu::Tick() noexcept
 	m_inDelaySlot = m_inBranch;
 	m_inBranch = false;
 
-	const Instruction instr{ m_memoryMap.Read<uint32_t>( m_currentPC ) };
-
-	const uint32_t opcode = instr.op();
-
-#if LOG_INSTRUCTIONS
-	auto[ name, args ] = GetInstructionDisplay( instr );
-	switch ( args )
-	{
-		case Operands::None:		dbLog( "%s", name );																								break;
-		case Operands::RsRtRd:		dbLog( "%s\trs:%u\trt:%u\trd:%u", name, instr.rs(), instr.rt(), instr.rd() );										break;
-		case Operands::RsRtImm:		dbLog( "%s\trs:%u\trt:%u\timm:%i", name, instr.rs(), instr.rt(), static_cast<int32_t>( instr.immediateSigned() ) );	break;
-		case Operands::RsRtOff:		dbLog( "%s\trs:%u\trt:%u\toff:%i", name, instr.rs(), instr.rt(), static_cast<int32_t>( instr.offset() ) );			break;
-		case Operands::RsOff:		dbLog( "%s\trs:%u\toff:%i", name, instr.rs(), static_cast<int32_t>( instr.offset() ) );								break;
-		case Operands::Code:		dbLog( "%s\tcode:%u", name, instr.code() );																			break;
-		case Operands::RtRd:		dbLog( "%s\trt:%u\trd:%u", name, instr.rt(), instr.rd() );															break;
-		case Operands::RsRt:		dbLog( "%s\trs:%u\trt:%u", name, instr.rs(), instr.rt() );															break;
-		case Operands::Target:		dbLog( "%s\ttarget:%X", name, instr.target() );																		break;
-		case Operands::RsRd:		dbLog( "%s\trs:%u\trd:%u", name, instr.rs(), instr.rd() );															break;
-		case Operands::Rs:			dbLog( "%s\trs:%u", name, instr.rs() );																				break;
-		case Operands::BaseRtOff:	dbLog( "%s\tbase:%u\trt:%u\toff:%i", name, instr.base(), instr.rt(), static_cast<int32_t>( instr.offset() ) );		break;
-		case Operands::RtImm:		dbLog( "%s\trt:%u\timm:%i", name, instr.rt(), static_cast<int32_t>( instr.immediateSigned() ) );					break;
-		case Operands::Rd:			dbLog( "%s\trd:%u", name, instr.rd() );																				break;
-		case Operands::RtRdSa:		dbLog( "%s\trs:%u\trd:%u\tsa:%u", name, instr.rt(), instr.rd(), instr.shamt() );									break;
-		case Operands::ZCofun:		dbLog( "%s\tz:%u\tcofun:%u", name, instr.z(), instr.cofun() );														break;
-		case Operands::ZRtRd:		dbLog( "%s\tz:%u\trt:%u\trd:%u", name, instr.z(), instr.rt(), instr.rd() );											break;
-		case Operands::ZBaseRtOff:	dbLog( "%s\tz:%u\tbase:%u\trt:%u\toff:%u", name, instr.z(), instr.base(), instr.rt(), instr.offset() );				break;
-		default: dbBreak(); break;
-	}
-#endif
-
-	std::invoke( m_opcodes[ opcode ], this, instr );
+	ExecuteInstruction( Instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) } );
 
 	m_registers.Update();
+
+	m_clockCycles++;
 }
 
-void MipsR3000Cpu::RaiseException( Cop0::ExceptionCause cause, uint32_t coprocessor, bool branch ) noexcept
+void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
+{
+#define OP_CASE( opcode ) case Opcode::opcode:	opcode( instr );	break;
+
+	switch ( static_cast<Opcode>( instr.op() ) )
+	{
+		OP_CASE( Special )
+
+		OP_CASE( RegisterImmediate )
+
+		OP_CASE( AddImmediate )
+		OP_CASE( AddImmediateUnsigned )
+		OP_CASE( BitwiseAndImmediate )
+		OP_CASE( BranchEqual )
+		OP_CASE( BranchGreaterThanZero )
+		OP_CASE( BranchLessEqualZero )
+		OP_CASE( BranchNotEqual )
+		OP_CASE( Jump )
+		OP_CASE( JumpAndLink )
+		OP_CASE( LoadByte )
+		OP_CASE( LoadByteUnsigned )
+		OP_CASE( LoadHalfword )
+		OP_CASE( LoadHalfwordUnsigned )
+		OP_CASE( LoadUpperImmediate )
+		OP_CASE( LoadWord )
+		OP_CASE( LoadWordLeft )
+		OP_CASE( LoadWordRight )
+		OP_CASE( BitwiseOrImmediate )
+		OP_CASE( StoreByte )
+		OP_CASE( StoreHalfword )
+		OP_CASE( SetLessThanImmediate )
+		OP_CASE( SetLessThanImmediateUnsigned )
+		OP_CASE( StoreWord )
+		OP_CASE( StoreWordLeft )
+		OP_CASE( StoreWordRight )
+		OP_CASE( BitwiseXorImmediate )
+
+		case Opcode::CoprocessorUnit0:
+		case Opcode::CoprocessorUnit1:
+		case Opcode::CoprocessorUnit2:
+		case Opcode::CoprocessorUnit3:
+			CoprocessorUnit( instr );
+			break;
+
+		case Opcode::LoadWordToCoprocessor0:
+		case Opcode::LoadWordToCoprocessor1:
+		case Opcode::LoadWordToCoprocessor2:
+		case Opcode::LoadWordToCoprocessor3:
+			LoadWordToCoprocessor( instr );
+			break;
+
+		case Opcode::StoreWordFromCoprocessor0:
+		case Opcode::StoreWordFromCoprocessor1:
+		case Opcode::StoreWordFromCoprocessor2:
+		case Opcode::StoreWordFromCoprocessor3:
+			StoreWordFromCoprocessor( instr );
+			break;
+
+		default:
+			IllegalInstruction( instr );
+			break;
+	}
+
+#undef OP_CASE
+}
+
+void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor, bool branch ) noexcept
 {
 	// exceptions in delay slot return to branch instruction
 	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
 
-	m_cop0.SetException( returnAddress, cause, coprocessor, branch );
+	m_cop0.SetException( returnAddress, code, coprocessor, branch );
 
 	// exception jumps don't have a delay slot
 	m_pc = m_cop0.GetExceptionVector();
@@ -211,7 +139,7 @@ inline void MipsR3000Cpu::AddTrap( uint32_t x, uint32_t y, uint32_t destRegister
 	}
 	else
 	{
-		RaiseException( Cop0::ExceptionCause::ArithmeticOverflow );
+		RaiseException( Cop0::ExceptionCode::ArithmeticOverflow );
 	}
 }
 
@@ -227,7 +155,7 @@ inline void MipsR3000Cpu::SubtractTrap( uint32_t x, uint32_t y, uint32_t destReg
 	}
 	else
 	{
-		RaiseException( Cop0::ExceptionCause::ArithmeticOverflow );
+		RaiseException( Cop0::ExceptionCode::ArithmeticOverflow );
 	}
 }
 
@@ -251,14 +179,51 @@ inline void MipsR3000Cpu::JumpImp( uint32_t target ) noexcept
 	// 26 bit target is left shifted 2 bits and combined with the high-order bits of the address of the delay slot
 
 	m_nextPC = ( ( m_currentPC + 4 ) & 0xf0000000 ) | target;
-	LogInstruction( "jumped to %X", m_nextPC );
 
 	CheckProgramCounterAlignment();
 }
 
 void MipsR3000Cpu::Special( Instruction instr ) noexcept
 {
-	std::invoke( m_specialOpcodes[ instr.funct() ], this, instr );
+#define OP_CASE( opcode ) case SpecialOpcode::opcode:	opcode( instr );	break;
+
+	switch ( static_cast<SpecialOpcode>( instr.funct() ) )
+	{
+		OP_CASE( Add )
+		OP_CASE( AddUnsigned )
+		OP_CASE( BitwiseAnd )
+		OP_CASE( Break )
+		OP_CASE( Divide )
+		OP_CASE( DivideUnsigned )
+		OP_CASE( JumpAndLinkRegister )
+		OP_CASE( JumpRegister )
+		OP_CASE( MoveFromHi )
+		OP_CASE( MoveFromLo )
+		OP_CASE( MoveToHi )
+		OP_CASE( MoveToLo )
+		OP_CASE( Multiply )
+		OP_CASE( MultiplyUnsigned )
+		OP_CASE( BitwiseNor )
+		OP_CASE( BitwiseOr )
+		OP_CASE( ShiftLeftLogical )
+		OP_CASE( ShiftLeftLogicalVariable )
+		OP_CASE( SetLessThan )
+		OP_CASE( SetLessThanUnsigned )
+		OP_CASE( ShiftRightArithmetic )
+		OP_CASE( ShiftRightArithmeticVariable )
+		OP_CASE( ShiftRightLogical )
+		OP_CASE( ShiftRightLogicalVariable )
+		OP_CASE( Subtract )
+		OP_CASE( SubtractUnsigned )
+		OP_CASE( SystemCall )
+		OP_CASE( BitwiseXor )
+
+		default:
+			IllegalInstruction( instr );
+			break;
+	}
+
+#undef OP_CASE
 }
 
 void MipsR3000Cpu::RegisterImmediate( Instruction instr ) noexcept
@@ -282,7 +247,7 @@ void MipsR3000Cpu::RegisterImmediate( Instruction instr ) noexcept
 			break;
 
 		default:
-			dbBreakMessage( "Invalid RegImm opcode: %X", static_cast<uint32_t>( instr.rt() ) );
+			IllegalInstruction( instr );
 			break;
 	}
 }
@@ -312,7 +277,9 @@ void MipsR3000Cpu::CoprocessorUnit( Instruction instr ) noexcept
 			if ( instr.subop() & 0b10000 )
 				CoprocessorOperation( instr );
 			else
-				dbBreakMessage( "Invalid coprocessor subop: %X", static_cast<uint32_t>( instr.subop() ) );
+				IllegalInstruction( instr );
+
+			break;
 		}
 	}
 }
@@ -395,7 +362,7 @@ void MipsR3000Cpu::BranchNotEqual( Instruction instr ) noexcept
 
 void MipsR3000Cpu::Break( Instruction ) noexcept
 {
-	RaiseException( Cop0::ExceptionCause::Breakpoint );
+	RaiseException( Cop0::ExceptionCode::Breakpoint );
 }
 
 void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction instr ) noexcept
@@ -473,7 +440,6 @@ void MipsR3000Cpu::JumpAndLink( Instruction instr ) noexcept
 	// store return address after delay slot
 	// PC is already after delay slot
 	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
-	LogInstruction( "set return address to %X", ( m_currentPC + 8 ) );
 	JumpImp( instr.target() );
 }
 
@@ -484,7 +450,6 @@ void MipsR3000Cpu::JumpAndLinkRegister( Instruction instr ) noexcept
 	m_inBranch = true;
 	m_registers.Set( instr.rd(), m_currentPC + 8 );
 	m_nextPC = m_registers[ instr.rs() ];
-	LogInstruction( "jumped to %X", m_nextPC );
 
 	CheckProgramCounterAlignment();
 }
@@ -493,7 +458,6 @@ void MipsR3000Cpu::JumpRegister( Instruction instr ) noexcept
 {
 	m_inBranch = true;
 	m_nextPC = m_registers[ instr.rs() ];
-	LogInstruction( "jumped to %X", m_nextPC );
 
 	CheckProgramCounterAlignment();
 }
@@ -542,7 +506,7 @@ void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 	}
 	else
 	{
-		RaiseException( Cop0::ExceptionCause::AddressErrorLoad );
+		RaiseException( Cop0::ExceptionCode::AddressErrorLoad );
 	}
 }
 
@@ -818,7 +782,7 @@ void MipsR3000Cpu::StoreWordRight( Instruction instr ) noexcept
 
 void MipsR3000Cpu::SystemCall( Instruction ) noexcept
 {
-	RaiseException( Cop0::ExceptionCause::Syscall );
+	RaiseException( Cop0::ExceptionCode::Syscall );
 }
 
 void MipsR3000Cpu::BitwiseXor( Instruction instr ) noexcept
@@ -834,7 +798,7 @@ void MipsR3000Cpu::BitwiseXorImmediate( Instruction instr ) noexcept
 void MipsR3000Cpu::IllegalInstruction( [[maybe_unused]] Instruction instr ) noexcept
 {
 	dbBreakMessage( "Illegal instruction [%X]", instr.value );
-	RaiseException( Cop0::ExceptionCause::ReservedInstruction );
+	RaiseException( Cop0::ExceptionCode::ReservedInstruction );
 }
 
 }

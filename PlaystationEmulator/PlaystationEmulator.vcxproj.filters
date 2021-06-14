@@ -57,6 +57,18 @@
     <ClInclude Include="inc\PlaystationEmulator\Renderer.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\Timers.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\CDRomDrive.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\FifoBuffer.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\InterruptControl.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">
@@ -84,6 +96,12 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\Renderer.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Timers.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CDRomDrive.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

@@ -11,22 +11,49 @@ namespace PSX
 class Cop0
 {
 public:
-	struct Register
+	enum class Register : uint32_t
 	{
-		enum : size_t
+		BreakpointOnExecute = 3,
+		BreakpointOnDataAccess = 5,
+		JumpDestination = 6,
+		BreakpointControl = 7,
+		BadVirtualAddress = 8,
+		DataAccessBreakpointMask = 9,
+		ExecuteBreakpointMask = 11,
+		SystemStatus = 12,
+		ExceptionCause = 13,
+		TrapReturnAddress = 14, // EPC
+		ProcessorId = 15
+	};
+
+	struct ExceptionCause
+	{
+		enum : uint32_t
 		{
-			BreakpointOnExecute = 3,
-			BreakpointOnDataAccess = 5,
-			JumpDestination = 6,
-			BreakpointControl = 7,
-			BadVirtualAddress = 8,
-			DataAccessBreakpointMask = 9,
-			ExecuteBreakpointMask = 11,
-			SystemStatus = 12,
-			ExceptionCause = 13,
-			TrapReturnAddress = 14, // EPC
-			ProcessorId = 15
+			ExceptionCodeMask = 0x1f << 2,
+			InterruptPendingMask = 0xff << 8,
+			CoprocessorMask = 0x3 << 28,
+			BranchDelay = 1u << 31,
+
+			WriteMask = 0x3 << 8,
 		};
+	};
+
+	enum class ExceptionCode : uint32_t
+	{
+		Interrupt,
+		TlbModification,
+		TlbStore,
+		TlbLoad,
+		AddressErrorLoad, // data load or instruction fetch
+		AddressErrorStore, // data store
+		BusErrorInstructionFetch,
+		BusErrorDataLoadStore,
+		Syscall,
+		Breakpoint,
+		ReservedInstruction,
+		CoprocessorUnusable,
+		ArithmeticOverflow
 	};
 
 	struct SystemStatus
@@ -53,56 +80,55 @@ public:
 			Cop2Enable = 1u << 30,
 			Cop3Enable = 1u << 31,
 
-			WriteMask = InterruptEnable | UserMode | PreviousInterruptDisable | PreviousUserMode | OldInterruptDisable | OldUserMode | InterruptMask |
-						IsolateCache | SwappedCachemode | PZ | CM | CacheParityError | TlbShutdown | BootExceptionVector | ReverseEndianess |
-						Cop0Enable | Cop1Enable | Cop2Enable | Cop3Enable
+			WriteMask = InterruptEnable | UserMode | PreviousInterruptDisable | PreviousUserMode | OldInterruptDisable |
+						OldUserMode | InterruptMask | IsolateCache | SwappedCachemode | PZ | CM | CacheParityError | TlbShutdown |
+						BootExceptionVector | ReverseEndianess | Cop0Enable | Cop1Enable | Cop2Enable | Cop3Enable
 		};
 	};
 
-	enum class ExceptionCause : uint32_t
-	{
-		Interrupt,
-		TlbModification,
-		TlbStore,
-		TlbLoad,
-		AddressErrorLoad, // data load or instruction fetch
-		AddressErrorStore, // data store
-		BusErrorInstructionFetch,
-		BusErrorDataLoadStore,
-		Syscall,
-		Breakpoint,
-		ReservedInstruction,
-		CoprocessorUnusable,
-		ArithmeticOverflow
-	};
-
-	static constexpr uint32_t CauseWriteBits = 0x00000300;
-
 	void Reset();
 
-	uint32_t Read( uint32_t index ) const noexcept { return m_registers[ index ]; }
+	uint32_t Read( uint32_t index ) const noexcept;
 
 	void Write( uint32_t index, uint32_t value ) noexcept;
 
 	bool GetIsolateCache() const noexcept
 	{
-		return m_registers[ Register::SystemStatus ] & SystemStatus::IsolateCache;
+		return m_systemStatus & SystemStatus::IsolateCache;
 	}
-
-	void SetException( uint32_t pc, ExceptionCause cause, uint32_t coprocessor = 0, bool branch = false ) noexcept;
 
 	uint32_t GetExceptionVector() const noexcept
 	{
-		return ( m_registers[ Register::SystemStatus ] & SystemStatus::BootExceptionVector ) ? 0xbfc00180 : 0x80000080;
+		return ( m_systemStatus & SystemStatus::BootExceptionVector ) ? 0xbfc00180 : 0x80000080;
 	}
+
+	bool CheckException() const noexcept
+	{
+		return ( m_systemStatus & m_exceptionCause & SystemStatus::InterruptMask ) != 0;
+	}
+
+	void SetInterrupts( uint32_t interrupts ) noexcept
+	{
+		dbExpects( ( interrupts & ~ExceptionCause::InterruptPendingMask ) == 0 );
+		m_exceptionCause |= interrupts;
+	}
+
+	void SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor = 0, bool branch = false ) noexcept;
 
 	void PrepareReturnFromException() noexcept;
 
 private:
-
-	static constexpr uint32_t WriteableRegistersMask = 0b0001101010101000;
-
-	std::array<uint32_t, 16> m_registers;
+	uint32_t m_breakpointOnExecute;
+	uint32_t m_breakpointOnDataAccess;
+	uint32_t m_jumpDestination;
+	uint32_t m_breakpointControl;
+	uint32_t m_badVirtualAddress;
+	uint32_t m_dataAccessBreakpointMask;
+	uint32_t m_executeBreakpointMask;
+	uint32_t m_systemStatus;
+	uint32_t m_exceptionCause;
+	uint32_t m_trapReturnAddress;
+	uint32_t m_processorId;
 };
 
 }

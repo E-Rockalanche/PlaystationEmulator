@@ -72,7 +72,6 @@ void Renderer::SetOrigin( int16_t x, int16_t y )
 {
 	std::cout << "origin: " << x << ", " << y << std::endl;
 	glUniform2f( m_originLoc, x, y );
-	m_drawFrame = true;
 }
 
 void Renderer::SetDisplaySize( uint16_t w, uint16_t h )

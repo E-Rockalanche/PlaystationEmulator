@@ -1,6 +1,7 @@
 #include "Instruction.h"
 
 #include <array>
+#include <cstdio>
 
 namespace PSX
 {
@@ -123,5 +124,32 @@ std::pair<const char*, Operands> GetInstructionDisplay( Instruction instruction 
 }
 
 #undef DEF_OP
+
+void PrintDisassembly( Instruction instr )
+{
+	auto[ name, args ] = GetInstructionDisplay( instr );
+	switch ( args )
+	{
+		case Operands::None:		std::printf( "%s", name );																									break;
+		case Operands::RsRtRd:		std::printf( "%s\trs:%u\trt:%u\trd:%u", name, instr.rs(), instr.rt(), instr.rd() );											break;
+		case Operands::RsRtImm:		std::printf( "%s\trs:%u\trt:%u\timm:%i", name, instr.rs(), instr.rt(), static_cast<int32_t>( instr.immediateSigned() ) );	break;
+		case Operands::RsRtOff:		std::printf( "%s\trs:%u\trt:%u\toff:%i", name, instr.rs(), instr.rt(), static_cast<int32_t>( instr.offset() ) );			break;
+		case Operands::RsOff:		std::printf( "%s\trs:%u\toff:%i", name, instr.rs(), static_cast<int32_t>( instr.offset() ) );								break;
+		case Operands::Code:		std::printf( "%s\tcode:%u", name, instr.code() );																			break;
+		case Operands::RtRd:		std::printf( "%s\trt:%u\trd:%u", name, instr.rt(), instr.rd() );															break;
+		case Operands::RsRt:		std::printf( "%s\trs:%u\trt:%u", name, instr.rs(), instr.rt() );															break;
+		case Operands::Target:		std::printf( "%s\ttarget:%X", name, instr.target() );																		break;
+		case Operands::RsRd:		std::printf( "%s\trs:%u\trd:%u", name, instr.rs(), instr.rd() );															break;
+		case Operands::Rs:			std::printf( "%s\trs:%u", name, instr.rs() );																				break;
+		case Operands::BaseRtOff:	std::printf( "%s\tbase:%u\trt:%u\toff:%i", name, instr.base(), instr.rt(), static_cast<int32_t>( instr.offset() ) );		break;
+		case Operands::RtImm:		std::printf( "%s\trt:%u\timm:%i", name, instr.rt(), static_cast<int32_t>( instr.immediateSigned() ) );						break;
+		case Operands::Rd:			std::printf( "%s\trd:%u", name, instr.rd() );																				break;
+		case Operands::RtRdSa:		std::printf( "%s\trs:%u\trd:%u\tsa:%u", name, instr.rt(), instr.rd(), instr.shamt() );										break;
+		case Operands::ZCofun:		std::printf( "%s\tz:%u\tcofun:%u", name, instr.z(), instr.cofun() );														break;
+		case Operands::ZRtRd:		std::printf( "%s\tz:%u\trt:%u\trd:%u", name, instr.z(), instr.rt(), instr.rd() );											break;
+		case Operands::ZBaseRtOff:	std::printf( "%s\tz:%u\tbase:%u\trt:%u\toff:%u", name, instr.z(), instr.base(), instr.rt(), instr.offset() );				break;
+		default:					std::printf( "ILLEGAL" );																									break;
+	}
+}
 
 }

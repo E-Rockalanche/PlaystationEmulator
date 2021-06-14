@@ -9,6 +9,8 @@ void MemoryMap::Reset()
 	m_scratchpad.Fill( char( -1 ) );
 	m_memoryControl.Reset();
 	m_dma.Reset();
+	m_timers.Reset();
+	m_cdRomDrive.Reset();
 	m_gpu.Reset();
 }
 

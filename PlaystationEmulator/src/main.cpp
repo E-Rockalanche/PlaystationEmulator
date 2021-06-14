@@ -113,7 +113,7 @@ int main( int, char** )
 	auto bios = std::make_unique<PSX::Bios>();
 	if ( !PSX::LoadBios( "bios.bin", *bios ) )
 	{
-		std::printf( "Could not load BIOS" );
+		std::cout << "could not find BIOS" << std::endl;
 		return 1;
 	}
 
@@ -123,15 +123,21 @@ int main( int, char** )
 	auto scratchpad = std::make_unique<PSX::Scratchpad>();
 	scratchpad->Fill( char( -1 ) );
 
-	auto memControl = std::make_unique<PSX::MemoryControl>();
+	PSX::MemoryControl memControl;
 
-	auto gpu = std::make_unique<PSX::Gpu>( renderer );
+	PSX::InterruptControl interruptControl;
 
-	auto dmaRegisters = std::make_unique<PSX::Dma>( *ram, *gpu );
+	PSX::Timers timers{ interruptControl };
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, *memControl, *dmaRegisters, *gpu, *bios };
+	PSX::Gpu gpu{ timers, renderer };
 
-	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap );
+	PSX::Dma dma{ *ram, gpu };
+
+	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>();
+
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
+
+	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad );
 
 	cpu->Reset();
 
@@ -149,10 +155,7 @@ int main( int, char** )
 			}
 		}
 
-		while ( !renderer.DrawFrame() )
-		{
-			cpu->Tick();
-		}
+		cpu->RunFrame();
 
 		renderer.DrawBatch();
 

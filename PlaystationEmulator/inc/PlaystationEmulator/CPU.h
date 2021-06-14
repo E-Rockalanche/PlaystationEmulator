@@ -10,18 +10,17 @@
 #include <cstdint>
 #include <optional>
 
-#define LOG_INSTRUCTIONS false
-
 namespace PSX
 {
 
 class MipsR3000Cpu
 {
 public:
-
-	static constexpr size_t BiosSize = 512 * 1024;
-
-	MipsR3000Cpu( MemoryMap& memoryMap );
+	MipsR3000Cpu( MemoryMap& memoryMap, Scratchpad& scratchpad, Timers& timers )
+		: m_memoryMap{ memoryMap }
+		, m_scratchpad{ scratchpad }
+		, m_timers{ timers }
+	{}
 
 	void Reset();
 
@@ -96,6 +95,47 @@ private:
 		DelayedLoad m_delayedLoad; // delayed load which will update register after next instruction
 	};
 
+	class InstructionCache
+	{
+	public:
+		void Reset()
+		{
+			for ( auto& flags : m_flags )
+				flags.valid = 0;
+		}
+
+		// return true if instruction at address is cached
+		// simulates pre-fetching of next words from RAM by updating cache flags
+		bool CheckCache( uint32_t address ) noexcept
+		{
+			dbExpects( address % 4 == 0 ); // instructions must be word-aligned
+
+			const uint32_t index = ( address >> 2 ) & 0x3u;
+			const uint32_t line = ( address >> 4 ) & 0xffu;
+			const uint32_t tag = ( address >> 12 );
+
+			Flags& flags = m_flags[ line ];
+
+			const bool inCache = ( flags.tag == tag ) && ( flags.valid & ( 1u << index ) );
+
+			// pre-fetch next instructions (CPU probably doesn't do this if address was cached)
+			flags.tag = tag;
+			flags.valid = ( 0x3u << index ) & 0x3u;
+
+			return inCache;
+		}
+
+	private:
+		struct Flags
+		{
+			uint32_t tag : 20;
+			uint32_t valid : 4;
+		};
+		std::array<Flags, 256> m_flags;
+	};
+
+	void ExecuteInstruction( Instruction instr ) noexcept;
+
 	void AddTrap( uint32_t x, uint32_t y, uint32_t destRegister ) noexcept;
 
 	void SubtractTrap( uint32_t x, uint32_t y, uint32_t destRegister ) noexcept;
@@ -104,75 +144,23 @@ private:
 
 	void JumpImp( uint32_t target ) noexcept;
 
-	void CheckProgramCounterAlignment() noexcept
-	{
-		if ( m_nextPC % 4 != 0 )
-			RaiseException( Cop0::ExceptionCause::AddressErrorLoad );
-	}
+	void CheckProgramCounterAlignment() noexcept;
 
-	void RaiseException( Cop0::ExceptionCause cause, uint32_t coprocessor = 0, bool branch = false ) noexcept;
+	void RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor = 0, bool branch = false ) noexcept;
 
-	uint32_t GetVAddr( Instruction instr ) const noexcept
-	{
-		return m_registers[ instr.base() ] + instr.immediateSigned();
-	}
+	uint32_t GetVAddr( Instruction instr ) const noexcept;
 
 	template <typename T>
-	T LoadImp( uint32_t address ) const noexcept
-	{
-		dbExpects( address % sizeof( T ) == 0 );
-		if ( !m_cop0.GetIsolateCache() )
-		{
-			return m_memoryMap.Read<T>( address );
-		}
-		else
-		{
-			dbLog( "read from cache" );
-			return 0;
-		}
-	}
+	T LoadImp( uint32_t address ) const noexcept;
 
 	template <typename T>
-	void LoadImp( Instruction instr ) noexcept
-	{
-		const uint32_t addr = GetVAddr( instr );
-		if ( addr % sizeof( T ) == 0 )
-		{
-			using ExtendedType = std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>;
-			const auto value = static_cast<uint32_t>( static_cast<ExtendedType>( LoadImp<T>( addr ) ) );
-			m_registers.Load( instr.rt(), value );
-		}
-		else
-		{
-			RaiseException( Cop0::ExceptionCause::AddressErrorLoad );
-		}
-	}
+	void LoadImp( Instruction instr ) noexcept;
 
 	template <typename T>
-	void StoreImp( uint32_t address, T value ) noexcept
-	{
-		if ( address % sizeof( T ) == 0 )
-		{
-			if ( !m_cop0.GetIsolateCache() )
-			{
-				m_memoryMap.Write<T>( address, value );
-			}
-			else
-			{
-				dbLog( "write to cache" );
-			}
-		}
-		else
-		{
-			RaiseException( Cop0::ExceptionCause::AddressErrorStore );
-		}
-	}
+	void StoreImp( uint32_t address, T value ) noexcept;
 
 	template <typename T>
-	void StoreImp( Instruction instr ) noexcept
-	{
-		StoreImp<T>( GetVAddr( instr ), static_cast<T>( m_registers[ instr.rt() ] ) );
-	}
+	void StoreImp( Instruction instr ) noexcept;
 
 private: // instructions
 
@@ -388,6 +376,8 @@ private:
 
 private:
 	MemoryMap& m_memoryMap;
+	Scratchpad& m_scratchpad;
+	Timers& m_timers;
 
 	uint32_t m_currentPC; // pc of instruction being executed
 	uint32_t m_pc; // pc of instruction being fetched
@@ -403,8 +393,75 @@ private:
 
 	Cop0 m_cop0;
 
-	std::array<InstructionFunction, 64> m_opcodes{};
-	std::array<InstructionFunction, 64> m_specialOpcodes{};
+	InstructionCache m_instructionCache;
 };
+
+inline void MipsR3000Cpu::CheckProgramCounterAlignment() noexcept
+{
+	if ( m_nextPC % 4 != 0 )
+		RaiseException( Cop0::ExceptionCode::AddressErrorLoad );
+}
+
+inline uint32_t MipsR3000Cpu::GetVAddr( Instruction instr ) const noexcept
+{
+	return m_registers[ instr.base() ] + instr.immediateSigned();
+}
+
+template <typename T>
+T MipsR3000Cpu::LoadImp( uint32_t address ) const noexcept
+{
+	dbExpects( address % sizeof( T ) == 0 );
+	if ( !m_cop0.GetIsolateCache() )
+	{
+		return m_memoryMap.Read<T>( address );
+	}
+	else
+	{
+		dbBreakMessage( "read cache [%X]", address );
+		return 0;
+	}
+}
+
+template <typename T>
+void MipsR3000Cpu::LoadImp( Instruction instr ) noexcept
+{
+	const uint32_t addr = GetVAddr( instr );
+	if ( addr % sizeof( T ) == 0 )
+	{
+		using ExtendedType = std::conditional_t<std::is_signed_v<T>, int32_t, uint32_t>;
+		const auto value = static_cast<uint32_t>( static_cast<ExtendedType>( LoadImp<T>( addr ) ) );
+		m_registers.Load( instr.rt(), value );
+	}
+	else
+	{
+		RaiseException( Cop0::ExceptionCode::AddressErrorLoad );
+	}
+}
+
+template <typename T>
+void MipsR3000Cpu::StoreImp( uint32_t address, T value ) noexcept
+{
+	if ( address % sizeof( T ) == 0 )
+	{
+		if ( !m_cop0.GetIsolateCache() )
+		{
+			m_memoryMap.Write<T>( address, value );
+		}
+		else
+		{
+			dbLog( "write cache [%X <= %X]", address, value );
+		}
+	}
+	else
+	{
+		RaiseException( Cop0::ExceptionCode::AddressErrorStore );
+	}
+}
+
+template <typename T>
+void MipsR3000Cpu::StoreImp( Instruction instr ) noexcept
+{
+	StoreImp<T>( GetVAddr( instr ), static_cast<T>( m_registers[ instr.rt() ] ) );
+}
 
 }

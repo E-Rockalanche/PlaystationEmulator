@@ -1,10 +1,13 @@
 #pragma once
 
 #include "BIOS.h"
+#include "CDRomDrive.h"
+#include "InterruptControl.h"
 #include "DMA.h"
 #include "GPU.h"
 #include "MemoryControl.h"
 #include "RAM.h"
+#include "Timers.h"
 
 #include "assert.h"
 
@@ -30,11 +33,23 @@ struct Range
 class MemoryMap
 {
 public:
-	MemoryMap( Ram& ram, Scratchpad& scratchpad, MemoryControl& memControl, Dma& dma, Gpu& gpu, Bios& bios )
+	MemoryMap(
+		Ram& ram,
+		Scratchpad& scratchpad,
+		MemoryControl& memControl,
+		InterruptControl& interrupts,
+		Dma& dma,
+		Timers& timers,
+		CDRomDrive& cdRomDrive,
+		Gpu& gpu,
+		Bios& bios )
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
 		, m_memoryControl{ memControl }
+		, m_interruptControl{ interrupts }
 		, m_dma{ dma }
+		, m_timers{ timers }
+		, m_cdRomDrive{ cdRomDrive }
 		, m_gpu{ gpu }
 		, m_bios{ bios }
 	{}
@@ -56,7 +71,7 @@ private:
 	static constexpr Range InterruptControlRange{ 0x1f801070, 8 };
 	static constexpr Range DmaChannelsRange{ 0x1f801080, 128 };
 	static constexpr Range TimersRange{ 0x1f801100, 48 };
-	static constexpr Range CDRomRegisters{ 0x1f801800, 4 };
+	static constexpr Range CDRomRange{ 0x1f801800, 4 };
 	static constexpr Range GpuRange{ 0x1f801810, 8 };
 	static constexpr Range SpuRange{ 0x1f801c00, 1024 };
 	static constexpr Range ExpansionRange2{ 0x1f802000, 128 };
@@ -75,7 +90,7 @@ private:
 		InterruptControl,
 		DmaChannels,
 		Timers,
-		CDRomRegisters,
+		CDRomDrive,
 		Gpu,
 		Spu,
 		Expansion2,
@@ -95,7 +110,7 @@ private:
 		InterruptControlRange,
 		DmaChannelsRange,
 		TimersRange,
-		CDRomRegisters,
+		CDRomRange,
 		GpuRange,
 		SpuRange,
 		ExpansionRange2,
@@ -130,7 +145,10 @@ private:
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
 	MemoryControl& m_memoryControl;
+	InterruptControl& m_interruptControl;
 	Dma& m_dma;
+	Timers& m_timers;
+	CDRomDrive& m_cdRomDrive;
 	Gpu& m_gpu;
 	Bios& m_bios;
 };
@@ -162,19 +180,21 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 			return static_cast<T>( m_memoryControl.ReadRamSize() );
 
 		case Segment::InterruptControl:
-			dbLog( "read from interrupt control [%X]", address );
-			return 0; // TODO
+			return static_cast<T>( m_interruptControl.Read( offset / 4 ) );
 
 		case Segment::DmaChannels:
 			return static_cast<T>( m_dma.Read( offset / 4 ) );
 
 		case Segment::Timers:
-			dbLog( "read from timer [%X]", address );
-			return 0; // TODO
+			return static_cast<T>( m_timers.Read( offset ) );
 
-		case Segment::CDRomRegisters:
-			dbLog( "read from CDROM [%X]", address );
-			return 0; // TODO
+		case Segment::CDRomDrive:
+		{
+			if ( offset == 2 )
+				return m_cdRomDrive.ReadDataFifo<T>();
+			else
+				return m_cdRomDrive.Read( offset );
+		}
 
 		case Segment::Gpu:
 		{
@@ -243,20 +263,20 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			break;
 
 		case Segment::InterruptControl:
-			dbLog( "write to interrupt control [%X <- %X]", address, value );
-			break; // TODO
+			m_interruptControl.Write( offset / 4, value );
+			break;
 
 		case Segment::DmaChannels:
 			m_dma.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
 			break;
 
 		case Segment::Timers:
-			dbLog( "write to timer [%X <- %X]", address, value );
+			m_timers.Write( offset, value );
 			break; // TODO
 
-		case Segment::CDRomRegisters:
-			dbLog( "write to CDROM [%X <- %X]", address, value );
-			break; // TODO
+		case Segment::CDRomDrive:
+			m_cdRomDrive.Write( offset, static_cast<uint8_t>( value ) );
+			break;
 
 		case Segment::Gpu:
 		{

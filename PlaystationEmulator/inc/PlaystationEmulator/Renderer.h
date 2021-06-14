@@ -61,11 +61,6 @@ public:
 
 	void DrawBatch();
 
-	bool DrawFrame()
-	{
-		return std::exchange( m_drawFrame, false );
-	}
-
 private:
 	Render::VertexArrayObject m_vao;
 	Render::ArrayBuffer m_vbo;
@@ -76,8 +71,6 @@ private:
 	Render::UniformLocation m_alphaLoc = -1;
 
 	std::vector<Vertex> m_vertices;
-
-	bool m_drawFrame = false;
 };
 
 }

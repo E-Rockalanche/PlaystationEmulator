@@ -44,7 +44,7 @@ struct Instruction
 	uint32_t cofun() const noexcept { return value & 0x001fffff; }
 };
 
-enum class Operands
+enum class Operands : uint8_t
 {
 	None,
 	RsRtRd,
@@ -66,7 +66,7 @@ enum class Operands
 	ZBaseRtOff
 };
 
-enum class Opcode : uint32_t
+enum class Opcode : uint8_t
 {
 	Special = 0b000000,
 
@@ -115,7 +115,7 @@ enum class Opcode : uint32_t
 	StoreWordFromCoprocessor3 = 0b111011,
 };
 
-enum class SpecialOpcode : uint32_t
+enum class SpecialOpcode : uint8_t
 {
 	Add = 0b100000,
 	AddUnsigned = 0b100001,
@@ -148,7 +148,7 @@ enum class SpecialOpcode : uint32_t
 };
 
 // RegImm functions in rt
-enum class RegImmOpcode : uint32_t
+enum class RegImmOpcode : uint8_t
 {
 	BranchGreaterEqualZero = 0b00001,
 	BranchGreaterEqualZeroAndLink = 0b10001,
@@ -157,7 +157,7 @@ enum class RegImmOpcode : uint32_t
 };
 
 // coprocessor subop in rs
-enum class CoprocessorOpcode : uint32_t
+enum class CoprocessorOpcode : uint8_t
 {
 	MoveControlFromCoprocessor = 0b00010,
 	// CoprocessorOperation = 0b1xxxx,
@@ -166,7 +166,7 @@ enum class CoprocessorOpcode : uint32_t
 	MoveToCoprocessor = 0b00100,
 };
 
-enum class Cop0Opcode
+enum class Cop0Opcode : uint8_t
 {
 	RestoreFromException = 0b010000,
 	TlbProbe = 0b001000,
@@ -176,5 +176,7 @@ enum class Cop0Opcode
 };
 
 std::pair<const char*, Operands> GetInstructionDisplay( Instruction instruction ) noexcept;
+
+void PrintDisassembly( Instruction instruction );
 
 }

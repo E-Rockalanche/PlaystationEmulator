@@ -1,7 +1,9 @@
 #pragma once
 
+#include "FifoBuffer.h"
+#include "Timers.h"
+
 #include "assert.h"
-#include "Memory.h"
 
 #include <cstdint>
 
@@ -13,27 +15,33 @@ class Renderer;
 class Gpu
 {
 public:
+	static constexpr uint32_t CpuClockSpeed = 44100 * 0x300; // Hz
+	static constexpr uint32_t VideoClockSpeed = 44100 * 0x300 * 11 / 7; // Hz
+	static constexpr uint32_t RefreshRatePAL = 50;
+	static constexpr uint32_t RefreshRateNTSC = 60;
+	static constexpr uint32_t ScanlinesPAL = 314;
+	static constexpr uint32_t ScanlinesNTSC = 263;
 
 	union Status
 	{
 		struct
 		{
-			uint32_t texturePageBaseX : 4;
-			uint32_t texturePageBaseY : 1;
-			uint32_t semiTransparency : 2;
-			uint32_t texturePageColors : 2;
-			uint32_t dither : 1;
+			uint32_t texturePageBaseX : 4; // N*64
+			uint32_t texturePageBaseY : 1; // N*256
+			uint32_t semiTransparency : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
+			uint32_t texturePageColors : 2; // 0=4bit, 1=8bit, 2=15bit
+			uint32_t dither : 1; // 0=Off/strip LSBs, 1=Dither Enabled
 			uint32_t drawToDisplayArea : 1;
 			uint32_t setMaskOnDraw : 1;
 			uint32_t checkMaskOnDraw : 1;
 			uint32_t interlaceField : 1;
 			uint32_t reverseFlag : 1;
 			uint32_t textureDisable : 1;
-			uint32_t horizontalResolution2 : 1;
-			uint32_t horizontalResolution1 : 2;
-			uint32_t verticalResolution : 1;
-			uint32_t videoMode : 1;
-			uint32_t displayAreaColorDepth : 1;
+			uint32_t horizontalResolution2 : 1; // 0=256/320/512/640, 1=368
+			uint32_t horizontalResolution1 : 2; // 0=256, 1=320, 2=512, 3=640
+			uint32_t verticalResolution : 1; // 0=240, 1=480, when VerticalInterlace=1
+			uint32_t videoMode : 1; // 0=NTSC/60Hz, 1=PAL/50Hz
+			uint32_t displayAreaColorDepth : 1; // 0=15bit, 1=24bit
 			uint32_t verticalInterlace : 1;
 			uint32_t displayDisable : 1;
 			uint32_t interruptRequest : 1;
@@ -41,8 +49,8 @@ public:
 			uint32_t readyToReceiveCommand : 1;
 			uint32_t readyToSendVRamToCpu : 1;
 			uint32_t readyToReceiveDmaBlock : 1;
-			uint32_t dmaDirection : 2;
-			uint32_t drawingEvenOdd : 1;
+			uint32_t dmaDirection : 2; // 0=Off, 1=?, 2=CPUtoGP0, 3=GPUREADtoCPU
+			uint32_t drawingEvenOdd : 1; // 0=Even or Vblank, 1=Odd
 		};
 
 		uint32_t value;
@@ -85,19 +93,16 @@ public:
 		P640 = 6
 	};
 
+	enum class VideoMode
+	{
+		NTSC,
+		PAL
+	};
+
 	enum class VerticalResolution : uint8_t
 	{
 		P240,
 		P480
-	};
-
-	struct VideoMode
-	{
-		enum : uint8_t
-		{
-			NTSC, // 60Hz
-			PAL // 50Hz
-		};
 	};
 
 	enum class DisplayAreaColorDepth : uint8_t
@@ -117,36 +122,40 @@ public:
 		};
 	};
 
-	Gpu( Renderer& renderer ) : m_renderer{ renderer } {}
+	Gpu( Timers& timers, Renderer& renderer ) : m_timers{ timers }, m_renderer { renderer } {}
 
 	void Reset();
 
-	void WriteGP0( uint32_t value ) noexcept
-	{
-		std::invoke( m_gp0Mode, this, value );
-	}
+	void WriteGP0( uint32_t value ) noexcept { std::invoke( m_gp0Mode, this, value ); }
 
 	void WriteGP1( uint32_t value ) noexcept;
 
-	uint32_t GpuRead() const noexcept
-	{
-		return m_gpuRead;
-	}
+	uint32_t GpuRead() const noexcept { return m_gpuRead; }
 
 	uint32_t GpuStatus() const noexcept
 	{
-		return m_status.value
+		return m_status.value;
 
 			// return vertical resolution as 240 so that the BIOS doesn't infinite loop waiting for even/odd line flag to change
 			// TODO: revert when status bit 31 is implemented
-			& ~( 1u << 19 );
+			// & ~( 1u << 19 );
 	}
 
-	uint32_t GetHorizontalResolution() const noexcept;
+	bool IsInterlaced() const noexcept { return m_status.verticalResolution && m_status.verticalInterlace; }
 
-	uint32_t GetVerticalResolution() const noexcept
+	uint32_t GetHorizontalResolution() const noexcept;
+	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
+
+	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
+	uint32_t GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
+
+	static uint32_t ConvertCpuToVideoCycles( uint32_t cycles ) noexcept
 	{
-		return ( m_status.verticalResolution && m_status.verticalInterlace ) ? 480 : 240;
+		return ( cycles * VideoClockSpeed ) / CpuClockSpeed;
+	}
+	static uint32_t ConvertVideoToCpuCycles( uint32_t cycles ) noexcept
+	{
+		return ( cycles * CpuClockSpeed ) / VideoClockSpeed;
 	}
 
 private:
@@ -154,35 +163,11 @@ private:
 
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
-	struct CommandBuffer
-	{
-	public:
-		static constexpr uint32_t MaxSize = 16;
-
-		void Push( uint32_t value ) noexcept
-		{
-			dbExpects( m_size < MaxSize );
-			m_buffer[ m_size++ ] = value;
-		}
-
-		const uint32_t& operator[]( size_t index ) const noexcept
-		{
-			dbExpects( index < m_size );
-			return m_buffer[ index ];
-		}
-
-		size_t Size() const noexcept { return m_size; }
-
-		void Clear() { m_size = 0; }
-
-	private:
-		uint32_t m_buffer[ MaxSize ];
-		uint32_t m_size = 0;
-	};
+	void UpdateTimerState() const;
 
 	void ClearCommandBuffer()
 	{
-		m_commandBuffer.Clear();
+		m_commandBuffer.Reset();
 		m_remainingWords = 0;
 		m_commandFunction = nullptr;
 
@@ -191,7 +176,7 @@ private:
 
 	void InitCommand( uint32_t command, uint32_t remainingWords, CommandFunction function )
 	{
-		dbExpects( m_commandBuffer.Size() == 0 );
+		dbExpects( m_commandBuffer.Empty() );
 		m_commandBuffer.Push( command );
 		m_remainingWords = remainingWords;
 		m_commandFunction = function;
@@ -223,9 +208,10 @@ private:
 	}
 
 private:
+	Timers& m_timers;
 	Renderer& m_renderer;
 
-	CommandBuffer m_commandBuffer;
+	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingWords;
 	CommandFunction m_commandFunction;
 
@@ -266,7 +252,12 @@ private:
 	uint16_t m_verDisplayRange1;
 	uint16_t m_verDisplayRange2;
 
-	Memory<1024 * 1024> m_vram;
+	// timing
+	uint32_t m_currentScanline;
+	uint32_t m_currentDot;
+	bool m_hblank;
+	bool m_vblank;
+	bool m_oddFrame;
 };
 
 }
