@@ -10,10 +10,12 @@
 namespace PSX
 {
 
+class InterruptControl;
+
 class CDRomDrive
 {
 public:
-	CDRomDrive()
+	CDRomDrive( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl }
 	{
 		Reset();
 	}
@@ -74,6 +76,8 @@ private:
 	void SecretLock() noexcept;
 
 private:
+	InterruptControl& m_interruptControl;
+
 	uint8_t m_index;
 	uint8_t m_interruptEnable;
 	uint8_t m_interruptFlags;

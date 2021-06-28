@@ -133,7 +133,7 @@ int main( int, char** )
 
 	PSX::Dma dma{ *ram, gpu };
 
-	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>();
+	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl );
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
 

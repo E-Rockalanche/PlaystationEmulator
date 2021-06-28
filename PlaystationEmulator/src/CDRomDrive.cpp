@@ -1,5 +1,7 @@
 #include "CDRomDrive.h"
 
+#include "InterruptControl.h"
+
 namespace PSX
 {
 
@@ -191,11 +193,32 @@ void CDRomDrive::Reset()
 	m_index = 0;
 	m_interruptEnable = 0;
 	m_interruptFlags = 0;
+	m_queuedInterrupt = 0;
 	m_status = 0;
+
+	m_file = 0;
+	m_channel = 0;
+	m_mode = 0;
+
+	m_track = 0;
+	m_trackIndex = 0;
+	m_trackMinutes = 0;
+	m_trackSector = 0;
+	m_diskMinutes = 0;
+	m_diskSeconds = 0;
+	m_diskSector = 0;
+
+	m_firstTrack = 0;
+	m_lastTrack = 0;
+
 	m_wantCommand = false;
 	m_wantData = false;
 	m_muteADPCM = true;
 	m_motorOn = false;
+
+	m_parameterBuffer.Reset();
+	m_responseBuffer.Reset();
+	m_dataBuffer.Reset();
 }
 
 uint8_t CDRomDrive::Read( uint32_t index ) noexcept
@@ -317,8 +340,18 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 					dbLog( "CDRomDrive::Write() -- interrupt flag [%X]", value );
 					m_interruptFlags = ( m_interruptFlags & ~value ) | InterruptFlag::AlwaysOne;
 
+					m_responseBuffer.Reset();
+
 					if ( value & InterruptFlag::ResetParameterFifo )
-						m_parameterBuffer.Reset(); // TODO: does the buffer get reset anytime there is an ACK?
+						m_parameterBuffer.Reset();
+
+					// singal queued interrupt
+					if ( m_queuedInterrupt != InterruptResponse::None )
+					{
+						m_interruptFlags = m_queuedInterrupt | InterruptFlag::AlwaysOne;
+						m_interruptControl.SetInterrupt( Interrupt::CDRom );
+						m_queuedInterrupt = InterruptResponse::None;
+					}
 
 					// TODO: execute pending command
 					break;
@@ -407,6 +440,9 @@ void CDRomDrive::ExecuteCommand( uint8_t command ) noexcept
 	}
 
 	m_parameterBuffer.Reset();
+
+	if ( m_interruptFlags != InterruptResponse::None )
+		m_interruptControl.SetInterrupt( Interrupt::CDRom );
 }
 
 #undef COMMAND_CASE
