@@ -36,6 +36,11 @@ public:
 	};
 
 public:
+	MemoryControl()
+	{
+		Reset();
+	}
+
 	void Reset()
 	{
 		m_registers.fill( 0 );

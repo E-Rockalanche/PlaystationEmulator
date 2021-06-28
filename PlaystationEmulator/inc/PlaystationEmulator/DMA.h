@@ -171,7 +171,10 @@ public:
 	};
 
 public:
-	Dma( Ram& ram, Gpu& gpu ) : m_ram{ ram }, m_gpu{ gpu } {}
+	Dma( Ram& ram, Gpu& gpu ) : m_ram{ ram }, m_gpu{ gpu }
+	{
+		Reset();
+	}
 
 	void Reset();
 

@@ -9,12 +9,12 @@ uint32_t Timer::Read( uint32_t index ) noexcept
 	switch ( index )
 	{
 		case 0:
-			dbLog( "Timer::Read -- counter" );
+			dbLog( "Timer::Read() -- counter" );
 			return m_counter;
 
 		case 1:
 		{
-			dbLog( "Timer::Read -- mode" );
+			dbLog( "Timer::Read() -- mode" );
 			const uint32_t value = m_mode.value;
 			m_mode.reachedTarget = false;
 			m_mode.reachedMax = false;
@@ -22,7 +22,7 @@ uint32_t Timer::Read( uint32_t index ) noexcept
 		}
 
 		case 2:
-			dbLog( "Timer::Read -- target" );
+			dbLog( "Timer::Read() -- target" );
 			return m_target;
 
 		default:
@@ -37,12 +37,13 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 	switch ( index )
 	{
 		case 0:
-			dbLog( "Timer::Write -- counter value [%X]", value );
+			dbLog( "Timer::Write() -- counter value [%X]", value );
 			m_counter = value;
 			break;
 
 		case 1:
-			dbLog( "Timer::Write -- mode [%X]", value );
+		{
+			dbLog( "Timer::Write() -- mode [%X]", value );
 			static constexpr uint32_t WriteMask = 0x03ff;
 			stdx::masked_set<uint32_t>( m_mode.value, WriteMask, value );
 
@@ -52,10 +53,15 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 
 			// reset counter on write
 			m_counter = 0;
+
+			if ( !m_mode.syncEnable )
+				m_paused = false;
+
 			break;
+		}
 
 		case 2:
-			dbLog( "Timer::Write -- target [%X]", value );
+			dbLog( "Timer::Write() -- target [%X]", value );
 			m_target = value;
 			break;
 	}
@@ -63,6 +69,8 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 
 void Timer::UpdateBlank( bool blanked ) noexcept
 {
+	dbExpects( m_mode.syncEnable );
+
 	if ( m_inBlank == blanked )
 		return;
 
@@ -97,11 +105,14 @@ uint32_t Timer::GetTicksUntilIrq() const noexcept
 {
 	dbExpects( m_counter <= 0xffff );
 
-	if ( m_mode.irqOnTarget && m_counter < m_target )
-		return m_target - m_counter;
+	if ( !m_paused )
+	{
+		if ( m_mode.irqOnTarget && m_counter < m_target )
+			return m_target - m_counter;
 
-	if ( m_mode.irqOnMax )
-		return 0xffffu - m_counter;
+		if ( m_mode.irqOnMax )
+			return 0xffffu - m_counter;
+	}
 
 	return std::numeric_limits<uint32_t>::max();
 }
@@ -121,8 +132,11 @@ bool Timer::Update( uint32_t ticks ) noexcept
 		m_mode.reachedTarget = true;
 		irq |= m_mode.irqOnTarget;
 
-		if ( m_mode.resetCounter && m_target > 0 )
-			m_counter %= m_target; // TODO: counter actually resets when it exceeds target
+		if ( m_mode.resetCounter )
+		{
+			// TODO: counter actually resets when it exceeds target
+			m_counter = ( m_target > 0 ) ? ( m_counter % m_target ) : 0;
+		}
 	}
 
 	if ( m_counter >= 0xffff )
@@ -163,13 +177,35 @@ bool Timer::TrySignalIrq() noexcept
 	return false;
 }
 
+void Timer::PauseAtTarget() noexcept
+{
+	if ( m_mode.irqOnTarget )
+		m_counter = m_target;
+	else if ( m_mode.irqOnMax )
+		m_counter = 0xffff;
+
+	m_paused = true;
+}
+
+void Timers::Reset()
+{
+	for ( auto& timer : m_timers )
+		timer.Reset();
+
+	m_cyclesDiv8Remainder = 0;
+	m_cycles = 0;
+	m_targetCycles = 0;
+}
+
 uint32_t Timers::Read( uint32_t offset ) noexcept
 {
+	dbExpects( m_cycles == 0 ); // timers should have been updated before reading state
+
 	const uint32_t timerIndex = offset >> 4;
-	dbExpects( timerIndex < 3 );
+	dbAssert( timerIndex < 3 );
 
 	const uint32_t registerIndex = ( offset & 0xf ) / 4;
-	dbExpects( registerIndex < 3 );
+	dbAssert( registerIndex < 3 );
 
 	if ( registerIndex < 3 )
 	{
@@ -177,15 +213,17 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 	}
 	else
 	{
-		dbLogError( "Timers::Read -- read from 4th register" );
+		dbLogError( "Timers::Read() -- read from 4th register" );
 		return 0;
 	}
 }
 
 void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 {
+	dbExpects( m_cycles == 0 ); // timers should have been updated before writing new state
+
 	const uint32_t timerIndex = offset >> 4;
-	dbExpects( timerIndex < 3 );
+	dbAssert( timerIndex < 3 );
 
 	const uint32_t registerIndex = ( offset & 0xf ) / 4;
 
@@ -195,91 +233,92 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	}
 	else
 	{
-		dbLogError( "Timers::Write -- write to 4th register" );
+		dbLogError( "Timers::Write() -- write to 4th register" );
 	}
 }
 
-
-
-void Timers::UpdateCyclesUntilNextEvent() noexcept
+bool Timers::AddCycles( uint32_t cpuTicks ) noexcept
 {
-	m_cyclesUntilNextEvent = std::numeric_limits<uint32_t>::max();
-
-	{
-		auto& timer0 = m_timers[ 0 ];
-		if ( timer0. )
-	}
+	m_cycles += cpuTicks;
+	return m_cycles >= m_targetCycles;
 }
 
-void Timers::SetGpuState( float refreshRate, uint32_t scanlines, uint32_t horizontalResolution ) noexcept
+void Timers::UpdateNow() noexcept
 {
-	Update();
+	// dbLog( "Timers::UpdateNow()" );
 
-	m_refreshRate = refreshRate;
-	m_scanlines = scanlines;
-	m_horizontalResolution = horizontalResolution;
-}
+	auto& dotTimer = m_timers[ 0 ];
+	if ( dotTimer.GetClockSource() % 2 == 0 )
+		if ( dotTimer.Update( m_cycles ) )
+			m_interruptControl.SetInterrupt( Interrupt::Timer0 );
 
-void Timers::Update() noexcept
-{
-	const auto dots = m_cycles * GetDotsPerCycle();
-	m_currentDot += dots;
-	m_hblank = m_currentDot >= m_horizontalResolution;
+	auto& hblankTimer = m_timers[ 1 ];
+	if ( hblankTimer.GetClockSource() % 2 == 0 )
+		if ( hblankTimer.Update( m_cycles ) )
+			m_interruptControl.SetInterrupt( Interrupt::Timer1 );
 
-	const auto dotsPerScanline = GetDotsPerScanline();
-	if ( m_currentDot >= dotsPerScanline )
+	auto& cpuTimer = m_timers[ 2 ];
+	const bool useDiv8 = cpuTimer.GetClockSource() & 0x2;
+	uint32_t ticks;
+	if ( useDiv8 )
 	{
-		m_currentDot -= dotsPerScanline;
-
-		m_currentScanline = ( m_currentScanline + 1 ) % m_scanlines;
-
-		m_displayFrame = ( m_currentScanline == 240 );
+		ticks = ( m_cycles + m_cyclesDiv8Remainder ) / 8;
+		m_cyclesDiv8Remainder = ( m_cycles + m_cyclesDiv8Remainder ) % 8;
+	}
+	else
+	{
+		ticks = m_cycles;
 	}
 
-	m_vblank = m_currentScanline >= 240;
-
+	if ( cpuTimer.Update( ticks ) )
 	{
-		auto& timer0 = m_timers[ 0 ];
-		const bool useDotClock = timer0.GetClockSource() % 2;
-		const uint32_t ticks = useDotClock ? static_cast<uint32_t>( m_cycles * GetDotsPerCycle() ) : m_cycles;
-		const bool irq = timer0.Update( ticks );
-		if ( timer0.GetSyncEnable() )
-			timer0.UpdateBlank( m_hblank );
+		m_interruptControl.SetInterrupt( Interrupt::Timer2 );
 
-		// signal irq
-	}
-
-	{
-		auto& timer1 = m_timers[ 1 ];
-		const bool useHBlank = timer1.GetClockSource() % 2;
-		const uint32_t ticks = useHBlank ? static_cast<uint32_t>( m_hblank ) : m_cycles;
-		const bool irq = timer1.Update( ticks );
-		if ( timer1.GetSyncEnable() )
-			timer1.UpdateBlank( m_vblank );
-
-		// signal irq
-	}
-
-	{
-		auto& timer2 = m_timers[ 2 ];
-		const bool useDiv8 = timer2.GetClockSource() & 0x2;
-		uint32_t ticks;
-		if ( useDiv8 )
+		const auto syncMode = cpuTimer.GetSyncMode();
+		if ( syncMode == 0 || syncMode == 3 )
 		{
-			ticks = ( m_cycles + m_cyclesDiv8Remainder ) / 8;
-			m_cyclesDiv8Remainder = ( m_cycles + m_cyclesDiv8Remainder ) % 8;
+			// stop at current value with no restart
+			cpuTimer.PauseAtTarget();
 		}
 		else
 		{
-			ticks = m_cycles;
-		}
-		const bool irq = timer2.Update( ticks );
-		if ( timer2.GetSyncEnable() )
-		{
-			timer2.SetPaused( timer2.GetSyncMode() % 3 == 0 );
+			// switch to free run
+			cpuTimer.SetSyncEnable( false );
 		}
 	}
+
 	m_cycles = 0;
+	m_targetCycles = 0;
+}
+
+uint32_t Timers::GetCyclesUntilIrq() const noexcept
+{
+	uint32_t cycles = std::numeric_limits<uint32_t>::max();
+
+	auto& dotTimer = m_timers[ 0 ];
+	if ( dotTimer.GetClockSource() % 2 == 0 )
+	{
+		cycles = std::min( cycles, dotTimer.GetTicksUntilIrq() );
+	}
+
+	auto& hblankTimer = m_timers[ 0 ];
+	if ( hblankTimer.GetClockSource() % 2 == 0 )
+	{
+		cycles = std::min( cycles, hblankTimer.GetTicksUntilIrq() );
+	}
+
+	auto& cpuTimer = m_timers[ 2 ];
+	if ( cpuTimer.GetClockSource() & 0x2 )
+	{
+		cycles = std::min( cycles, cpuTimer.GetTicksUntilIrq() * 8 - m_cyclesDiv8Remainder );
+	}
+	else
+	{
+		cycles = std::min( cycles, cpuTimer.GetTicksUntilIrq() );
+	}
+
+	dbAssert( cycles > 0 );
+	return cycles;
 }
 
 }

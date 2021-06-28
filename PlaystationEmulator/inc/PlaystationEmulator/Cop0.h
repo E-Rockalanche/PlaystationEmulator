@@ -1,5 +1,7 @@
 #pragma once
 
+#include "InterruptControl.h"
+
 #include "assert.h"
 
 #include <array>
@@ -7,6 +9,8 @@
 
 namespace PSX
 {
+
+class InterruptControl;
 
 class Cop0
 {
@@ -86,6 +90,8 @@ public:
 		};
 	};
 
+	Cop0( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl } {}
+
 	void Reset();
 
 	uint32_t Read( uint32_t index ) const noexcept;
@@ -102,9 +108,14 @@ public:
 		return ( m_systemStatus & SystemStatus::BootExceptionVector ) ? 0xbfc00180 : 0x80000080;
 	}
 
+	uint32_t GetExceptionCause() const noexcept
+	{
+		return m_exceptionCause | m_interruptControl.PendingInterrupt() << 10;
+	}
+
 	bool CheckException() const noexcept
 	{
-		return ( m_systemStatus & m_exceptionCause & SystemStatus::InterruptMask ) != 0;
+		return ( m_systemStatus & GetExceptionCause() & SystemStatus::InterruptMask ) != 0;
 	}
 
 	void SetInterrupts( uint32_t interrupts ) noexcept
@@ -118,6 +129,8 @@ public:
 	void PrepareReturnFromException() noexcept;
 
 private:
+	InterruptControl& m_interruptControl;
+
 	uint32_t m_breakpointOnExecute;
 	uint32_t m_breakpointOnDataAccess;
 	uint32_t m_jumpDestination;
@@ -126,7 +139,7 @@ private:
 	uint32_t m_dataAccessBreakpointMask;
 	uint32_t m_executeBreakpointMask;
 	uint32_t m_systemStatus;
-	uint32_t m_exceptionCause;
+	uint32_t m_exceptionCause; // bit 10 tied to interrupt control
 	uint32_t m_trapReturnAddress;
 	uint32_t m_processorId;
 };

@@ -13,14 +13,20 @@
 namespace PSX
 {
 
+class InterruptControl;
+
 class MipsR3000Cpu
 {
 public:
-	MipsR3000Cpu( MemoryMap& memoryMap, Scratchpad& scratchpad, Timers& timers )
+	MipsR3000Cpu( MemoryMap& memoryMap, Scratchpad& scratchpad, Timers& timers, InterruptControl& interruptControl )
 		: m_memoryMap{ memoryMap }
 		, m_scratchpad{ scratchpad }
 		, m_timers{ timers }
-	{}
+		, m_interruptControl{ interruptControl }
+		, m_cop0{ interruptControl }
+	{
+		Reset();
+	}
 
 	void Reset();
 
@@ -44,7 +50,12 @@ private:
 		static constexpr uint32_t FramePointer = 30;
 		static constexpr uint32_t ReturnAddress = 31;
 
-		uint32_t operator[]( uint32_t index ) const noexcept { return m_input[ index ]; }
+		uint32_t operator[]( uint32_t index ) const noexcept;
+		/*
+		{
+			return m_input[ index ];
+		}
+		*/
 
 		// immediately updates register
 		void Set( uint32_t index, uint32_t value ) noexcept
@@ -378,6 +389,9 @@ private:
 	MemoryMap& m_memoryMap;
 	Scratchpad& m_scratchpad;
 	Timers& m_timers;
+	InterruptControl& m_interruptControl;
+
+	Cop0 m_cop0;
 
 	uint32_t m_currentPC; // pc of instruction being executed
 	uint32_t m_pc; // pc of instruction being fetched
@@ -390,8 +404,6 @@ private:
 
 	uint32_t m_hi;
 	uint32_t m_lo;
-
-	Cop0 m_cop0;
 
 	InstructionCache m_instructionCache;
 };

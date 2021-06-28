@@ -28,6 +28,11 @@ public:
 
 	static constexpr uint32_t WriteMask = 0xffff07ffu;
 
+	InterruptControl()
+	{
+		Reset();
+	}
+
 	void Reset()
 	{
 		m_status = 0;
@@ -36,7 +41,13 @@ public:
 
 	void SetInterrupt( Interrupt interrupt ) noexcept
 	{
+		dbLog( "InterruptControl::SetInterrupt() -- [%X]", static_cast<uint32_t>( interrupt ) );
 		m_status |= static_cast<uint32_t>( interrupt );
+	}
+
+	bool PendingInterrupt() const noexcept
+	{
+		return ( m_status & m_mask ) != 0;
 	}
 
 	uint32_t Read( uint32_t index ) const noexcept
@@ -71,10 +82,6 @@ public:
 			case 1:
 				dbLog( "InterruptControl::Write -- interrupt mask [%X]", value );
 				m_mask = value & WriteMask;
-				break;
-
-			default:
-				dbBreak();
 				break;
 		}
 	}

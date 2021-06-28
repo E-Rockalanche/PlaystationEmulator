@@ -129,7 +129,7 @@ int main( int, char** )
 
 	PSX::Timers timers{ interruptControl };
 
-	PSX::Gpu gpu{ timers, renderer };
+	PSX::Gpu gpu{ timers, interruptControl, renderer };
 
 	PSX::Dma dma{ *ram, gpu };
 
@@ -137,9 +137,7 @@ int main( int, char** )
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
 
-	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad );
-
-	cpu->Reset();
+	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad, timers, interruptControl );
 
 	bool quit = false;
 	while ( !quit )
@@ -155,7 +153,22 @@ int main( int, char** )
 			}
 		}
 
-		cpu->RunFrame();
+		while ( !gpu.GetDisplayFrame() )
+		{
+			// update target cycles
+			if ( timers.NeedsUpdate() )
+				timers.SetTargetCycles( std::min( timers.GetCyclesUntilIrq(), gpu.GetCpuCyclesUntilEvent() ) );
+
+			while ( !timers.NeedsUpdate() )
+				cpu->Tick();
+
+			// increment timers
+			if ( timers.GetCycles() > 0 )
+			{
+				gpu.UpdateTimers( timers.GetCycles() );
+				timers.UpdateNow();
+			}
+		}
 
 		renderer.DrawBatch();
 
@@ -165,7 +178,7 @@ int main( int, char** )
 
 		const uint32_t elapsed = SDL_GetTicks() - frameStart;
 
-		static constexpr uint32_t TargetMilliseconds = 1000 / 60;
+		const auto TargetMilliseconds = static_cast<uint32_t>( 1000.0f / gpu.GetRefreshRate() );
 		if ( elapsed < TargetMilliseconds )
 			SDL_Delay( TargetMilliseconds - elapsed );
 	}

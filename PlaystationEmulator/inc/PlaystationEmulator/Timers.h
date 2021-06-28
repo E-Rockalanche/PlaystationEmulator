@@ -11,8 +11,6 @@
 namespace PSX
 {
 
-constexpr float ClockSpeed = 44100 * 0x300; // Hz
-
 class Timer
 {
 public:
@@ -64,6 +62,7 @@ public:
 		m_target = 0;
 		m_irq = false;
 		m_paused = false;
+		m_inBlank = false;
 	}
 
 	void ResetCounter() noexcept
@@ -71,12 +70,14 @@ public:
 		m_counter = 0;
 	}
 
+	void SetSyncEnable( bool enable ) noexcept { m_mode.syncEnable = enable; }
 	bool GetSyncEnable() const noexcept { return m_mode.syncEnable; }
+
 	uint32_t GetSyncMode() const noexcept { return m_mode.syncMode; }
 	uint32_t GetClockSource() const noexcept { return m_mode.clockSource; }
 
-	// pause timer for certain sync modes
-	void SetPaused( bool pause ) noexcept { m_paused = pause; }
+	bool GetPaused() const noexcept { return m_paused; }
+	void PauseAtTarget() noexcept; // timer2 only
 
 	uint32_t Read( uint32_t index ) noexcept;
 
@@ -107,15 +108,14 @@ private:
 class Timers
 {
 public:
-	Timers( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl } {}
-
-	void Reset()
+	Timers( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl }
 	{
-		for ( auto& timer : m_timers )
-			timer.Reset();
+		Reset();
 	}
 
-	Timer& GetTimer( size_t index ) noexcept
+	void Reset();
+
+	Timer& operator[]( size_t index ) noexcept
 	{
 		return m_timers[ index ];
 	}
@@ -124,53 +124,40 @@ public:
 
 	void Write( uint32_t offset, uint32_t value ) noexcept;
 
-	void SetGpuState( float refreshRate, uint32_t scanlines, uint32_t horizontalResolution ) noexcept;
+	// return current number of CPU cycles elapsed
+	uint32_t GetCycles() const noexcept { return m_cycles; }
 
-	void Update() noexcept;
+	// return true if target is reached
+	bool AddCycles( uint32_t cycles ) noexcept;
 
-	bool GetEvenOdd( bool interlaced ) const noexcept
+	// updates timers and resets cycles
+	void UpdateNow() noexcept;
+
+	uint32_t GetCyclesUntilIrq() const noexcept;
+
+	// set amount of cycles to run emulator until we need to check for interrupts/etc
+	void SetTargetCycles( uint32_t cycles ) noexcept
 	{
-		return m_vblank ? false : ( interlaced ? m_oddFrame : m_currentScanline % 2 == 1 );
+		dbExpects( cycles > 0 );
+
+		// cycles should have been reset already
+		dbExpects( m_cycles == 0 );
+		dbExpects( m_targetCycles == 0 );
+
+		m_targetCycles = cycles;
 	}
 
-	void Update( uint32_t cycles ) noexcept
-	{
-		m_cycles += cycles;
-		if ( m_cycles >= m_cyclesUntilNextEvent )
-			Update();
-	}
-
-private:
-	float GetCyclesPerFrame() const noexcept
-	{
-		ClockSpeed / m_refreshRate;
-	}
-
-	float GetCyclesPerScanline() const noexcept
-	{
-		return GetCyclesPerFrame() / m_scanlines;
-	}
-
-	float GetDotsPerCycle() const noexcept
-	{
-		return m_horizontalResolution / 2560.0f;
-	}
-
-	float GetDotsPerScanline() const noexcept
-	{
-		return GetDotsPerCycle() * GetCyclesPerScanline();
-	}
-
-	void UpdateCyclesUntilNextEvent() noexcept;
+	bool NeedsUpdate() const noexcept { return m_cycles >= m_targetCycles; }
 
 private:
 	InterruptControl& m_interruptControl;
 
 	std::array<Timer, 3> m_timers;
 
-	uint32_t m_cycles;
-	uint32_t m_cyclesUntilNextIRQ;
 	uint32_t m_cyclesDiv8Remainder;
+
+	uint32_t m_cycles;
+	uint32_t m_targetCycles; // cycle count at which an event should happen
 };
 
 }

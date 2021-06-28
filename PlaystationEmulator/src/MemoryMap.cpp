@@ -3,17 +3,6 @@
 namespace PSX
 {
 
-void MemoryMap::Reset()
-{
-	m_ram.Fill( char( -1 ) );
-	m_scratchpad.Fill( char( -1 ) );
-	m_memoryControl.Reset();
-	m_dma.Reset();
-	m_timers.Reset();
-	m_cdRomDrive.Reset();
-	m_gpu.Reset();
-}
-
 std::pair<MemoryMap::Segment, uint32_t> MemoryMap::TranslateAddress( uint32_t address ) const noexcept
 {
 	// upper 3 bits determine region

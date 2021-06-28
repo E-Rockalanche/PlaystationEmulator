@@ -13,6 +13,10 @@ namespace PSX
 class CDRomDrive
 {
 public:
+	CDRomDrive()
+	{
+		Reset();
+	}
 
 	void Reset();
 

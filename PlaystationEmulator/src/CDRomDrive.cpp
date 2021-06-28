@@ -208,6 +208,7 @@ uint8_t CDRomDrive::Read( uint32_t index ) noexcept
 		{
 			// probably will never need command/parameter transmission busy flag
 			// TODO: XA_ADPCM fifo empty
+			dbLog( "CDRomDrive::Read() -- read index/status" );
 			return static_cast<uint8_t>( m_index |
 				( m_parameterBuffer.Empty() << 3 ) |
 				( !m_parameterBuffer.Full() << 4 ) |
@@ -253,6 +254,7 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 	switch ( index )
 	{
 		case 0:
+			dbLog( "CDRomDrive::Write() -- set index: %u", value );
 			m_index = value % 4;
 			break;
 
@@ -264,15 +266,15 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 					break;
 
 				case 1: // sound map data out
-					dbLog( "write CDROM sound map data out [%X]", value );
+					dbLog( "CDRomDrive::Write() -- sound map data out [%X]", value );
 					break;
 
 				case 2: // sound map coding info
-					dbLog( "write CDROM sound map coding info [%X]", value );
+					dbLog( "CDRomDrive::Write() -- sound map coding info [%X]", value );
 					break;
 
 				case 3: // audio volume for right-cd-out to right-spu-input
-					dbLog( "write CDROM right-cd-out to right-spu-input [%X]", value );
+					dbLog( "CDRomDrive::Write() -- right-cd-out to right-spu-input [%X]", value );
 					break;
 			}
 			break;
@@ -285,16 +287,16 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 					break;
 
 				case 1: // interrupt enable
-					dbLog( "write CDROM interrupt enable [%X]", value );
+					dbLog( "CDRomDrive::Write() -- interrupt enable [%X]", value );
 					m_interruptEnable = value;
 					break;
 
 				case 2: // left-cd-out to left-spu-input
-					dbLog( "write CDROM left-cd-out to left-spu-input [%X]", value );
+					dbLog( "CDRomDrive::Write() -- left-cd-out to left-spu-input [%X]", value );
 					break;
 
 				case 3: // right-cd-out to left-cd-input
-					dbLog( "write CDROM right-cd-out to left-cd-input [%X]", value );
+					dbLog( "CDRomDrive::Write() -- right-cd-out to left-cd-input [%X]", value );
 					break;
 			}
 			break;
@@ -304,7 +306,7 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 			{
 				case 0: // request register
 				{
-					dbLog( "write CDROM request [%X]", value );
+					dbLog( "CDRomDrive::Write() -- request [%X]", value );
 					m_wantCommand = value & RequestRegister::WantCommand;
 					m_wantData = value & RequestRegister::WantData;
 					break;
@@ -312,7 +314,7 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 
 				case 1: // ack interrupt flags
 				{
-					dbLog( "write CDROM interrupt flag [%X]", value );
+					dbLog( "CDRomDrive::Write() -- interrupt flag [%X]", value );
 					m_interruptFlags = ( m_interruptFlags & ~value ) | InterruptFlag::AlwaysOne;
 
 					if ( value & InterruptFlag::ResetParameterFifo )
@@ -323,7 +325,7 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 				}
 
 				case 2: // audio volume for left-cd-out to right-spu-input
-					dbLog( "write CDROM left-cd-out to right-spu-input [%X]", value );
+					dbLog( "CDRomDrive::Write() -- left-cd-out to right-spu-input [%X]", value );
 					break;
 
 				case 3: // audio volume apply (write bit5=1)
@@ -331,7 +333,7 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 					m_muteADPCM = value & AudioVolumeApply::MuteADPCM;
 
 					if ( value & AudioVolumeApply::ChangeAudioVolume )
-						dbLog( "apply audio volume changes" );
+						dbLog( "CDRomDrive::Write() -- apply audio volume changes" );
 
 					break;
 				}
@@ -396,7 +398,7 @@ void CDRomDrive::ExecuteCommand( uint8_t command ) noexcept
 
 		default:
 		{
-			dbBreakMessage( "Invalid CDROM command" );
+			dbBreakMessage( "CDRomDrive::ExecuteCommand() -- Invalid command" );
 			m_responseBuffer.Push( m_status + 1 );
 			m_responseBuffer.Push( 0x40 );
 			m_interruptFlags = InterruptResponse::ErrorCode;
@@ -443,6 +445,8 @@ void CDRomDrive::Init() noexcept
 
 void CDRomDrive::ResetDrive() noexcept
 {
+	dbLog( "CDRomDrive::ResetDrive()" );
+
 	m_responseBuffer.Push( m_status );
 	m_interruptFlags = InterruptResponse::First;
 }

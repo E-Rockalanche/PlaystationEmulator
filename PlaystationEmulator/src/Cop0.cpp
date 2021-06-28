@@ -1,5 +1,7 @@
 #include "Cop0.h"
 
+#include "InterruptControl.h"
+
 #include "bit.h"
 
 namespace PSX
@@ -33,7 +35,7 @@ uint32_t Cop0::Read( uint32_t index ) const noexcept
 		case Register::DataAccessBreakpointMask:	return m_dataAccessBreakpointMask;
 		case Register::ExecuteBreakpointMask:		return m_executeBreakpointMask;
 		case Register::SystemStatus:				return m_systemStatus;
-		case Register::ExceptionCause:				return m_exceptionCause;
+		case Register::ExceptionCause:				return GetExceptionCause();
 		case Register::TrapReturnAddress:			return m_trapReturnAddress;
 		case Register::ProcessorId:					return m_processorId;
 

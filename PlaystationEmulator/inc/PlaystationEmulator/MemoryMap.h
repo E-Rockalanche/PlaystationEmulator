@@ -54,8 +54,6 @@ public:
 		, m_bios{ bios }
 	{}
 
-	void Reset();
-
 	template <typename T>
 	T Read( uint32_t address ) const noexcept;
 
@@ -141,6 +139,12 @@ private:
 		return static_cast<RegType>( value ) << ( address & ( sizeof( RegType ) - 1 ) ) * 8;
 	}
 
+	void UpdateTimers() const noexcept
+	{
+		m_gpu.UpdateTimers( m_timers.GetCycles() );
+		m_timers.UpdateNow();
+	}
+
 private:
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
@@ -186,6 +190,7 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 			return static_cast<T>( m_dma.Read( offset / 4 ) );
 
 		case Segment::Timers:
+			UpdateTimers();
 			return static_cast<T>( m_timers.Read( offset ) );
 
 		case Segment::CDRomDrive:
@@ -208,7 +213,7 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 		}
 
 		case Segment::Spu:
-			// dbLog( "read SPU register [%X]", address );
+			dbLog( "read SPU register [%X]", address );
 			return 0; // TODO
 
 		case Segment::Expansion2:
@@ -271,6 +276,7 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			break;
 
 		case Segment::Timers:
+			UpdateTimers();
 			m_timers.Write( offset, value );
 			break; // TODO
 
@@ -291,7 +297,7 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 		}
 
 		case Segment::Spu:
-			// dbLog( "write to SPU register [%X <- %X]", address, value );
+			dbLog( "write to SPU register [%X <- %X]", address, value );
 			break;
 
 		case Segment::Expansion2:

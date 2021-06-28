@@ -114,20 +114,19 @@ void Gpu::Reset()
 
 	m_verDisplayRange1 = 0;
 	m_verDisplayRange2 = 0;
-}
 
-void Gpu::UpdateTimerState() const noexcept
-{
-	m_timers.Update(); // update clocks until now
+	m_currentScanline = 0;
+	m_currentDot = 0.0f;
+	m_dotTimerFraction = 0.0f;
+	m_hblank = false;
+	m_vblank = false;
 
-	const auto refreshRate = m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC;
-	const auto scanlines = m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC;
-
-	m_timers.SetGpuState( refreshRate, scanlines, GetHorizontalResolution() );
+	m_displayFrame = false;
 }
 
 void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
 {
+	dbLog( "Gpu::SetDrawOffset() -- %i, %i", x, y );
 	m_drawOffsetX = x;
 	m_drawOffsetY = y;
 	m_renderer.SetOrigin( x - m_drawAreaLeft, y - m_drawAreaTop );
@@ -157,6 +156,8 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 	{
 		case 0xe1: // draw mode setting
 		{
+			dbLog( "Gpu::GP0Command() -- set draw mode [%X]", value );
+
 			static constexpr uint32_t WriteMask = 0x3f;
 			m_status.value = ( m_status.value & ~WriteMask ) | ( value & WriteMask );
 
@@ -169,6 +170,8 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 
 		case 0xe2: // texture window setting
 		{
+			dbLog( "Gpu::GP0Command() -- set texture window [%X]", value );
+
 			m_textureWindowMaskX = value & 0x1f;
 			m_textureWindowMaskY = ( value >> 5 ) & 0x1f;
 			m_textureWindowOffsetX = ( value >> 10 ) & 0x1f;
@@ -181,7 +184,9 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 			m_drawAreaLeft = value & 0x3ff;
 			m_drawAreaTop = ( value >> 10 ) & 0x1ff;
 
-			// TODO: does this affect hblanking?
+			dbLog( "Gpu::GP0Command() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
+
+			// TODO: does this affect blanking?
 			break;
 		}
 
@@ -190,7 +195,9 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 			m_drawAreaRight = value & 0x3ff;
 			m_drawAreaBottom = ( value >> 10 ) & 0x1ff;
 
-			// TODO: does this affect hblanking?
+			dbLog( "Gpu::GP0Command() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
+
+			// TODO: does this affect blanking?
 			break;
 		}
 
@@ -208,6 +215,8 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 
 		case 0xe6: // mask bit setting
 		{
+			dbLog( "Gpu::GP0Command() -- set mask bits [%X]", value );
+
 			m_status.setMaskOnDraw = value & 1;
 			m_status.checkMaskOnDraw = ( value >> 1 ) & 1;
 			break;
@@ -238,8 +247,15 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 			break;
 
 		case 0x1f: // interrupt request
-			m_status.interruptRequest = false;
+		{
+			dbLog( "Gpu::GP0Command() -- request interrupt" );
+			if ( !m_status.interruptRequest ) // edge triggered
+			{
+				m_status.interruptRequest = true;
+				m_interruptControl.SetInterrupt( Interrupt::Gpu );
+			}
 			break;
+		}
 
 		case 0x03: // unknown. Takes up space in FIFO
 			dbBreak();
@@ -346,8 +362,10 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 	const uint8_t opcode = static_cast<uint8_t>( value >> 24 );
 	switch ( opcode )
 	{
-		case 0x00: // reset GPU
+		case 0x00: // soft reset GPU
 		{
+			dbLog( "Gpu::WriteGP1() -- soft reset" );
+
 			m_status.texturePageBaseX = 0;
 			m_status.texturePageBaseY = 0;
 			m_status.semiTransparency = 0;
@@ -393,20 +411,24 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		}
 
 		case 0x01: // reset command buffer
+			dbLog( "Gpu::WriteGP1() -- clear command buffer" );
 			ClearCommandBuffer();
 			break;
 
 		case 0x02: // ack GPU interrupt
+			dbLog( "Gpu::WriteGP1() -- acknowledge interrupt" );
 			m_status.interruptRequest = false;
 			break;
 
 		case 0x03: // display enable
 			m_status.displayDisable = value & 1;
+			dbLog( "Gpu::WriteGP1() -- enable display: %s", m_status.displayDisable ? "false" : "true" );
 			break;
 
 		case 0x04: // DMA direction / data request
 		{
 			m_status.dmaDirection = value & 0x3;
+			dbLog( "Gpu::WriteGP1() -- set DMA direction: %u", m_status.dmaDirection );
 			break;
 		}
 
@@ -414,6 +436,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			m_displayAreaStartX = value & 0x3fe;
 			m_displayAreaStartY = ( value >> 10 ) & 0x1ff;
+			dbLog( "Gpu::WriteGP1() -- set display area start [%u, %u]", m_displayAreaStartX, m_displayAreaStartY );
 			break;
 		}
 
@@ -421,6 +444,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			m_horDisplayRange1 = value & 0xfff;
 			m_horDisplayRange2 = ( value >> 12 ) & 0xfff;
+			dbLog( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", m_horDisplayRange1, m_horDisplayRange2 );
 			break;
 		}
 
@@ -428,16 +452,20 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			m_verDisplayRange1 = value & 0x3ff;
 			m_verDisplayRange2 = ( value >> 10 ) & 0x3ff;
+			dbLog( "Gpu::WriteGP1() -- set vertical display range [%u, %u]", m_verDisplayRange1, m_verDisplayRange2 );
 			break;
 		}
 
 		case 0x08: // display mode
 		{
+			dbLog( "Gpu::WriteGP1() -- set display mode [%X]", value );
+
+			UpdateTimersNow();
+
 			static constexpr uint32_t WriteMask = 0x3f << 17;
 			m_status.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
 			m_status.horizontalResolution2 = ( value >> 6 ) & 1;
 			m_status.reverseFlag = ( value >> 7 ) & 1;
-			UpdateTimerState();
 			break;
 		}
 
@@ -487,16 +515,20 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 void Gpu::FillRectangle() noexcept
 {
+	dbLog( "Gpu::FillRectangle()" );
 	dbBreak();
 }
 
 void Gpu::CopyRectangle() noexcept
 {
+	dbLog( "Gpu::CopyRectangle()" );
 	dbBreak();
 }
 
 void Gpu::CopyRectangleToVram() noexcept
 {
+	dbLog( "Gpu::CopyRectangleToVram()" );
+
 	// TODO
 	m_commandBuffer.Pop();
 	m_commandBuffer.Pop();
@@ -516,6 +548,8 @@ void Gpu::CopyRectangleToVram() noexcept
 
 void Gpu::CopyRectangleFromVram() noexcept
 {
+	dbLog( "Gpu::CopyRectangleFromVram()" );
+
 	// TODO
 	m_commandBuffer.Pop();
 	m_commandBuffer.Pop();
@@ -615,6 +649,118 @@ void Gpu::RenderRectangle() noexcept
 
 	m_renderer.PushTriangle( vertices );
 	m_renderer.PushTriangle( vertices + 1 );
+}
+
+void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
+{
+	// dbLog( "Gpu::UpdateTimers()" );
+
+	m_totalCpuCyclesThisFrame += cpuTicks;
+
+	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuTicks ) );
+	const float dots = gpuTicks * GetDotsPerCycle();
+	m_currentDot += dots;
+
+	auto& dotTimer = m_timers[ 0 ];
+	if ( dotTimer.GetClockSource() % 2 )
+	{
+		m_dotTimerFraction += dots;
+		dotTimer.Update( static_cast<uint32_t>( m_dotTimerFraction ) );
+		m_dotTimerFraction = std::fmod( m_dotTimerFraction, 1.0f );
+	}
+
+	// update render position
+	const auto dotsPerScanline = GetDotsPerScanline();
+	m_currentDot += dots;
+	while ( m_currentDot >= dotsPerScanline )
+	{
+		m_currentDot -= dotsPerScanline;
+		m_currentScanline = ( m_currentScanline + 1 ) % GetScanlines();
+		if ( !IsInterlaced() )
+			m_status.drawingEvenOdd ^= 1;
+	}
+
+	// check for hblank
+	const bool hblank = m_currentDot >= GetHorizontalResolution();
+
+	if ( dotTimer.GetSyncEnable() )
+		dotTimer.UpdateBlank( hblank );
+
+	auto& hblankTimer = m_timers[ 1 ];
+	if ( hblankTimer.GetClockSource() % 2 )
+	{
+		const uint32_t lines = static_cast<uint32_t>( dots / dotsPerScanline );
+		hblankTimer.Update( static_cast<uint32_t>( hblank && !m_hblank ) + lines );
+	}
+
+	m_hblank = hblank;
+
+	// check for vblank
+
+	const bool vblank = m_currentScanline >= 240;
+
+	if ( hblankTimer.GetSyncEnable() )
+		hblankTimer.UpdateBlank( vblank );
+
+	if ( !m_vblank && vblank )
+	{
+		// dbLog( "VBLANK" );
+
+		m_displayFrame = true;
+
+		if ( IsInterlaced() )
+			m_status.drawingEvenOdd ^= 1;
+
+		// dbLog( "CPU cycles this frame: %u", m_totalCpuCyclesThisFrame );
+		dbLog( "CPU cycles over/under expected: %i", static_cast<int>( m_totalCpuCyclesThisFrame - CpuClockSpeed / GetRefreshRate() ) );
+		m_totalCpuCyclesThisFrame = 0;
+	}
+	m_vblank = vblank;
+}
+
+void Gpu::UpdateTimersNow() noexcept
+{
+	UpdateTimers( m_timers.GetCycles() );
+	m_timers.UpdateNow();
+}
+
+uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
+{
+	float gpuTicks = std::numeric_limits<float>::max();
+
+	const auto horRez = GetHorizontalResolution();
+
+	auto& dotTimer = m_timers[ 0 ];
+	if ( dotTimer.GetSyncEnable() ) // dot timer synchronizes with hblanks
+	{
+		const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / GetDotsPerCycle();
+
+		gpuTicks = std::min( gpuTicks, ticksUntilHblankChange );
+	}
+
+	if ( !dotTimer.GetPaused() && dotTimer.GetClockSource() % 2 )
+	{
+		const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / GetDotsPerCycle();
+
+		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
+	}
+
+	const uint32_t linesUntilVblankChange = ( m_currentScanline < 240 ? 240 : GetScanlines() ) - m_currentScanline;
+	const float ticksUntilVblankChange = linesUntilVblankChange * GetCyclesPerScanline() - m_currentDot / GetDotsPerCycle();
+	gpuTicks = std::min( gpuTicks, ticksUntilVblankChange );
+
+	auto& hblankTimer = m_timers[ 1 ];
+	if ( !hblankTimer.GetPaused() && hblankTimer.GetClockSource() % 2 )
+	{
+		const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / GetDotsPerCycle();
+		const float ticksUntilIrq = hblankTimer.GetTicksUntilIrq() * GetCyclesPerScanline() - ticksUntilHblank;
+
+		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
+	}
+
+	const auto cpuCycles = static_cast<uint32_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
+	dbAssert( cpuCycles > 0 );
+	return cpuCycles;
 }
 
 } // namespace PSX

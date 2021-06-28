@@ -11,16 +11,30 @@ namespace PSX
 {
 
 class Renderer;
+class InterruptControl;
+
+static constexpr float CpuClockSpeed = 44100 * 0x300; // Hz
+static constexpr float VideoClockSpeed = CpuClockSpeed * 11 / 7; // Hz
+
+static constexpr float RefreshRatePAL = 50;
+static constexpr float RefreshRateNTSC = 60;
+
+static constexpr uint32_t ScanlinesPAL = 314;
+static constexpr uint32_t ScanlinesNTSC = 263;
+
+constexpr float ConvertCpuToVideoCycles( float cycles ) noexcept
+{
+	return ( cycles * VideoClockSpeed ) / CpuClockSpeed;
+}
+
+constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
+{
+	return ( cycles * CpuClockSpeed ) / VideoClockSpeed;
+}
 
 class Gpu
 {
 public:
-	static constexpr uint32_t CpuClockSpeed = 44100 * 0x300; // Hz
-	static constexpr uint32_t VideoClockSpeed = 44100 * 0x300 * 11 / 7; // Hz
-	static constexpr uint32_t RefreshRatePAL = 50;
-	static constexpr uint32_t RefreshRateNTSC = 60;
-	static constexpr uint32_t ScanlinesPAL = 314;
-	static constexpr uint32_t ScanlinesNTSC = 263;
 
 	union Status
 	{
@@ -122,7 +136,11 @@ public:
 		};
 	};
 
-	Gpu( Timers& timers, Renderer& renderer ) : m_timers{ timers }, m_renderer { renderer } {}
+	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer )
+		: m_timers{ timers }, m_interruptControl{ interruptControl }, m_renderer{ renderer }
+	{
+		Reset();
+	}
 
 	void Reset();
 
@@ -132,13 +150,15 @@ public:
 
 	uint32_t GpuRead() const noexcept { return m_gpuRead; }
 
-	uint32_t GpuStatus() const noexcept
+	uint32_t GpuStatus() noexcept
 	{
-		return m_status.value;
+		// dbLog( "Gpu::GpuStatus()" );
 
-			// return vertical resolution as 240 so that the BIOS doesn't infinite loop waiting for even/odd line flag to change
-			// TODO: revert when status bit 31 is implemented
-			// & ~( 1u << 19 );
+		// update timers if it could affect the even/odd bit
+		if ( m_currentDot + m_timers.GetCycles() * GetDotsPerCycle() >= GetDotsPerScanline() )
+			UpdateTimersNow();
+
+		return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
 	}
 
 	bool IsInterlaced() const noexcept { return m_status.verticalResolution && m_status.verticalInterlace; }
@@ -147,23 +167,21 @@ public:
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
 	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
-	uint32_t GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
+	float GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
 
-	static uint32_t ConvertCpuToVideoCycles( uint32_t cycles ) noexcept
+	void UpdateTimers( uint32_t cpuTicks ) noexcept;
+
+	uint32_t GetCpuCyclesUntilEvent() const noexcept;
+
+	bool GetDisplayFrame() noexcept
 	{
-		return ( cycles * VideoClockSpeed ) / CpuClockSpeed;
-	}
-	static uint32_t ConvertVideoToCpuCycles( uint32_t cycles ) noexcept
-	{
-		return ( cycles * CpuClockSpeed ) / VideoClockSpeed;
+		return std::exchange( m_displayFrame, false );
 	}
 
 private:
 	using GP0Function = void( Gpu::* )( uint32_t ) noexcept;
 
 	using CommandFunction = void( Gpu::* )( ) noexcept;
-
-	void UpdateTimerState() const;
 
 	void ClearCommandBuffer()
 	{
@@ -207,14 +225,36 @@ private:
 		ClearCommandBuffer();
 	}
 
+	float GetCyclesPerFrame() const noexcept
+	{
+		return VideoClockSpeed / GetRefreshRate();
+	}
+
+	float GetCyclesPerScanline() const noexcept
+	{
+		return GetCyclesPerFrame() / GetScanlines();
+	}
+
+	float GetDotsPerCycle() const noexcept
+	{
+		return GetHorizontalResolution() / 2560.0f;
+	}
+
+	float GetDotsPerScanline() const noexcept
+	{
+		return GetDotsPerCycle() * GetCyclesPerScanline();
+	}
+
+	void UpdateTimersNow() noexcept;
+
 private:
 	Timers& m_timers;
+	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingWords;
 	CommandFunction m_commandFunction;
-
 	GP0Function m_gp0Mode;
 
 	uint32_t m_gpuRead;
@@ -254,10 +294,14 @@ private:
 
 	// timing
 	uint32_t m_currentScanline;
-	uint32_t m_currentDot;
+	float m_currentDot;
+	float m_dotTimerFraction;
 	bool m_hblank;
 	bool m_vblank;
-	bool m_oddFrame;
+
+	bool m_displayFrame;
+
+	uint32_t m_totalCpuCyclesThisFrame = 0;
 };
 
 }

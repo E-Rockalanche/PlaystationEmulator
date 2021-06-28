@@ -10,6 +10,13 @@
 namespace PSX
 {
 
+
+
+uint32_t MipsR3000Cpu::Registers::operator[]( uint32_t index ) const noexcept
+{
+	return m_input[ index ];
+}
+
 void MipsR3000Cpu::Reset()
 {
 	m_currentPC = 0;
@@ -26,7 +33,7 @@ void MipsR3000Cpu::Reset()
 
 	m_cop0.Reset();
 
-	m_memoryMap.Reset();
+	m_instructionCache.Reset();
 }
 
 void MipsR3000Cpu::Tick() noexcept
@@ -45,7 +52,12 @@ void MipsR3000Cpu::Tick() noexcept
 
 	m_registers.Update();
 
-	m_clockCycles++;
+	m_timers.AddCycles( 1 ); // TODO: if we did an UpdateTimersNow() then the target cycles will be 0 here. We could miss a low target
+
+	if ( m_cop0.CheckException() )
+	{
+		dbBreak(); // TODO: interrupt
+	}
 }
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
