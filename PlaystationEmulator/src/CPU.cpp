@@ -20,8 +20,7 @@ uint32_t MipsR3000Cpu::Registers::operator[]( uint32_t index ) const noexcept
 void MipsR3000Cpu::Reset()
 {
 	m_currentPC = 0;
-	m_pc = 0xbfc00000;
-	m_nextPC = m_pc + 4;
+	SetProgramCounter( ResetVector );
 
 	m_inBranch = false;
 	m_inDelaySlot = false;
@@ -52,11 +51,14 @@ void MipsR3000Cpu::Tick() noexcept
 
 	m_registers.Update();
 
-	m_timers.AddCycles( 1 ); // TODO: if we did an UpdateTimersNow() then the target cycles will be 0 here. We could miss a low target
+	// TODO: if we did an UpdateTimersNow() then the target cycles will be 0 here. We could miss a low target
+	// we should be calculating the next target when we do an UpdateTimersNow()
+	m_timers.AddCycles( 1 );
 
-	if ( m_cop0.CheckException() )
+	if ( m_cop0.ShouldTriggerInterrupt() )
 	{
-		dbBreak(); // TODO: interrupt
+		// TODO what is the return address supposed to be?
+		RaiseException( Cop0::ExceptionCode::Interrupt );
 	}
 }
 
@@ -133,10 +135,7 @@ void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocesso
 
 	m_cop0.SetException( returnAddress, code, coprocessor, branch );
 
-	// exception jumps don't have a delay slot
-	m_pc = m_cop0.GetExceptionVector();
-	dbAssert( m_pc % 4 == 0 );
-	m_nextPC = m_pc + 4;
+	SetProgramCounter( m_cop0.GetExceptionVector() );
 }
 
 inline void MipsR3000Cpu::AddTrap( uint32_t x, uint32_t y, uint32_t destRegister ) noexcept

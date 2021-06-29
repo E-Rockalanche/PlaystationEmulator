@@ -88,6 +88,8 @@ void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, 
 {
 	dbExpects( coprocessor < 4 );
 
+	dbLog( "Cop0::SetException() -- pc: %u, code: %u, coprocessor?: %u, branch: %s", pc, static_cast<uint32_t>( code ), coprocessor, branch ? "true" : "false" );
+
 	m_trapReturnAddress = pc;
 	m_exceptionCause = ( static_cast<uint32_t>( code ) << 2 ) | ( coprocessor << 28 ) | ( static_cast<uint32_t>( branch ) << 31 );
 
@@ -97,6 +99,8 @@ void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, 
 
 void Cop0::PrepareReturnFromException() noexcept
 {
+	dbLog( "Cop0::PrepareReturnFromException()" );
+
 	// restore interrupt enable and user/kernel mode
 	m_systemStatus = ( ( m_systemStatus >> 2 ) & 0x0000000fu ) | ( m_systemStatus & 0xfffffff0u );
 }

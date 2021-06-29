@@ -110,12 +110,17 @@ public:
 
 	uint32_t GetExceptionCause() const noexcept
 	{
-		return m_exceptionCause | m_interruptControl.PendingInterrupt() << 10;
+		return m_exceptionCause | ( m_interruptControl.PendingInterrupt() << 10 );
 	}
 
-	bool CheckException() const noexcept
+	bool GetInterruptEnable() const noexcept
 	{
-		return ( m_systemStatus & GetExceptionCause() & SystemStatus::InterruptMask ) != 0;
+		return m_systemStatus & SystemStatus::InterruptEnable;
+	}
+
+	bool ShouldTriggerInterrupt() const noexcept
+	{
+		return GetInterruptEnable() && ( m_systemStatus & GetExceptionCause() & SystemStatus::InterruptMask );
 	}
 
 	void SetInterrupts( uint32_t interrupts ) noexcept

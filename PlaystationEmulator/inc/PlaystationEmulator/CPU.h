@@ -18,6 +18,10 @@ class InterruptControl;
 class MipsR3000Cpu
 {
 public:
+	static constexpr uint32_t ResetVector = 0xbfc00000;
+	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
+	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
+
 	MipsR3000Cpu( MemoryMap& memoryMap, Scratchpad& scratchpad, Timers& timers, InterruptControl& interruptControl )
 		: m_memoryMap{ memoryMap }
 		, m_scratchpad{ scratchpad }
@@ -31,6 +35,13 @@ public:
 	void Reset();
 
 	void Tick() noexcept;
+
+	void SetProgramCounter( uint32_t address )
+	{
+		dbExpects( address % 4 == 0 );
+		m_pc = address;
+		m_nextPC = address + 4;
+	}
 
 private:
 

@@ -260,7 +260,7 @@ uint8_t CDRomDrive::Read( uint32_t index ) noexcept
 				case 3:
 					// interrupt flag
 					dbLog( "read CDROM interrupt flag" );
-					return m_interruptFlags;
+					return m_interruptFlags | InterruptFlag::AlwaysOne;
 			}
 			break;
 	}
@@ -338,17 +338,17 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 				case 1: // ack interrupt flags
 				{
 					dbLog( "CDRomDrive::Write() -- interrupt flag [%X]", value );
-					m_interruptFlags = ( m_interruptFlags & ~value ) | InterruptFlag::AlwaysOne;
+					m_interruptFlags = m_interruptFlags & ~value;
 
 					m_responseBuffer.Reset();
 
 					if ( value & InterruptFlag::ResetParameterFifo )
 						m_parameterBuffer.Reset();
 
-					// singal queued interrupt
+					// signal queued interrupt
 					if ( m_queuedInterrupt != InterruptResponse::None )
 					{
-						m_interruptFlags = m_queuedInterrupt | InterruptFlag::AlwaysOne;
+						m_interruptFlags = m_queuedInterrupt;
 						m_interruptControl.SetInterrupt( Interrupt::CDRom );
 						m_queuedInterrupt = InterruptResponse::None;
 					}
@@ -383,6 +383,8 @@ void CDRomDrive::Write( uint32_t index, uint8_t value ) noexcept
 
 void CDRomDrive::ExecuteCommand( uint8_t command ) noexcept
 {
+	dbLog( "CDRomDrive::ExecuteCommand() -- [%X]", command );
+
 	m_responseBuffer.Reset();
 
 	switch ( static_cast<ControllerCommand>( command ) )
