@@ -10,15 +10,15 @@
 namespace PSX
 {
 
+class CycleScheduler;
 class InterruptControl;
 
 class CDRomDrive
 {
 public:
-	CDRomDrive( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl }
-	{
-		Reset();
-	}
+	static constexpr uint32_t ProcessCommandDelay = 0x483b; // GetStat min cycles response time taken from no$psx
+
+	CDRomDrive( InterruptControl& interruptControl, CycleScheduler& cycleScheduler );
 
 	void Reset();
 
@@ -30,10 +30,13 @@ public:
 	}
 
 	uint8_t Read( uint32_t index ) noexcept;
-
 	void Write( uint32_t index, uint8_t value ) noexcept;
 
+	void AddCycles( uint32_t cycles ) noexcept;
+	uint32_t GetCyclesUntilCommand() const noexcept;
+
 private:
+	void SendCommand( uint8_t command ) noexcept;
 	void ExecuteCommand( uint8_t command ) noexcept;
 	
 	// CDROM commands
@@ -81,8 +84,11 @@ private:
 	uint8_t m_index;
 	uint8_t m_interruptEnable;
 	uint8_t m_interruptFlags;
-
 	uint8_t m_queuedInterrupt;
+
+	uint8_t m_pendingCommand;
+	int32_t m_cyclesUntilCommand;
+	bool m_commandTransferBusy;
 
 	uint8_t m_status;
 

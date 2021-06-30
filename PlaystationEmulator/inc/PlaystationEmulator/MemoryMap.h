@@ -2,6 +2,7 @@
 
 #include "BIOS.h"
 #include "CDRomDrive.h"
+#include "CycleScheduler.h"
 #include "InterruptControl.h"
 #include "DMA.h"
 #include "GPU.h"
@@ -42,7 +43,8 @@ public:
 		Timers& timers,
 		CDRomDrive& cdRomDrive,
 		Gpu& gpu,
-		Bios& bios )
+		Bios& bios,
+		CycleScheduler& cycleScheduler )
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
 		, m_memoryControl{ memControl }
@@ -52,6 +54,7 @@ public:
 		, m_cdRomDrive{ cdRomDrive }
 		, m_gpu{ gpu }
 		, m_bios{ bios }
+		, m_cycleScheduler{ cycleScheduler }
 	{}
 
 	template <typename T>
@@ -139,12 +142,6 @@ private:
 		return static_cast<RegType>( value ) << ( address & ( sizeof( RegType ) - 1 ) ) * 8;
 	}
 
-	void UpdateTimers() const noexcept
-	{
-		m_gpu.UpdateTimers( m_timers.GetCycles() );
-		m_timers.UpdateNow();
-	}
-
 private:
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
@@ -155,6 +152,8 @@ private:
 	CDRomDrive& m_cdRomDrive;
 	Gpu& m_gpu;
 	Bios& m_bios;
+
+	CycleScheduler& m_cycleScheduler;
 };
 
 template <typename T>
@@ -190,7 +189,7 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 			return static_cast<T>( m_dma.Read( offset / 4 ) );
 
 		case Segment::Timers:
-			UpdateTimers();
+			m_cycleScheduler.UpdateNow();
 			return static_cast<T>( m_timers.Read( offset ) );
 
 		case Segment::CDRomDrive:
@@ -276,9 +275,9 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			break;
 
 		case Segment::Timers:
-			UpdateTimers();
+			m_cycleScheduler.UpdateNow();
 			m_timers.Write( offset, value );
-			break; // TODO
+			break;
 
 		case Segment::CDRomDrive:
 			m_cdRomDrive.Write( offset, static_cast<uint8_t>( value ) );

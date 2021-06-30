@@ -84,17 +84,19 @@ void Cop0::Write( uint32_t index, uint32_t value ) noexcept
 	}
 }
 
-void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, bool branch ) noexcept
+void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, bool branchDelay ) noexcept
 {
 	dbExpects( coprocessor < 4 );
 
-	dbLog( "Cop0::SetException() -- pc: %u, code: %u, coprocessor?: %u, branch: %s", pc, static_cast<uint32_t>( code ), coprocessor, branch ? "true" : "false" );
+	dbLog( "Cop0::SetException() -- pc: %u, code: %u, coprocessor?: %u, branchDelay: %s", pc, static_cast<uint32_t>( code ), coprocessor, branchDelay ? "true" : "false" );
 
 	m_trapReturnAddress = pc;
-	m_exceptionCause = ( static_cast<uint32_t>( code ) << 2 ) | ( coprocessor << 28 ) | ( static_cast<uint32_t>( branch ) << 31 );
+	m_exceptionCause = ( static_cast<uint32_t>( code ) << 2 ) | ( coprocessor << 28 ) | ( static_cast<uint32_t>( branchDelay ) << 31 );
 
 	// save interrupt enable and user/kernel mode
 	m_systemStatus = ( ( m_systemStatus & 0x0000000fu ) << 2 ) | ( m_systemStatus & 0xffffffc0u );
+
+	// TODO: set jump destination?
 }
 
 void Cop0::PrepareReturnFromException() noexcept

@@ -1,8 +1,16 @@
+#include "BIOS.h"
+#include "CDRomDrive.h"
 #include "CPU.h"
-
+#include "CycleScheduler.h"
+#include "DMA.h"
+#include "GPU.h"
+#include "InterruptControl.h"
+#include "MemoryControl.h"
 #include "MemoryMap.h"
-
+#include "RAM.h"
 #include "Renderer.h"
+#include "SPU.h"
+#include "Timers.h"
 
 #include <Render/Error.h>
 
@@ -127,17 +135,21 @@ int main( int, char** )
 
 	PSX::InterruptControl interruptControl;
 
-	PSX::Timers timers{ interruptControl };
+	PSX::CycleScheduler cycleScheduler;
 
-	PSX::Gpu gpu{ timers, interruptControl, renderer };
+	PSX::Timers timers{ interruptControl, cycleScheduler };
+
+	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
 
 	PSX::Dma dma{ *ram, gpu };
 
-	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl );
+	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, interruptControl, dma, timers, *cdRomDrive, gpu, *bios, cycleScheduler };
 
-	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad, timers, interruptControl );
+	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad, interruptControl, cycleScheduler );
+
+	cycleScheduler.UpdateNow();
 
 	bool quit = false;
 	while ( !quit )
@@ -154,21 +166,7 @@ int main( int, char** )
 		}
 
 		while ( !gpu.GetDisplayFrame() )
-		{
-			// update target cycles
-			if ( timers.NeedsUpdate() )
-				timers.SetTargetCycles( std::min( timers.GetCyclesUntilIrq(), gpu.GetCpuCyclesUntilEvent() ) );
-
-			while ( !timers.NeedsUpdate() )
-				cpu->Tick();
-
-			// increment timers
-			if ( timers.GetCycles() > 0 )
-			{
-				gpu.UpdateTimers( timers.GetCycles() );
-				timers.UpdateNow();
-			}
-		}
+			cpu->Tick();
 
 		renderer.DrawBatch();
 

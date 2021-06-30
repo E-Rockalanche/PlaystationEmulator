@@ -1,6 +1,9 @@
 #include "GPU.h"
 
+#include "CycleScheduler.h"
+#include "InterruptControl.h"
 #include "Renderer.h"
+#include "Timers.h"
 
 #include "bit.h"
 
@@ -75,6 +78,20 @@ struct Color
 };
 */
 
+}
+
+
+Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, CycleScheduler& cycleScheduler )
+	: m_timers{ timers }
+	, m_interruptControl{ interruptControl }
+	, m_renderer{ renderer }
+	, m_cycleScheduler{ cycleScheduler }
+{
+	Reset();
+
+	m_cycleScheduler.Register(
+		[this]( uint32_t cycles ) {UpdateTimers( cycles ); },
+		[this] { return GetCpuCyclesUntilEvent(); } );
 }
 
 void Gpu::Reset()
@@ -460,7 +477,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			dbLog( "Gpu::WriteGP1() -- set display mode [%X]", value );
 
-			UpdateTimersNow();
+			m_cycleScheduler.UpdateNow();
 
 			static constexpr uint32_t WriteMask = 0x3f << 17;
 			m_status.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
@@ -511,6 +528,16 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			dbBreakMessage( "unhandled GP1 opcode [%x]", opcode );
 			break;
 	}
+}
+
+uint32_t Gpu::GpuStatus() noexcept
+{
+	// update timers if it could affect the even/odd bit
+	const auto dotAfterCycles = m_currentDot + m_cycleScheduler.GetCycles() * GetDotsPerCycle();
+	if ( dotAfterCycles >= GetDotsPerScanline() )
+		m_cycleScheduler.UpdateNow();
+
+	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
 }
 
 void Gpu::FillRectangle() noexcept
@@ -716,12 +743,6 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 		m_totalCpuCyclesThisFrame = 0;
 	}
 	m_vblank = vblank;
-}
-
-void Gpu::UpdateTimersNow() noexcept
-{
-	UpdateTimers( m_timers.GetCycles() );
-	m_timers.UpdateNow();
 }
 
 uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept

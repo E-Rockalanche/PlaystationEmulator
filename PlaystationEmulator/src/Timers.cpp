@@ -193,14 +193,10 @@ void Timers::Reset()
 		timer.Reset();
 
 	m_cyclesDiv8Remainder = 0;
-	m_cycles = 0;
-	m_targetCycles = 0;
 }
 
 uint32_t Timers::Read( uint32_t offset ) noexcept
 {
-	dbExpects( m_cycles == 0 ); // timers should have been updated before reading state
-
 	const uint32_t timerIndex = offset >> 4;
 	dbAssert( timerIndex < 3 );
 
@@ -220,8 +216,6 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 
 void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 {
-	dbExpects( m_cycles == 0 ); // timers should have been updated before writing new state
-
 	const uint32_t timerIndex = offset >> 4;
 	dbAssert( timerIndex < 3 );
 
@@ -237,24 +231,18 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	}
 }
 
-bool Timers::AddCycles( uint32_t cpuTicks ) noexcept
+void Timers::AddCycles( uint32_t cycles ) noexcept
 {
-	m_cycles += cpuTicks;
-	return m_cycles >= m_targetCycles;
-}
-
-void Timers::UpdateNow() noexcept
-{
-	// dbLog( "Timers::UpdateNow()" );
+	dbExpects( cycles > 0 );
 
 	auto& dotTimer = m_timers[ 0 ];
 	if ( dotTimer.GetClockSource() % 2 == 0 )
-		if ( dotTimer.Update( m_cycles ) )
+		if ( dotTimer.Update( cycles ) )
 			m_interruptControl.SetInterrupt( Interrupt::Timer0 );
 
 	auto& hblankTimer = m_timers[ 1 ];
 	if ( hblankTimer.GetClockSource() % 2 == 0 )
-		if ( hblankTimer.Update( m_cycles ) )
+		if ( hblankTimer.Update( cycles ) )
 			m_interruptControl.SetInterrupt( Interrupt::Timer1 );
 
 	auto& cpuTimer = m_timers[ 2 ];
@@ -262,12 +250,12 @@ void Timers::UpdateNow() noexcept
 	uint32_t ticks;
 	if ( useDiv8 )
 	{
-		ticks = ( m_cycles + m_cyclesDiv8Remainder ) / 8;
-		m_cyclesDiv8Remainder = ( m_cycles + m_cyclesDiv8Remainder ) % 8;
+		ticks = ( cycles + m_cyclesDiv8Remainder ) / 8;
+		m_cyclesDiv8Remainder = ( cycles + m_cyclesDiv8Remainder ) % 8;
 	}
 	else
 	{
-		ticks = m_cycles;
+		ticks = cycles;
 	}
 
 	if ( cpuTimer.Update( ticks ) )
@@ -286,9 +274,6 @@ void Timers::UpdateNow() noexcept
 			cpuTimer.SetSyncEnable( false );
 		}
 	}
-
-	m_cycles = 0;
-	m_targetCycles = 0;
 }
 
 uint32_t Timers::GetCyclesUntilIrq() const noexcept

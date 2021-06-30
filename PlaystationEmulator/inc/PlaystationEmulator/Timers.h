@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CycleScheduler.h"
 #include "InterruptControl.h"
 
 #include "assert.h"
@@ -108,9 +109,14 @@ private:
 class Timers
 {
 public:
-	Timers( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl }
+	Timers( InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
+		: m_interruptControl{ interruptControl }
 	{
 		Reset();
+
+		cycleScheduler.Register(
+			[this]( uint32_t cycles ) { AddCycles( cycles ); },
+			[this] { return GetCyclesUntilIrq(); } );
 	}
 
 	void Reset();
@@ -121,33 +127,10 @@ public:
 	}
 
 	uint32_t Read( uint32_t offset ) noexcept;
-
 	void Write( uint32_t offset, uint32_t value ) noexcept;
 
-	// return current number of CPU cycles elapsed
-	uint32_t GetCycles() const noexcept { return m_cycles; }
-
-	// return true if target is reached
-	bool AddCycles( uint32_t cycles ) noexcept;
-
-	// updates timers and resets cycles
-	void UpdateNow() noexcept;
-
+	void AddCycles( uint32_t cycles ) noexcept;
 	uint32_t GetCyclesUntilIrq() const noexcept;
-
-	// set amount of cycles to run emulator until we need to check for interrupts/etc
-	void SetTargetCycles( uint32_t cycles ) noexcept
-	{
-		dbExpects( cycles > 0 );
-
-		// cycles should have been reset already
-		dbExpects( m_cycles == 0 );
-		dbExpects( m_targetCycles == 0 );
-
-		m_targetCycles = cycles;
-	}
-
-	bool NeedsUpdate() const noexcept { return m_cycles >= m_targetCycles; }
 
 private:
 	InterruptControl& m_interruptControl;
@@ -155,9 +138,6 @@ private:
 	std::array<Timer, 3> m_timers;
 
 	uint32_t m_cyclesDiv8Remainder;
-
-	uint32_t m_cycles;
-	uint32_t m_targetCycles; // cycle count at which an event should happen
 };
 
 }

@@ -225,6 +225,7 @@
     <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
     <ClInclude Include="inc\PlaystationEmulator\bit.h" />
     <ClInclude Include="inc\PlaystationEmulator\CDRomDrive.h" />
+    <ClInclude Include="inc\PlaystationEmulator\CycleScheduler.h" />
     <ClInclude Include="inc\PlaystationEmulator\FifoBuffer.h" />
     <ClInclude Include="inc\PlaystationEmulator\compiler.h" />
     <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
@@ -247,6 +248,7 @@
     <ClCompile Include="src\CDRomDrive.cpp" />
     <ClCompile Include="src\Cop0.cpp" />
     <ClCompile Include="src\CPU.cpp" />
+    <ClCompile Include="src\CycleScheduler.cpp" />
     <ClCompile Include="src\DMA.cpp" />
     <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />

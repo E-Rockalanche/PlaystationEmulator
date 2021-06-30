@@ -13,6 +13,7 @@
 namespace PSX
 {
 
+class CycleScheduler;
 class InterruptControl;
 
 class MipsR3000Cpu
@@ -22,11 +23,11 @@ public:
 	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
 	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
 
-	MipsR3000Cpu( MemoryMap& memoryMap, Scratchpad& scratchpad, Timers& timers, InterruptControl& interruptControl )
+	MipsR3000Cpu( MemoryMap& memoryMap, Scratchpad& scratchpad, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
 		: m_memoryMap{ memoryMap }
 		, m_scratchpad{ scratchpad }
-		, m_timers{ timers }
 		, m_interruptControl{ interruptControl }
+		, m_cycleScheduler{ cycleScheduler }
 		, m_cop0{ interruptControl }
 	{
 		Reset();
@@ -36,11 +37,13 @@ public:
 
 	void Tick() noexcept;
 
+	// skip instruction in branch delay slot
 	void SetProgramCounter( uint32_t address )
 	{
 		dbExpects( address % 4 == 0 );
 		m_pc = address;
 		m_nextPC = address + 4;
+		m_inBranch = false;
 	}
 
 private:
@@ -61,12 +64,10 @@ private:
 		static constexpr uint32_t FramePointer = 30;
 		static constexpr uint32_t ReturnAddress = 31;
 
-		uint32_t operator[]( uint32_t index ) const noexcept;
-		/*
+		uint32_t operator[]( uint32_t index ) const noexcept
 		{
 			return m_input[ index ];
 		}
-		*/
 
 		// immediately updates register
 		void Set( uint32_t index, uint32_t value ) noexcept
@@ -168,7 +169,7 @@ private:
 
 	void CheckProgramCounterAlignment() noexcept;
 
-	void RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor = 0, bool branch = false ) noexcept;
+	void RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor = 0 ) noexcept;
 
 	uint32_t GetVAddr( Instruction instr ) const noexcept;
 
@@ -399,8 +400,9 @@ private:
 private:
 	MemoryMap& m_memoryMap;
 	Scratchpad& m_scratchpad;
-	Timers& m_timers;
 	InterruptControl& m_interruptControl;
+
+	CycleScheduler& m_cycleScheduler;
 
 	Cop0 m_cop0;
 

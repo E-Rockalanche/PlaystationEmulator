@@ -1,7 +1,6 @@
 #pragma once
 
 #include "FifoBuffer.h"
-#include "Timers.h"
 
 #include "assert.h"
 
@@ -10,7 +9,9 @@
 namespace PSX
 {
 
+class CycleScheduler;
 class Renderer;
+class Timers;
 class InterruptControl;
 
 static constexpr float CpuClockSpeed = 44100 * 0x300; // Hz
@@ -136,30 +137,15 @@ public:
 		};
 	};
 
-	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer )
-		: m_timers{ timers }, m_interruptControl{ interruptControl }, m_renderer{ renderer }
-	{
-		Reset();
-	}
+	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, CycleScheduler& cycleScheduler );
 
 	void Reset();
 
 	void WriteGP0( uint32_t value ) noexcept { std::invoke( m_gp0Mode, this, value ); }
-
 	void WriteGP1( uint32_t value ) noexcept;
 
 	uint32_t GpuRead() const noexcept { return m_gpuRead; }
-
-	uint32_t GpuStatus() noexcept
-	{
-		// dbLog( "Gpu::GpuStatus()" );
-
-		// update timers if it could affect the even/odd bit
-		if ( m_currentDot + m_timers.GetCycles() * GetDotsPerCycle() >= GetDotsPerScanline() )
-			UpdateTimersNow();
-
-		return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
-	}
+	uint32_t GpuStatus() noexcept;
 
 	bool IsInterlaced() const noexcept { return m_status.verticalResolution && m_status.verticalInterlace; }
 
@@ -170,7 +156,6 @@ public:
 	float GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
 
 	void UpdateTimers( uint32_t cpuTicks ) noexcept;
-
 	uint32_t GetCpuCyclesUntilEvent() const noexcept;
 
 	bool GetDisplayFrame() noexcept
@@ -245,12 +230,11 @@ private:
 		return GetDotsPerCycle() * GetCyclesPerScanline();
 	}
 
-	void UpdateTimersNow() noexcept;
-
 private:
 	Timers& m_timers;
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
+	CycleScheduler& m_cycleScheduler;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingWords;

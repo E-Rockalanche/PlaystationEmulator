@@ -1,5 +1,6 @@
 #include "CPU.h"
 
+#include "CycleScheduler.h"
 #include "MemoryMap.h"
 
 #include "assert.h"
@@ -9,13 +10,6 @@
 
 namespace PSX
 {
-
-
-
-uint32_t MipsR3000Cpu::Registers::operator[]( uint32_t index ) const noexcept
-{
-	return m_input[ index ];
-}
 
 void MipsR3000Cpu::Reset()
 {
@@ -51,9 +45,7 @@ void MipsR3000Cpu::Tick() noexcept
 
 	m_registers.Update();
 
-	// TODO: if we did an UpdateTimersNow() then the target cycles will be 0 here. We could miss a low target
-	// we should be calculating the next target when we do an UpdateTimersNow()
-	m_timers.AddCycles( 1 );
+	m_cycleScheduler.AddCycles( 1 ); // overclock for now
 
 	if ( m_cop0.ShouldTriggerInterrupt() )
 	{
@@ -128,12 +120,12 @@ void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 #undef OP_CASE
 }
 
-void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor, bool branch ) noexcept
+void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor ) noexcept
 {
 	// exceptions in delay slot return to branch instruction
 	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
 
-	m_cop0.SetException( returnAddress, code, coprocessor, branch );
+	m_cop0.SetException( returnAddress, code, coprocessor, m_inDelaySlot );
 
 	SetProgramCounter( m_cop0.GetExceptionVector() );
 }
