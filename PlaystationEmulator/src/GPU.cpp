@@ -96,8 +96,7 @@ Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer
 
 void Gpu::Reset()
 {
-	m_gp0Mode = &Gpu::GP0Command;
-
+	// reset buffer, remaining words, command function, and gp0 mode
 	ClearCommandBuffer();
 
 	m_gpuRead = 0;
@@ -139,6 +138,8 @@ void Gpu::Reset()
 	m_vblank = false;
 
 	m_displayFrame = false;
+
+	m_totalCpuCyclesThisFrame = 0; // temp
 }
 
 void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
@@ -543,29 +544,53 @@ uint32_t Gpu::GpuStatus() noexcept
 void Gpu::FillRectangle() noexcept
 {
 	dbLog( "Gpu::FillRectangle()" );
-	dbBreak();
+
+	// not affected by mask settings
+
+	const Color color{ m_commandBuffer.Pop() };
+	const Position pos{ m_commandBuffer.Pop() };
+	const Position size{ m_commandBuffer.Pop() };
+
+	Vertex vertices[ 4 ];
+	vertices[ 0 ] = Vertex{ pos, color };
+	vertices[ 1 ] = Vertex{ Position{ pos.x, pos.y + size.y }, color };
+	vertices[ 2 ] = Vertex{ Position{ pos.x + size.x, pos.y }, color };
+	vertices[ 3 ] = Vertex{ Position{ pos.x + size.x, pos.y + size.y }, color };
+
+	m_renderer.PushQuad( vertices );
+
+	ClearCommandBuffer();
 }
 
 void Gpu::CopyRectangle() noexcept
 {
 	dbLog( "Gpu::CopyRectangle()" );
-	dbBreak();
+
+	// affected by mask settings
+
+	m_commandBuffer.Pop(); // pop command
+	const Position srcPos{ m_commandBuffer.Pop() };
+	const Position destPos{ m_commandBuffer.Pop() };
+	const Position size{ m_commandBuffer.Pop() };
+
+	// TODO
+
+	ClearCommandBuffer();
 }
 
 void Gpu::CopyRectangleToVram() noexcept
 {
 	dbLog( "Gpu::CopyRectangleToVram()" );
 
-	// TODO
-	m_commandBuffer.Pop();
-	m_commandBuffer.Pop();
+	// affected by mask settings
+
+	m_commandBuffer.Pop(); // pop command
+	m_commandBuffer.Pop(); // pop position
 
 	// dimensions counted in halfwords
-	auto dimensions = m_commandBuffer.Pop();
-	const uint32_t width = dimensions & 0xffff;
-	const uint32_t height = dimensions >> 16;
+	const Position size{ m_commandBuffer.Pop() };
 
-	const uint32_t halfwords = width * height;
+	const uint32_t halfwords = static_cast<uint32_t>( size.x ) * static_cast<uint32_t>( size.y );
 	m_remainingWords = halfwords / 2;
 	if ( halfwords % 1 )
 		++m_remainingWords;
@@ -674,8 +699,7 @@ void Gpu::RenderRectangle() noexcept
 	vertices[ 2 ] = Vertex{ Position{ pos.x + size.x, pos.y }, color };
 	vertices[ 3 ] = Vertex{ Position{ pos.x + size.x, pos.y + size.y }, color };
 
-	m_renderer.PushTriangle( vertices );
-	m_renderer.PushTriangle( vertices + 1 );
+	m_renderer.PushQuad( vertices );
 }
 
 void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
@@ -686,7 +710,6 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 
 	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuTicks ) );
 	const float dots = gpuTicks * GetDotsPerCycle();
-	m_currentDot += dots;
 
 	auto& dotTimer = m_timers[ 0 ];
 	if ( dotTimer.GetClockSource() % 2 )

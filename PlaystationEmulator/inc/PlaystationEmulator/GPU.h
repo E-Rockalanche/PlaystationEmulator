@@ -261,6 +261,7 @@ private:
 	uint16_t m_drawAreaRight;
 	uint16_t m_drawAreaBottom;
 
+	// use SetDrawOffset(x,y) to change values
 	int16_t m_drawOffsetX;
 	int16_t m_drawOffsetY;
 
@@ -285,7 +286,7 @@ private:
 
 	bool m_displayFrame;
 
-	uint32_t m_totalCpuCyclesThisFrame = 0;
+	uint32_t m_totalCpuCyclesThisFrame = 0; // temp
 };
 
 }

@@ -44,5 +44,8 @@
     <ClInclude Include="inc\Render\Error.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\Render\Texture.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

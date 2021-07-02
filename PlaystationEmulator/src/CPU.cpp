@@ -41,17 +41,17 @@ void MipsR3000Cpu::Tick() noexcept
 	m_inDelaySlot = m_inBranch;
 	m_inBranch = false;
 
-	ExecuteInstruction( Instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) } );
-
-	m_registers.Update();
-
-	m_cycleScheduler.AddCycles( 1 ); // overclock for now
-
 	if ( m_cop0.ShouldTriggerInterrupt() )
 	{
 		// TODO what is the return address supposed to be?
 		RaiseException( Cop0::ExceptionCode::Interrupt );
 	}
+
+	ExecuteInstruction( Instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) } );
+
+	m_registers.Update();
+
+	m_cycleScheduler.AddCycles( 1 ); // overclock for now
 }
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept

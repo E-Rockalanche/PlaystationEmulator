@@ -7,6 +7,7 @@
 #include "InterruptControl.h"
 #include "MemoryControl.h"
 #include "MemoryMap.h"
+#include "PeripheralPorts.h"
 #include "RAM.h"
 #include "Renderer.h"
 #include "SPU.h"
@@ -145,7 +146,9 @@ int main( int, char** )
 
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, interruptControl, dma, timers, *cdRomDrive, gpu, *bios, cycleScheduler };
+	PSX::PeripheralPorts peripheralPorts;
+
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios, cycleScheduler };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad, interruptControl, cycleScheduler );
 

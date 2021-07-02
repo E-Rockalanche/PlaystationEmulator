@@ -142,6 +142,9 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 {
 	auto& channel = m_channels[ channelIndex ];
 
+	const bool toRam = channel.GetTransferDirection() == Channel::TransferDirection::ToMainRam;
+	dbLog( "Dma::DoBlockTransfer() -- channel: %u, direction: %s", channelIndex, toRam ? "to RAM" : "from RAM" );
+
 	const int32_t increment = ( channel.GetMemoryAddressStep() == Channel::MemoryAddressStep::Forward ) ? 4 : -4;
 
 	uint32_t address = channel.GetBaseAddress();
@@ -151,17 +154,27 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	uint32_t wordCount = channel.GetWordCount();
 	dbAssert( wordCount != 0 );
 
-	if ( channel.GetTransferDirection() == Channel::TransferDirection::ToMainRam )
+	if ( toRam )
 	{
 		switch ( channelIndex )
 		{
 			case ChannelIndex::RamOrderTable:
 			{
-				dbAssert( increment == -4 );
+				dbAssert( increment == -4 ); // TODO: can it go forward?
+
 				for ( ; wordCount > 1; --wordCount, address += increment )
 					m_ram.Write<uint32_t>( address, address + increment );
 
 				m_ram.Write<uint32_t>( address, LinkedListTerminator );
+				break;
+			}
+
+			case ChannelIndex::Gpu:
+			{
+				// TODO
+				for ( ; wordCount > 0; --wordCount, address += increment )
+					m_ram.Write<uint32_t>( address, 0 );
+
 				break;
 			}
 
@@ -193,11 +206,11 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 {
-	dbLog( "Linked list transfer on port %u", channelIndex );
-	dbAssert( channelIndex == ChannelIndex::Gpu );
+	dbLog( "Dma::DoLinkedListTransfer()" );
+	dbAssert( channelIndex == ChannelIndex::Gpu ); // must transfer to GPU
 
 	auto& channel = m_channels[ channelIndex ];
-	dbAssert( channel.GetTransferDirection() == Channel::TransferDirection::FromMainRam );
+	dbAssert( channel.GetTransferDirection() == Channel::TransferDirection::FromMainRam ); // must transfer from RAM
 
 	uint32_t address = channel.GetBaseAddress();
 	dbAssert( address % 4 == 0 );

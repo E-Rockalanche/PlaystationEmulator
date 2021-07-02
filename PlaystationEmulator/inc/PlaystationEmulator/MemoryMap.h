@@ -7,6 +7,7 @@
 #include "DMA.h"
 #include "GPU.h"
 #include "MemoryControl.h"
+#include "PeripheralPorts.h"
 #include "RAM.h"
 #include "Timers.h"
 
@@ -38,6 +39,7 @@ public:
 		Ram& ram,
 		Scratchpad& scratchpad,
 		MemoryControl& memControl,
+		PeripheralPorts& peripheralPorts,
 		InterruptControl& interrupts,
 		Dma& dma,
 		Timers& timers,
@@ -48,6 +50,7 @@ public:
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
 		, m_memoryControl{ memControl }
+		, m_peripheralPorts{ peripheralPorts }
 		, m_interruptControl{ interrupts }
 		, m_dma{ dma }
 		, m_timers{ timers }
@@ -68,6 +71,7 @@ private:
 	static constexpr Range ExpansionRange{ 0x1f000000, 8 * 1024 * 1024 };
 	static constexpr Range ScratchpadRange{ 0x1f800000, Scratchpad::Size() };
 	static constexpr Range MemControlRange{ 0x1f801000, 0x24 };
+	static constexpr Range PeripheralPortRange{ 0x1f801040, 0x20 };
 	static constexpr Range RamSizeRange{ 0x1f801060, 4 };
 	static constexpr Range InterruptControlRange{ 0x1f801070, 8 };
 	static constexpr Range DmaChannelsRange{ 0x1f801080, 128 };
@@ -87,6 +91,7 @@ private:
 		Expansion,
 		Scratchpad,
 		MemControl,
+		PeripheralPorts,
 		RamSize,
 		InterruptControl,
 		DmaChannels,
@@ -107,6 +112,7 @@ private:
 		ExpansionRange,
 		ScratchpadRange,
 		MemControlRange,
+		PeripheralPortRange,
 		RamSizeRange,
 		InterruptControlRange,
 		DmaChannelsRange,
@@ -146,6 +152,7 @@ private:
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
 	MemoryControl& m_memoryControl;
+	PeripheralPorts& m_peripheralPorts;
 	InterruptControl& m_interruptControl;
 	Dma& m_dma;
 	Timers& m_timers;
@@ -178,6 +185,9 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 
 		case Segment::MemControl:
 			return static_cast<T>( m_memoryControl.Read( offset / 4 ) );
+
+		case Segment::PeripheralPorts:
+			return static_cast<T>( m_peripheralPorts.Read( offset/ 4 ) );
 
 		case Segment::RamSize:
 			return static_cast<T>( m_memoryControl.ReadRamSize() );
@@ -260,6 +270,10 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 
 		case Segment::MemControl:
 			m_memoryControl.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
+			break;
+
+		case Segment::PeripheralPorts:
+			m_peripheralPorts.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
 			break;
 
 		case Segment::RamSize:

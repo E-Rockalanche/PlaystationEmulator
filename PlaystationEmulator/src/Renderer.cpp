@@ -86,12 +86,18 @@ void Renderer::SetAlpha( float alpha )
 	glUniform1f( m_alphaLoc, alpha );
 }
 
-void Renderer::PushTriangle( const Vertex vertices[3] )
+void Renderer::PushTriangle( const Vertex vertices[ 3 ] )
 {
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
 
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
+}
+
+void Renderer::PushQuad( const Vertex vertices[ 4 ] )
+{
+	PushTriangle( vertices );
+	PushTriangle( vertices + 1 );
 }
 
 void Renderer::DrawBatch()

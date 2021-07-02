@@ -52,6 +52,11 @@ public:
 		--m_index;
 	}
 
+	const T* Data() const noexcept
+	{
+		return m_buffer.data();
+	}
+
 private:
 	size_t m_size = 0;
 	size_t m_index = 0;

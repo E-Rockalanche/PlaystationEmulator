@@ -199,6 +199,7 @@
     <ClInclude Include="inc\Render\Buffer.h" />
     <ClInclude Include="inc\Render\Error.h" />
     <ClInclude Include="inc\Render\Shader.h" />
+    <ClInclude Include="inc\Render\Texture.h" />
     <ClInclude Include="inc\Render\Types.h" />
     <ClInclude Include="inc\Render\VertexArrayObject.h" />
   </ItemGroup>

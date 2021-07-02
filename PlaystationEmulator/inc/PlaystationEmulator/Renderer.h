@@ -58,6 +58,7 @@ public:
 	void SetAlpha( float alpha );
 
 	void PushTriangle( const Vertex vertices[ 3 ] );
+	void PushQuad( const Vertex vertices[ 4 ] );
 
 	void DrawBatch();
 
