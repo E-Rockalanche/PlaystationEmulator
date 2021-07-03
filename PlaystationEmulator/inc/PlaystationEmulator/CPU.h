@@ -4,7 +4,7 @@
 #include "Instruction.h"
 #include "MemoryMap.h"
 
-#include "assert.h"
+#include <stdx/assert.h>
 
 #include <array>
 #include <cstdint>

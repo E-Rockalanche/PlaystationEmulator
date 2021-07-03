@@ -2,7 +2,7 @@
 
 #include "InterruptControl.h"
 
-#include "bit.h"
+#include <stdx/bit.h>
 
 namespace PSX
 {

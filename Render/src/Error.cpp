@@ -23,6 +23,7 @@ void CheckErrors()
 				std::cerr << "OpenGL ERROR: Unknown" << std::endl;
 				break;
 		}
+		dbBreak();
 	}
 }
 

@@ -3,7 +3,7 @@
 #include "CycleScheduler.h"
 #include "MemoryMap.h"
 
-#include "assert.h"
+#include <stdx/assert.h>
 
 #include <fstream>
 #include <type_traits>

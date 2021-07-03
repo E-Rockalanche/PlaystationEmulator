@@ -2,7 +2,7 @@
 
 #include "InterruptControl.h"
 
-#include "assert.h"
+#include <stdx/assert.h>
 
 #include <array>
 #include <cstdint>

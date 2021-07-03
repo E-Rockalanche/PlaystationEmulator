@@ -1,6 +1,6 @@
 #pragma once
 
-#include "assert.h"
+#include <stdx/assert.h>
 
 #include <cstdint>
 #include <type_traits>

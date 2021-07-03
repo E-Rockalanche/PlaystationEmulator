@@ -5,13 +5,19 @@
 #include "Renderer.h"
 #include "Timers.h"
 
-#include "bit.h"
+#include <stdx/assert.h>
+#include <stdx/bit.h>
 
 namespace PSX
 {
 
 namespace
 {
+
+constexpr std::pair<uint32_t, uint32_t> DecodePosition( uint32_t gpuParam ) noexcept
+{
+	return { static_cast<uint32_t>( gpuParam & 0xffff ), static_cast<uint32_t>( gpuParam >> 16 ) };
+}
 
 struct RenderCommand
 {
@@ -87,6 +93,7 @@ Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer
 	, m_renderer{ renderer }
 	, m_cycleScheduler{ cycleScheduler }
 {
+	m_vram = std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ); // 1MB of VRAM
 	Reset();
 
 	m_cycleScheduler.Register(
@@ -140,9 +147,18 @@ void Gpu::Reset()
 	m_displayFrame = false;
 
 	m_totalCpuCyclesThisFrame = 0; // temp
+
+	// clear VRAM
+	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{} );
+	m_renderer.UploadVRam( m_vram.get() );
+	m_vramDirty = false;
+
+	m_vramCopyState = std::nullopt;
+
+	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 }
 
-void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
+void Gpu::SetDrawOffset( int16_t x, int16_t y )
 {
 	dbLog( "Gpu::SetDrawOffset() -- %i, %i", x, y );
 	m_drawOffsetX = x;
@@ -315,7 +331,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 					}
 					else
 					{
-						m_remainingWords = ( value & RenderCommand::Shading ) ? 3 : 2;
+						m_remainingParamaters = ( value & RenderCommand::Shading ) ? 3 : 2;
 						m_gp0Mode = &Gpu::GP0Params;
 					}
 
@@ -343,9 +359,9 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 
 void Gpu::GP0Params( uint32_t param ) noexcept
 {
-	dbExpects( m_remainingWords > 0 );
+	dbExpects( m_remainingParamaters > 0 );
 	m_commandBuffer.Push( param );
-	if ( --m_remainingWords == 0 )
+	if ( --m_remainingParamaters == 0 )
 	{
 		std::invoke( m_commandFunction, this );
 
@@ -355,22 +371,48 @@ void Gpu::GP0Params( uint32_t param ) noexcept
 
 void Gpu::GP0PolyLine( uint32_t param ) noexcept
 {
-	if ( param != 0x55555555 )
-	{
-		m_commandBuffer.Push( param );
-	}
-	else
+	static constexpr uint32_t TerminationCode = 0x50005000; // should use 0x55555555, but Wild Arms 2 uses 0x50005000
+	if ( stdx::all_of( param, TerminationCode ) )
 	{
 		std::invoke( m_commandFunction, this );
 		ClearCommandBuffer();
 	}
+	else
+	{
+		m_commandBuffer.Push( param );
+	}
 }
 
-void Gpu::GP0ImageLoad( uint32_t ) noexcept
+void Gpu::GP0ImageLoad( uint32_t param ) noexcept
 {
-	dbExpects( m_remainingWords > 0 );
-	if ( --m_remainingWords == 0 )
+	dbExpects( m_vramCopyState.has_value() );
+	dbExpects( !m_vramCopyState->Finished() );
+
+	const uint16_t checkMask = m_status.GetCheckMask();
+	const uint16_t setMask = m_status.GetSetMask();
+
+	auto copyPixel = [&]( uint16_t pixel )
 	{
+		const auto x = m_vramCopyState->GetWrappedX();
+		const auto y = m_vramCopyState->GetWrappedY();
+
+		uint16_t* destPixel = m_vram.get() + y * VRamWidth + x;
+		if ( ( *destPixel & checkMask ) == 0 )
+			*destPixel = pixel | setMask;
+
+		m_vramCopyState->Increment();
+	};
+
+	copyPixel( param & 0xff );
+
+	if ( !m_vramCopyState->Finished() )
+		copyPixel( param >> 16 );
+
+	m_vramDirty = true;
+
+	if ( m_vramCopyState->Finished() )
+	{
+		m_vramCopyState = std::nullopt;
 		ClearCommandBuffer();
 	}
 }
@@ -484,6 +526,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_status.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
 			m_status.horizontalResolution2 = ( value >> 6 ) & 1;
 			m_status.reverseFlag = ( value >> 7 ) & 1;
+			m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 			break;
 		}
 
@@ -543,57 +586,50 @@ uint32_t Gpu::GpuStatus() noexcept
 
 void Gpu::FillRectangle() noexcept
 {
-	dbLog( "Gpu::FillRectangle()" );
-
 	// not affected by mask settings
 
 	const Color color{ m_commandBuffer.Pop() };
-	const Position pos{ m_commandBuffer.Pop() };
-	const Position size{ m_commandBuffer.Pop() };
+	auto[ x, y ] = DecodePosition( m_commandBuffer.Pop() );
+	auto[ width, height ] = DecodePosition( m_commandBuffer.Pop() );
 
-	Vertex vertices[ 4 ];
-	vertices[ 0 ] = Vertex{ pos, color };
-	vertices[ 1 ] = Vertex{ Position{ pos.x, pos.y + size.y }, color };
-	vertices[ 2 ] = Vertex{ Position{ pos.x + size.x, pos.y }, color };
-	vertices[ 3 ] = Vertex{ Position{ pos.x + size.x, pos.y + size.y }, color };
+	dbLog( "Gpu::FillRectangle() -- pos: %u,%u size: %u,%u", x, y, width, height );
 
-	m_renderer.PushQuad( vertices );
+	// TODO: figure out the real conversion of RGB8 to RGB555
+	auto convertComponent = []( uint8_t c ) { return static_cast<uint16_t>( ( c * 0x1f ) / 0xff ); }; // scale to new maximum
+	const uint16_t pixel = convertComponent( color.r ) | ( convertComponent( color.g ) << 5 ) | ( convertComponent( color.b ) << 10 );
+
+	FillVRam( x, y, width, height, pixel );
 
 	ClearCommandBuffer();
 }
 
 void Gpu::CopyRectangle() noexcept
 {
-	dbLog( "Gpu::CopyRectangle()" );
-
 	// affected by mask settings
 
 	m_commandBuffer.Pop(); // pop command
-	const Position srcPos{ m_commandBuffer.Pop() };
-	const Position destPos{ m_commandBuffer.Pop() };
-	const Position size{ m_commandBuffer.Pop() };
+	auto[ srcX, srcY ] = DecodePosition( m_commandBuffer.Pop() );
+	auto[ destX, destY ] = DecodePosition( m_commandBuffer.Pop() );
+	auto[ width, height ] = DecodePosition( m_commandBuffer.Pop() );
 
-	// TODO
+	dbLog( "Gpu::CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
+
+	CopyVRam( srcX, srcY, destX, destY, width, height );
 
 	ClearCommandBuffer();
 }
 
 void Gpu::CopyRectangleToVram() noexcept
 {
-	dbLog( "Gpu::CopyRectangleToVram()" );
-
 	// affected by mask settings
 
+	m_vramCopyState.emplace();
+
 	m_commandBuffer.Pop(); // pop command
-	m_commandBuffer.Pop(); // pop position
+	std::tie( m_vramCopyState->left, m_vramCopyState->top ) = DecodePosition( m_commandBuffer.Pop() );
+	std::tie( m_vramCopyState->width, m_vramCopyState->height ) = DecodePosition( m_commandBuffer.Pop() );
 
-	// dimensions counted in halfwords
-	const Position size{ m_commandBuffer.Pop() };
-
-	const uint32_t halfwords = static_cast<uint32_t>( size.x ) * static_cast<uint32_t>( size.y );
-	m_remainingWords = halfwords / 2;
-	if ( halfwords % 1 )
-		++m_remainingWords;
+	dbLog( "Gpu::CopyRectangleToVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
 
 	m_gp0Mode = &Gpu::GP0ImageLoad;
 }
@@ -619,38 +655,72 @@ void Gpu::CopyRectangleFromVram() noexcept
 
 void Gpu::RenderPolygon() noexcept
 {
-	const uint32_t command = m_commandBuffer.Pop();
-
-	const bool Quad = command & RenderCommand::NumVertices;
-	const bool Shaded = command & RenderCommand::Shading;
-	const bool Textured = command & RenderCommand::TextureMapping;
-	const bool Raw = command & RenderCommand::TextureMode;
+	FlushVRam();
 
 	Vertex vertices[ 4 ];
 
-	if ( Shaded )
-		m_commandBuffer.Unpop();
+	const uint32_t command = m_commandBuffer.Pop();
 
-	const size_t NumVertices = Quad ? 4 : 3;
-	for ( size_t i = 0; i < NumVertices; ++i )
+	const bool quad = command & RenderCommand::NumVertices;
+	const bool shaded = command & RenderCommand::Shading;
+	const bool textured = command & RenderCommand::TextureMapping;
+	const bool noColorBlending = command & RenderCommand::TextureMode;
+
+	// vertex 1
+
+	if ( shaded )
+		vertices[ 0 ].color = Color{ command };
+	else
 	{
-		auto& v = vertices[ i ];
+		const Color color{ noColorBlending ? 0x808080 : command };
+		for ( auto& v : vertices )
+			v.color = color;
+	}
 
-		if ( Shaded )
-			v.color = Color{ m_commandBuffer.Pop() };
-		else if ( Raw )
-			v.color = Color{ 0xffffff };
-		else
-			v.color = Color{ command };
+	vertices[ 0 ].position = Position{ m_commandBuffer.Pop() };
 
-		v.position = Position{ m_commandBuffer.Pop() };
+	if ( textured )
+	{
+		const auto value = m_commandBuffer.Pop();
+		vertices[ 0 ].texCoord = TexCoord{ value };
 
-		if ( Textured )
-			m_commandBuffer.Pop(); // ignore texture coordinates for now
+		const auto clut = static_cast<uint16_t>( value >> 16 );
+		for ( auto& v : vertices )
+			v.clut = clut;
+	}
+
+	// vertex 2
+
+	if ( shaded )
+		vertices[ 1 ].color = Color{ m_commandBuffer.Pop() };
+
+	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
+
+	if ( textured )
+	{
+		const auto value = m_commandBuffer.Pop();
+		vertices[ 1 ].texCoord = TexCoord{ value };
+
+		const auto texPage = static_cast<uint16_t>( value >> 16 );
+		for ( auto& v : vertices )
+			v.texPage = texPage;
+	}
+
+	// vetex 3 and 4
+
+	for ( size_t i = 2; i < 3u + quad; ++i )
+	{
+		if ( shaded )
+			vertices[ i ].color = Color{ m_commandBuffer.Pop() };
+
+		vertices[ i ].position = Position{ m_commandBuffer.Pop() };
+
+		if ( textured )
+			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
 
 	m_renderer.PushTriangle( vertices );
-	if ( Quad )
+	if ( quad )
 		m_renderer.PushTriangle( vertices + 1 );
 
 	ClearCommandBuffer();
@@ -658,18 +728,21 @@ void Gpu::RenderPolygon() noexcept
 
 void Gpu::RenderRectangle() noexcept
 {
+	FlushVRam();
+
+	Vertex vertices[ 4 ];
+
 	const uint32_t command = m_commandBuffer.Pop();
 
-	const bool Raw = command & RenderCommand::TextureMode;
+	// set color
+	const bool noColorBlend = command & RenderCommand::TextureMode;
+	const Color color{ noColorBlend ? 0xffffff : command };
+	for ( auto& v : vertices )
+		v.color = color;
 
-	const Color color{ Raw ? 0xffffff : command };
+	// set position/dimensions
 	const Position pos{ m_commandBuffer.Pop() };
-
-	if ( command & RenderCommand::TextureMapping )
-		m_commandBuffer.Pop(); // ignore textures for now
-
 	Position size;
-
 	switch ( static_cast<RectangleSize>( command >> 27 ) )
 	{
 		case RectangleSize::Variable:
@@ -691,13 +764,32 @@ void Gpu::RenderRectangle() noexcept
 		default:
 			dbBreak();
 			size = Position{ 0, 0 };
+			break;
 	}
+	vertices[ 0 ].position = pos;
+	vertices[ 1 ].position = Position{ pos.x, pos.y + size.y };
+	vertices[ 2 ].position = Position{ pos.x + size.x, pos.y };
+	vertices[ 3 ].position = Position{ pos.x + size.x, pos.y + size.y };
 
-	Vertex vertices[ 4 ];
-	vertices[ 0 ] = Vertex{ pos, color };
-	vertices[ 1 ] = Vertex{ Position{ pos.x, pos.y + size.y }, color };
-	vertices[ 2 ] = Vertex{ Position{ pos.x + size.x, pos.y }, color };
-	vertices[ 3 ] = Vertex{ Position{ pos.x + size.x, pos.y + size.y }, color };
+	// set texture coordinates
+	if ( command & RenderCommand::TextureMapping )
+	{
+		const uint32_t value = m_commandBuffer.Pop();
+		const TexCoord texCoord{ value };
+
+		vertices[ 0 ].texCoord = texCoord;
+		vertices[ 1 ].texCoord = TexCoord{ texCoord.u, static_cast<uint16_t>( texCoord.v + size.y ) };
+		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( texCoord.u + size.x ), texCoord.v };
+		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texCoord.u + size.x ), static_cast<uint16_t>( texCoord.v + size.y ) };
+
+		const uint16_t clut = static_cast<uint16_t>( value >> 16 );
+		const uint16_t texPage = m_status.GetTexPage();
+		for ( auto& v : vertices )
+		{
+			v.clut = clut;
+			v.texPage = texPage;
+		}
+	}
 
 	m_renderer.PushQuad( vertices );
 }
@@ -805,6 +897,70 @@ uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 	const auto cpuCycles = static_cast<uint32_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
 	dbAssert( cpuCycles > 0 );
 	return cpuCycles;
+}
+
+void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint16_t value )
+{
+	if ( x >= VRamWidth || y >= VRamHeight )
+		return;
+
+	width = std::min( width, VRamWidth - x );
+	height = std::min( height, VRamHeight - y );
+
+	for ( uint32_t row = 0; row < height; ++row )
+	{
+		uint16_t* rowPixels = m_vram.get() + ( y + row ) * VRamWidth;
+		std::fill_n( rowPixels + x, width, value );
+	}
+
+	m_vramDirty = true;
+}
+
+void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height )
+{
+	if ( srcX >= VRamWidth || srcY >= VRamHeight || destX >= VRamWidth || destY >= VRamHeight )
+		return;
+
+	const auto checkMask = m_status.GetCheckMask();
+	const auto setMask = m_status.GetSetMask();
+
+	width = std::min( { width, VRamWidth - srcX, VRamWidth - destX } );
+	height = std::min( { height, VRamHeight - srcY, VRamHeight - destY } );
+
+	for ( uint32_t row = 0; row < height; ++row )
+	{
+		const uint16_t* srcRowPixels = m_vram.get() + ( srcY + row ) * VRamWidth;
+		uint16_t* destRowPixels = m_vram.get() + ( destY + row ) * VRamWidth;
+
+		auto doCopy = [&]( uint32_t x )
+		{
+			auto& destPixel = destRowPixels[ destX + x ];
+			if ( ( destPixel & checkMask ) == 0 )
+				destPixel = srcRowPixels[ srcX + x ] | setMask;
+		};
+
+		if ( destX <= srcX )
+		{
+			for ( uint32_t x = 0; x < width; ++x )
+				doCopy( x );
+		}
+		else
+		{
+			for ( uint32_t x = width; x-- > 0; )
+				doCopy( x );
+		}
+	}
+
+	m_vramDirty = true;
+}
+
+void Gpu::FlushVRam()
+{
+	if ( m_vramDirty )
+	{
+		m_renderer.UploadVRam( m_vram.get() );
+		m_vramDirty = false;
+	}
 }
 
 } // namespace PSX

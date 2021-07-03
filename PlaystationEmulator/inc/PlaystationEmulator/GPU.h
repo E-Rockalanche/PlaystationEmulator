@@ -2,9 +2,11 @@
 
 #include "FifoBuffer.h"
 
-#include "assert.h"
+#include <stdx/assert.h>
 
 #include <cstdint>
+#include <memory>
+#include <optional>
 
 namespace PSX
 {
@@ -37,10 +39,14 @@ class Gpu
 {
 public:
 
+	static constexpr uint32_t VRamWidth = 1024;
+	static constexpr uint32_t VRamHeight = 512;
+
 	union Status
 	{
 		struct
 		{
+			// draw mode
 			uint32_t texturePageBaseX : 4; // N*64
 			uint32_t texturePageBaseY : 1; // N*256
 			uint32_t semiTransparency : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
@@ -52,6 +58,8 @@ public:
 			uint32_t interlaceField : 1;
 			uint32_t reverseFlag : 1;
 			uint32_t textureDisable : 1;
+
+			// 
 			uint32_t horizontalResolution2 : 1; // 0=256/320/512/640, 1=368
 			uint32_t horizontalResolution1 : 2; // 0=256, 1=320, 2=512, 3=640
 			uint32_t verticalResolution : 1; // 0=240, 1=480, when VerticalInterlace=1
@@ -69,6 +77,14 @@ public:
 		};
 
 		uint32_t value;
+
+		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
+		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
+
+		uint16_t GetTexPage() const noexcept
+		{
+			return static_cast<uint16_t>( ( value & 0x3ff ) | ( textureDisable << 11 ) );
+		}
 	};
 	static_assert( sizeof( Status ) == 4 );
 
@@ -171,29 +187,29 @@ private:
 	void ClearCommandBuffer()
 	{
 		m_commandBuffer.Reset();
-		m_remainingWords = 0;
+		m_remainingParamaters = 0;
 		m_commandFunction = nullptr;
 
 		m_gp0Mode = &Gpu::GP0Command;
 	}
 
-	void InitCommand( uint32_t command, uint32_t remainingWords, CommandFunction function )
+	void InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function )
 	{
 		dbExpects( m_commandBuffer.Empty() );
 		m_commandBuffer.Push( command );
-		m_remainingWords = remainingWords;
+		m_remainingParamaters = paramaterCount;
 		m_commandFunction = function;
 
 		m_gp0Mode = &Gpu::GP0Params;
 	}
 
-	void SetDrawOffset( int16_t x, int16_t y ) noexcept;
+	void SetDrawOffset( int16_t x, int16_t y );
 
 	// GP0 modes
 	void GP0Command( uint32_t ) noexcept;
 	void GP0Params( uint32_t ) noexcept;
 	void GP0PolyLine( uint32_t ) noexcept;
-	void GP0ImageLoad( uint32_t ) noexcept;
+	void GP0ImageLoad( uint32_t ) noexcept; // affected by mask settings
 
 	// command functions
 	void FillRectangle() noexcept;
@@ -230,6 +246,16 @@ private:
 		return GetDotsPerCycle() * GetCyclesPerScanline();
 	}
 
+	// operations on vram
+
+	// not affected by mask settings
+	void FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint16_t value );
+
+	// affected by mask settings
+	void CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height );
+
+	void FlushVRam();
+
 private:
 	Timers& m_timers;
 	InterruptControl& m_interruptControl;
@@ -237,7 +263,7 @@ private:
 	CycleScheduler& m_cycleScheduler;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
-	uint32_t m_remainingWords;
+	uint32_t m_remainingParamaters;
 	CommandFunction m_commandFunction;
 	GP0Function m_gp0Mode;
 
@@ -287,6 +313,37 @@ private:
 	bool m_displayFrame;
 
 	uint32_t m_totalCpuCyclesThisFrame = 0; // temp
+
+	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512
+	bool m_vramDirty;
+
+	struct VRamCopyState
+	{
+		uint32_t left = 0;
+		uint32_t top = 0;
+		uint32_t width = 0;
+		uint32_t height = 0;
+		uint32_t x = 0;
+		uint32_t y = 0;
+
+		bool Finished() const noexcept { return x == 0 && y == height; }
+
+		uint32_t GetWrappedX() const noexcept { return ( left + x ) % VRamWidth; }
+
+		uint32_t GetWrappedY() const noexcept { return ( top + y ) % VRamHeight; }
+
+		void Increment() noexcept
+		{
+			if ( ++x == width )
+			{
+				x = 0;
+				++y;
+			}
+		}
+	};
+
+	std::optional<VRamCopyState> m_vramCopyState;
+
 };
 
 }

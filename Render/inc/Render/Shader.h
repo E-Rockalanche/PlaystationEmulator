@@ -1,6 +1,9 @@
 #pragma once
 
+#include "Error.h"
 #include "Types.h"
+
+#include <stdx/assert.h>
 
 #include <iostream>
 #include <utility>
@@ -57,6 +60,7 @@ public:
 	void Use()
 	{
 		glUseProgram( m_program );
+		dbCheckRenderErrors();
 	}
 
 	AttributeLocation GetAttributeLocation( const char* name )
@@ -73,8 +77,20 @@ public:
 	void SetVertexAttribPointer( const char* name, GLint size, Type type, GLboolean normalized, GLsizei stride, size_t offset )
 	{
 		const auto location = GetAttributeLocation( name );
+		dbAssert( location != -1 );
 		glVertexAttribPointer( location, size, static_cast<GLenum>( type ), normalized, stride, reinterpret_cast<void*>( offset ) );
 		glEnableVertexAttribArray( location );
+		dbCheckRenderErrors();
+	}
+
+	// also sets data in VAO if bound
+	void SetVertexAttribPointerInt( const char* name, GLint size, Type type, GLsizei stride, size_t offset )
+	{
+		const auto location = GetAttributeLocation( name );
+		dbAssert( location != -1 );
+		glVertexAttribIPointer( location, size, static_cast<GLenum>( type ), stride, reinterpret_cast<void*>( offset ) );
+		glEnableVertexAttribArray( location );
+		dbCheckRenderErrors();
 	}
 
 private:

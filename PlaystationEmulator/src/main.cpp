@@ -74,50 +74,11 @@ int main( int, char** )
 	glEnable( GL_BLEND );
 	glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
-	/*
-	PSX::Renderer renderer;
-
-	const PSX::Color red{ 0x0000ffu };
-	const PSX::Color green{ 0x00ff00u };
-	const PSX::Color blue{ 0xff0000u };
-
-	PSX::Vertex vertices[]
-	{
-		PSX::Vertex{ PSX::Position( 64, 64 ), red },
-		PSX::Vertex{ PSX::Position( 256-64, 64 ), green },
-		PSX::Vertex{ PSX::Position( 256-64, 224-64 ), blue }
-	};
-
-	bool quit = false;
-	while ( !quit )
-	{
-		const auto time = SDL_GetTicks();
-
-		SDL_Event event;
-		while ( SDL_PollEvent( &event ) )
-		{
-			switch ( event.type )
-			{
-				case SDL_QUIT:
-					quit = true;
-					break;
-			}
-		}
-
-		glClear( GL_COLOR_BUFFER_BIT );
-		
-		renderer.PushTriangle( vertices[ 0 ], vertices[ 1 ], vertices[ 2 ] );
-		renderer.DrawBatch();
-
-		SDL_GL_SwapWindow( window );
-
-		Render::CheckErrors();
-
-		SDL_Delay( 1000 / 60 );
-	}
-	*/
+	dbCheckRenderErrors();
 
 	PSX::Renderer renderer;
+	if ( !renderer.Initialize( window ) )
+		return -1;
 	
 	auto bios = std::make_unique<PSX::Bios>();
 	if ( !PSX::LoadBios( "bios.bin", *bios ) )
@@ -168,14 +129,19 @@ int main( int, char** )
 			}
 		}
 
+		glClearColor( 1, 0, 1, 1 );
+		glClear( GL_COLOR_BUFFER_BIT );
+
 		while ( !gpu.GetDisplayFrame() )
 			cpu->Tick();
 
 		renderer.DrawBatch();
 
+		// renderer.RenderVRamView();
+
 		SDL_GL_SwapWindow( window );
 
-		Render::CheckErrors();
+		dbCheckRenderErrors();
 
 		const uint32_t elapsed = SDL_GetTicks() - frameStart;
 
@@ -183,7 +149,6 @@ int main( int, char** )
 		if ( elapsed < TargetMilliseconds )
 			SDL_Delay( TargetMilliseconds - elapsed );
 	}
-	
 
 	SDL_GL_DeleteContext( glContext );
 	SDL_DestroyWindow( window );

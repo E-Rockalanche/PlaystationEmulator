@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="inc">
+      <UniqueIdentifier>{6bcd8cfb-c446-4914-916b-a23f172c8566}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{e3d94b85-ed98-4dbd-8ff2-6380c86a412c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="inc\stdx">
+      <UniqueIdentifier>{0c4f9c44-e056-44ac-969a-0d728cabd902}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="inc\stdx\assert.h">
+      <Filter>inc\stdx</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\stdx\bit.h">
+      <Filter>inc\stdx</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\stdx\compiler.h">
+      <Filter>inc\stdx</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\dummy.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

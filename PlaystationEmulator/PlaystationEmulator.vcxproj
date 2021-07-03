@@ -125,7 +125,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -140,7 +140,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -159,7 +159,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -173,7 +173,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
@@ -191,7 +191,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -211,7 +211,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../SDL2/include;../Render/Glad/include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -221,13 +221,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="inc\PlaystationEmulator\assert.h" />
     <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
-    <ClInclude Include="inc\PlaystationEmulator\bit.h" />
     <ClInclude Include="inc\PlaystationEmulator\CDRomDrive.h" />
     <ClInclude Include="inc\PlaystationEmulator\CycleScheduler.h" />
     <ClInclude Include="inc\PlaystationEmulator\FifoBuffer.h" />
-    <ClInclude Include="inc\PlaystationEmulator\compiler.h" />
     <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
     <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\DMA.h" />
@@ -259,6 +256,9 @@
     <ClCompile Include="src\Timers.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Foundation\Foundation.vcxproj">
+      <Project>{964438a3-86d4-48d7-ac32-e1bff2177e11}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\Render\Render.vcxproj">
       <Project>{1f311d5c-ae12-4939-b969-286785653870}</Project>
     </ProjectReference>

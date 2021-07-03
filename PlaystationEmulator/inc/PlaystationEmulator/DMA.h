@@ -1,9 +1,9 @@
 #pragma once
 
-#include "assert.h"
-
 #include "GPU.h"
 #include "RAM.h"
+
+#include <stdx/assert.h>
 
 #include <array>
 #include <cstdint>

@@ -1,5 +1,8 @@
 #pragma once
 
+#include "Buffer.h"
+#include "Error.h"
+
 #include "glad/glad.h"
 
 #include <type_traits>
@@ -57,21 +60,32 @@ public:
 
 	~BaseTexture()
 	{
-		Destroy();
+		Reset();
 	}
 
 	BaseTexture& operator=( const BaseTexture& ) = delete;
 	BaseTexture& operator=( BaseTexture&& other ) noexcept
 	{
-		Destroy();
+		Reset();
 		m_texture = other.m_texture;
 		other.m_texture = 0;
 		return *this;
 	}
 
-	void Destroy()
+	bool Valid() const noexcept
+	{
+		return m_texture != 0;
+	}
+
+	void Reset()
 	{
 		glDeleteTextures( 1, &m_texture ); // silently ignores 0
+		m_texture = 0;
+	}
+
+	GLuint GetRawHandle() noexcept
+	{
+		return m_texture;
 	}
 
 protected:
@@ -95,6 +109,7 @@ public:
 	template <typename T>
 	void SetParamater( GLenum name, T value )
 	{
+		Bind();
 		if constexpr ( std::is_same_v<T, GLfloat> )
 			glTexParameterf( static_cast<GLenum>( Type ), name, value );
 		else if constexpr ( std::is_same_v<T, GLint> )
@@ -107,6 +122,8 @@ public:
 			glTexParameterIuiv( static_cast<GLenum>( Type ), name, value );
 		else
 			static_assert( std::is_same_v<T, GLfloat> ); // will always be false
+
+		dbCheckRenderErrors();
 	}
 
 protected:
@@ -121,13 +138,65 @@ protected:
 class Texture2D : public Detail::IntermediateTexture<TextureType::Texture2D>
 {
 public:
-	static Texture2D Create( GLint internalColorFormat, GLsizei width, GLsizei height, GLenum colorFormat, GLenum pixelType, const void* pixels, GLint mipmapLevel = 0 )
+	static Texture2D Create( GLint internalColorFormat, GLsizei width, GLsizei height, GLenum colorFormat, GLenum pixelType, const void* pixels = nullptr, GLint mipmapLevel = 0 )
 	{
 		Texture2D texture;
 		glGenTextures( 1, &texture.m_texture );
-		texture.Bind();
-		glTexImage2D( GetType(), mipmapLevel, internalColorFormat, width, height, 0, colorFormat, pixelType, pixels );
+		texture.UpdateImage( internalColorFormat, width, height, colorFormat, pixelType, pixels, mipmapLevel );
 		return texture;
+	}
+
+	// slowest update, recreates internal data structures
+	void UpdateImage( GLint internalColorFormat, GLsizei width, GLsizei height, GLenum colorFormat, GLenum pixelType, const void* pixels = nullptr, GLint mipmapLevel = 0 )
+	{
+		dbExpects( width < GL_MAX_TEXTURE_SIZE );
+		dbExpects( height < GL_MAX_TEXTURE_SIZE );
+		Bind();
+		glTexImage2D( GetType(), mipmapLevel, internalColorFormat, width, height, 0, colorFormat, pixelType, pixels );
+		dbCheckRenderErrors();
+		m_width = width;
+		m_height = height;
+	}
+
+	// faster update, but can't change size or internal format
+	void SubImage( GLint x, GLint y, GLsizei width, GLsizei height, GLenum colorFormat, GLenum pixelType, const void* pixels, GLint mipmapLevel = 0 )
+	{
+		dbExpects( x + width <= m_width );
+		dbExpects( y + height <= m_height );
+		Bind();
+		glTexSubImage2D( GetType(), mipmapLevel, x, y, width, height, colorFormat, pixelType, pixels );
+		dbCheckRenderErrors();
+	}
+
+	// render-to-texture with FBO - update entirely on GPU, very fast
+
+	// use PBO for fast uploads from CPU
+
+	GLsizei GetWidth() const noexcept { return m_width; }
+	GLsizei GetHeight() const noexcept { return m_height; }
+
+private:
+	GLsizei m_width = 0;
+	GLsizei m_height = 0;
+};
+
+class BufferTexture : public Detail::IntermediateTexture<TextureType::Buffer>
+{
+public:
+	static BufferTexture Create( GLenum internalColorFormat, TextureBuffer& buffer )
+	{
+		BufferTexture texture;
+		glGenTextures( 1, &texture.m_texture );
+		texture.Bind();
+		glTexBuffer( GetType(), internalColorFormat, buffer.GetRawHandle() );
+		dbCheckRenderErrors();
+	}
+
+	void DetachBuffer()
+	{
+		Bind();
+		glTexBuffer( GetType(), 0, 0 ); // TODO: what format to use when detaching?
+		dbCheckRenderErrors();
 	}
 };
 

@@ -3,8 +3,8 @@
 #include "CycleScheduler.h"
 #include "InterruptControl.h"
 
-#include "assert.h"
-#include "bit.h"
+#include <stdx/assert.h>
+#include <stdx/bit.h>
 
 #include <array>
 #include <cstdint>

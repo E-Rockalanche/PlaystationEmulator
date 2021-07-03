@@ -11,7 +11,7 @@
 #include "RAM.h"
 #include "Timers.h"
 
-#include "assert.h"
+#include <stdx/assert.h>
 
 #include <array>
 #include <optional>

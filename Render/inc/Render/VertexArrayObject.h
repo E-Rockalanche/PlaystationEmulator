@@ -2,8 +2,6 @@
 
 #include <glad/glad.h>
 
-#include <utility>
-
 namespace Render
 {
 
@@ -12,12 +10,16 @@ class VertexArrayObject
 public:
 	VertexArrayObject() = default;
 
-	VertexArrayObject( VertexArrayObject&& other ) : m_vao{ std::exchange( other.m_vao, 0 ) } {}
+	VertexArrayObject( VertexArrayObject&& other ) : m_vao{ other.m_vao }
+	{
+		other.m_vao = 0;
+	}
 
 	VertexArrayObject& operator=( VertexArrayObject&& other )
 	{
 		Reset();
-		m_vao = std::exchange( other.m_vao, 0 );
+		m_vao = other.m_vao;
+		other.m_vao = 0;
 		return *this;
 	}
 

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <glad/glad.h>
+#include "Error.h"
 
-#include <utility>
+#include <glad/glad.h>
 
 namespace Render
 {
@@ -40,22 +40,28 @@ public:
 	{
 		Buffer buffer;
 		glGenBuffers( 1, &buffer.m_buffer );
+		dbCheckRenderErrors();
 		return buffer;
 	}
 
-	static Buffer Create( GLsizei size, const void* data, BufferUsage usage )
+	static Buffer Create( BufferUsage usage, GLsizei size, const void* data = nullptr )
 	{
 		Buffer buffer = Create();
 		buffer.SetData( size, data, usage );
+		dbCheckRenderErrors();
 		return buffer;
 	}
 
-	Buffer( Buffer&& other ) : m_buffer{ std::exchange( other.m_buffer, 0 ) } {}
+	Buffer( Buffer&& other ) noexcept : m_buffer{ other.m_buffer }
+	{
+		other.m_buffer = 0;
+	}
 
-	Buffer& operator=( Buffer&& other )
+	Buffer& operator=( Buffer&& other ) noexcept
 	{
 		Reset();
-		m_buffer = std::exchange( other.m_buffer, 0 );
+		m_buffer = other.m_buffer;
+		other.m_buffer = 0;
 		return *this;
 	}
 
@@ -70,10 +76,11 @@ public:
 	void Reset()
 	{
 		glDeleteBuffers( 1, &m_buffer );
+		dbCheckRenderErrors();
 		m_buffer = 0;
 	}
 
-	bool Valid() const
+	bool Valid() const noexcept
 	{
 		return m_buffer != 0;
 	}
@@ -88,16 +95,23 @@ public:
 		glBindBuffer( static_cast<GLuint>( Type ), 0 );
 	}
 
-	void SetData( GLsizei size, const void* data, BufferUsage usage )
+	void SetData( BufferUsage usage, GLsizei size, const void* data = nullptr )
 	{
 		Bind();
 		glBufferData( static_cast<GLuint>( Type ), size, data, static_cast<GLuint>( usage ) );
+		dbCheckRenderErrors();
 	}
 
 	void SubData( GLintptr offset, GLsizei size, const void* data )
 	{
 		Bind();
 		glBufferSubData( static_cast<GLuint>( Type ), offset, size, data );
+		dbCheckRenderErrors();
+	}
+
+	GLuint GetRawHandle() noexcept
+	{
+		return m_buffer;
 	}
 
 private:

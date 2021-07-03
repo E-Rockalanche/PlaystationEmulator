@@ -106,6 +106,8 @@
 #define dbExpects( condition ) STDX_assume( condition )
 #define dbEnsures( condition ) STDX_assume( condition )
 
+#undef EmptyBlock
+
 #endif
 
 namespace stdx

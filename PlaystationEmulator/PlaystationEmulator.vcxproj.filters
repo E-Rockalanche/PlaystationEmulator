@@ -15,12 +15,6 @@
     <ClInclude Include="inc\PlaystationEmulator\Instruction.h">
       <Filter>inc</Filter>
     </ClInclude>
-    <ClInclude Include="inc\PlaystationEmulator\assert.h">
-      <Filter>inc</Filter>
-    </ClInclude>
-    <ClInclude Include="inc\PlaystationEmulator\compiler.h">
-      <Filter>inc</Filter>
-    </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\Memory.h">
       <Filter>inc</Filter>
     </ClInclude>
@@ -49,9 +43,6 @@
       <Filter>inc</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\GPU.h">
-      <Filter>inc</Filter>
-    </ClInclude>
-    <ClInclude Include="inc\PlaystationEmulator\bit.h">
       <Filter>inc</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\Renderer.h">
