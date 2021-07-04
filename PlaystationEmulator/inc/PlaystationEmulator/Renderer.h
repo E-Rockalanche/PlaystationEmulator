@@ -61,6 +61,7 @@ struct TexCoord
 		, v{ static_cast<uint16_t>( ( gpuParam >> 8 ) & 0xff ) }
 	{}
 
+	// tex coords need to be larger than 8bit for rectangles
 	uint16_t u;
 	uint16_t v;
 };
@@ -71,7 +72,7 @@ struct Vertex
 	Color color;
 	TexCoord texCoord;
 	uint16_t clut;
-	uint16_t texPage = ( 1 << 11 ); // disable texture
+	uint16_t drawMode = ( 1 << 11 ); // disable texture
 };
 
 class Renderer
@@ -86,6 +87,7 @@ public:
 
 	void SetOrigin( int32_t x, int32_t y );
 	void SetDisplaySize( uint32_t w, uint32_t h );
+	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
 
 	void UploadVRam( const uint16_t* vram );
 
@@ -103,7 +105,6 @@ public:
 		SDL_SetWindowSize( m_window, VRamWidth16, VRamHeight );
 		glViewport( 0, 0, VRamWidth16, VRamHeight );
 		m_vramViewer->Bind();
-		glActiveTexture( GL_TEXTURE0 );
 		m_vramColorTables.Bind();
 		glDrawArrays( GL_TRIANGLES, 0, 6 );
 		dbCheckRenderErrors();
@@ -112,9 +113,6 @@ public:
 		m_vao.Bind();
 		m_shader.Use();
 		m_vertexBuffer.Bind();
-		glActiveTexture( GL_TEXTURE0 );
-		m_vramColorTables.Bind();
-		glActiveTexture( GL_TEXTURE1 );
 		m_vramTextures.Bind();
 		dbCheckRenderErrors();
 	}
@@ -131,6 +129,8 @@ private:
 
 	Render::UniformLocation m_originLoc = -1;
 	Render::UniformLocation m_displaySizeLoc = -1;
+	Render::UniformLocation m_texWindowMask = -1;
+	Render::UniformLocation m_texWindowOffset = -1;
 
 	struct Uniform
 	{
@@ -139,6 +139,11 @@ private:
 
 		uint32_t displayWidth = 640;
 		uint32_t displayHeight = 480;
+
+		uint32_t texWindowMaskX = 0;
+		uint32_t texWindowMaskY = 0;
+		uint32_t texWindowOffsetX = 0;
+		uint32_t texWindowOffsetY = 0;
 	};
 
 	Uniform m_uniform;

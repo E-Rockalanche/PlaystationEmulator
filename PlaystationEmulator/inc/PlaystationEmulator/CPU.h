@@ -46,6 +46,22 @@ public:
 		m_inBranch = false;
 	}
 
+	// debug
+	void SetLogInstructions( bool enable ) { m_logInstructions = enable; }
+	bool GetLogInstructions() const { return m_logInstructions; }
+
+	void DebugSetProgramCounter( uint32_t address )
+	{
+		SetProgramCounter( address );
+	}
+
+	void DebugSetRegister( uint32_t reg, uint32_t value )
+	{
+		dbExpects( reg < 32 );
+		m_registers.Set( reg, value );
+		m_registers.Update();
+	}
+
 private:
 
 	class Registers
@@ -72,6 +88,8 @@ private:
 		// immediately updates register
 		void Set( uint32_t index, uint32_t value ) noexcept
 		{
+			dbExpects( index < 32 );
+
 			// update input early so we can overwrite any delayed load
 			m_input[ m_output.index ] = m_output.value;
 			m_input[ Zero ] = 0;
@@ -82,6 +100,7 @@ private:
 		// emulates delayed load
 		void Load( uint32_t index, uint32_t value ) noexcept
 		{
+			dbExpects( index < 32 );
 			dbExpects( m_delayedLoad.index == 0 && m_delayedLoad.value == 0 );
 			m_delayedLoad = { index, value };
 		}
@@ -410,8 +429,8 @@ private:
 	uint32_t m_pc; // pc of instruction being fetched
 	uint32_t m_nextPC;
 
-	bool m_inBranch = false;
-	bool m_inDelaySlot = false;
+	bool m_inBranch;
+	bool m_inDelaySlot;
 
 	Registers m_registers;
 
@@ -419,6 +438,11 @@ private:
 	uint32_t m_lo;
 
 	InstructionCache m_instructionCache;
+
+	// debug
+	bool m_logInstructions = false;
+	bool m_showPrevInstructions = false;
+	bool m_loadTestExe = false;
 };
 
 inline void MipsR3000Cpu::CheckProgramCounterAlignment() noexcept

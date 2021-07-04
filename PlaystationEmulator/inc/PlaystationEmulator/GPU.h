@@ -81,7 +81,7 @@ public:
 		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
 		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
 
-		uint16_t GetTexPage() const noexcept
+		uint16_t GetDrawMode() const noexcept // used for textured primitives
 		{
 			return static_cast<uint16_t>( ( value & 0x3ff ) | ( textureDisable << 11 ) );
 		}
@@ -312,7 +312,9 @@ private:
 
 	bool m_displayFrame;
 
-	uint32_t m_totalCpuCyclesThisFrame = 0; // temp
+	// temp stats
+	uint32_t m_totalCpuCyclesThisFrame = 0;
+	uint32_t m_trianglesDrawn = 0;
 
 	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512
 	bool m_vramDirty;

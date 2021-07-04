@@ -3,6 +3,7 @@
 #include "CPU.h"
 #include "CycleScheduler.h"
 #include "DMA.h"
+#include "File.h"
 #include "GPU.h"
 #include "InterruptControl.h"
 #include "MemoryControl.h"
@@ -19,13 +20,70 @@
 #include <glad/glad.h>
 
 #include <cmath>
-#include <memory>
+#include <fstream>
 #include <iostream>
+#include <memory>
 
 void PrintSdlError( const char* message )
 {
 	std::cout << message << '\n';
 	std::cout << "SDL error: " << SDL_GetError() << '\n';
+}
+
+bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram )
+{
+	std::ifstream fin( filename, std::ios::binary );
+	if ( !fin.is_open() )
+	{
+		dbBreakMessage( "failed to open executable file" );
+		return false;
+	}
+
+	fin.seekg( 0, std::ios_base::end );
+	const size_t fileSize = static_cast<size_t>( fin.tellg() );
+	fin.seekg( 0, std::ios_base::beg );
+
+	if ( ( fileSize / 0x800 < 2 ) || ( fileSize % 0x800 != 0 ) )
+	{
+		dbLogError( "file size must be a multiple of 0x800 greater than 1 [%x]", static_cast<uint32_t>( fileSize ) );
+		return false;
+	}
+
+	PSX::ExeHeader header;
+	fin.read( reinterpret_cast<char*>( &header ), sizeof( header ) );
+
+	if ( header.id != PSX::ExeHeader::Id )
+	{
+		header.id[ 0xf ] = '\0';
+		dbLogError( "header ID is invalid [%s]", header.id );
+		return false;
+	}
+
+	if ( header.fileSize > fileSize - sizeof( header ) )
+	{
+		dbLogError( "header file size is greater than actual file size [%x] [%x]", header.fileSize, static_cast<uint32_t>( fileSize ) );
+		return false;
+	}
+
+	const auto physicalRamDest = header.ramDestination & 0x7fffffff;
+
+	if ( physicalRamDest + header.fileSize > PSX::Ram::Size() )
+	{
+		dbLogError( "file size larger than ram at destination [%x] [%x]", header.fileSize, header.ramDestination );
+		return false;
+	}
+
+	fin.read( ram.Data() + physicalRamDest, header.fileSize );
+
+	cpu.DebugSetProgramCounter( header.programCounter );
+
+	cpu.DebugSetRegister( 28, header.globalPointer );
+	cpu.DebugSetRegister( 29, header.stackPointerBase + header.stackPointerOffset ); // TODO: ?
+	cpu.DebugSetRegister( 30, header.stackPointerBase + header.stackPointerOffset ); // TODO: ?
+
+	dbLog( "loaded %s", filename );
+
+	return true;
 }
 
 int main( int, char** )
@@ -125,12 +183,29 @@ int main( int, char** )
 		{
 			switch ( event.type )
 			{
-				case SDL_QUIT:	quit = true;	break;
+				case SDL_QUIT:
+					quit = true;
+					break;
+
+				case SDL_KEYDOWN:
+					switch ( event.key.keysym.sym )
+					{
+						case SDLK_d:
+							// toggle log instructions
+							cpu->SetLogInstructions( !cpu->GetLogInstructions() );
+							break;
+
+						case SDLK_t:
+							// load test EXE
+							LoadExecutable( "psxtest_cpu.exe", *cpu, *ram );
+							break;
+					}
+					break;
 			}
 		}
 
-		glClearColor( 1, 0, 1, 1 );
-		glClear( GL_COLOR_BUFFER_BIT );
+		// glClearColor( 1, 0, 1, 1 );
+		// glClear( GL_COLOR_BUFFER_BIT );
 
 		while ( !gpu.GetDisplayFrame() )
 			cpu->Tick();

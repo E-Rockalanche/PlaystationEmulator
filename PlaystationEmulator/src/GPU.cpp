@@ -149,7 +149,7 @@ void Gpu::Reset()
 	m_totalCpuCyclesThisFrame = 0; // temp
 
 	// clear VRAM
-	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{} );
+	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0x801f } );
 	m_renderer.UploadVRam( m_vram.get() );
 	m_vramDirty = false;
 
@@ -701,9 +701,9 @@ void Gpu::RenderPolygon() noexcept
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
 
-		const auto texPage = static_cast<uint16_t>( value >> 16 );
+		const auto drawMode = static_cast<uint16_t>( value >> 16 );
 		for ( auto& v : vertices )
-			v.texPage = texPage;
+			v.drawMode = drawMode;
 	}
 
 	// vetex 3 and 4
@@ -724,6 +724,8 @@ void Gpu::RenderPolygon() noexcept
 		m_renderer.PushTriangle( vertices + 1 );
 
 	ClearCommandBuffer();
+
+	m_trianglesDrawn += quad ? 4 : 3;
 }
 
 void Gpu::RenderRectangle() noexcept
@@ -742,56 +744,58 @@ void Gpu::RenderRectangle() noexcept
 
 	// set position/dimensions
 	const Position pos{ m_commandBuffer.Pop() };
-	Position size;
+	uint32_t width;
+	uint32_t height;
 	switch ( static_cast<RectangleSize>( command >> 27 ) )
 	{
 		case RectangleSize::Variable:
-			size = Position{ m_commandBuffer.Pop() };
+			std::tie( width, height ) = DecodePosition( m_commandBuffer.Pop() );
 			break;
 
 		case RectangleSize::One:
-			size = Position{ 1, 1 };
+			width = height = 1;
 			break;
 
 		case RectangleSize::Eight:
-			size = Position{ 8, 8 };
+			width = height = 8;
 			break;
 
 		case RectangleSize::Sixteen:
-			size = Position{ 16, 16 };
+			width = height = 16;
 			break;
 
 		default:
 			dbBreak();
-			size = Position{ 0, 0 };
+			width = height = 0;
 			break;
 	}
 	vertices[ 0 ].position = pos;
-	vertices[ 1 ].position = Position{ pos.x, pos.y + size.y };
-	vertices[ 2 ].position = Position{ pos.x + size.x, pos.y };
-	vertices[ 3 ].position = Position{ pos.x + size.x, pos.y + size.y };
+	vertices[ 1 ].position = Position{ pos.x, pos.y + static_cast<int16_t>( height ) };
+	vertices[ 2 ].position = Position{ pos.x + static_cast<int16_t>( width ), pos.y };
+	vertices[ 3 ].position = Position{ pos.x + static_cast<int16_t>( width ), pos.y + static_cast<int16_t>( height ) };
 
-	// set texture coordinates
 	if ( command & RenderCommand::TextureMapping )
 	{
 		const uint32_t value = m_commandBuffer.Pop();
-		const TexCoord texCoord{ value };
 
-		vertices[ 0 ].texCoord = texCoord;
-		vertices[ 1 ].texCoord = TexCoord{ texCoord.u, static_cast<uint16_t>( texCoord.v + size.y ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( texCoord.u + size.x ), texCoord.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texCoord.u + size.x ), static_cast<uint16_t>( texCoord.v + size.y ) };
+		const TexCoord topLeft{ value };
+		vertices[ 0 ].texCoord = topLeft;
+		vertices[ 1 ].texCoord = TexCoord{ topLeft.u, static_cast<uint16_t>( topLeft.v + height ) };
+		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width ), topLeft.v };
+		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width ), static_cast<uint16_t>( topLeft.v + height ) };
 
 		const uint16_t clut = static_cast<uint16_t>( value >> 16 );
-		const uint16_t texPage = m_status.GetTexPage();
+		const uint16_t drawMode = m_status.GetDrawMode();
 		for ( auto& v : vertices )
 		{
 			v.clut = clut;
-			v.texPage = texPage;
+			v.drawMode = drawMode;
 		}
 	}
 
 	m_renderer.PushQuad( vertices );
+
+	m_trianglesDrawn += 4;
 }
 
 void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
@@ -849,6 +853,9 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 		// dbLog( "VBLANK" );
 
 		m_displayFrame = true;
+
+		dbLog( "Triangles drawn this frame: %u", m_trianglesDrawn );
+		m_trianglesDrawn = 0;
 
 		if ( IsInterlaced() )
 			m_status.drawingEvenOdd ^= 1;

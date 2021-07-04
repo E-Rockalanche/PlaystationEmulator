@@ -228,6 +228,7 @@
     <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
     <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\DMA.h" />
+    <ClInclude Include="inc\PlaystationEmulator\File.h" />
     <ClInclude Include="inc\PlaystationEmulator\GPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />
     <ClInclude Include="inc\PlaystationEmulator\InterruptControl.h" />

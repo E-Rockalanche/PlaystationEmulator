@@ -222,7 +222,7 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 		}
 
 		case Segment::Spu:
-			dbLog( "read SPU register [%X]", address );
+			// dbLog( "read SPU register [%X]", address );
 			return 0; // TODO
 
 		case Segment::Expansion2:
@@ -310,7 +310,7 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 		}
 
 		case Segment::Spu:
-			dbLog( "write to SPU register [%X <- %X]", address, value );
+			// dbLog( "write to SPU register [%X <- %X]", address, value );
 			break;
 
 		case Segment::Expansion2:

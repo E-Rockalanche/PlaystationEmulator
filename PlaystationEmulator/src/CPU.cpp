@@ -47,11 +47,20 @@ void MipsR3000Cpu::Tick() noexcept
 		RaiseException( Cop0::ExceptionCode::Interrupt );
 	}
 
-	ExecuteInstruction( Instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) } );
+	const Instruction instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) };
+
+	if ( m_logInstructions )
+		PrintDisassembly( instruction );
+
+	ExecuteInstruction( instruction );
 
 	m_registers.Update();
 
 	m_cycleScheduler.AddCycles( 1 ); // overclock for now
+
+	if ( m_loadTestExe )
+	{
+	}
 }
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
@@ -351,7 +360,7 @@ inline void MipsR3000Cpu::BranchLessThanZero( Instruction instr ) noexcept
 
 inline void MipsR3000Cpu::BranchLessThanZeroAndLink( Instruction instr ) noexcept
 {
-	dbExpects( instr.rs() != Registers::ReturnAddress );
+	// R31 should not be used as the branch address
 
 	// store return address after delay slot
 	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
@@ -373,6 +382,8 @@ void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction instr ) noexcept
 	// TODO: the contents of coprocessor control register rd of coprocessor unit are loaded into general register rt
 
 	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
+
+	dbBreak();
 }
 
 void MipsR3000Cpu::CoprocessorOperation( Instruction instr ) noexcept
@@ -397,6 +408,8 @@ void MipsR3000Cpu::MoveControlToCoprocessor( Instruction instr ) noexcept
 	// TODO: the contents of general register rt are loaded into control register rd of coprocessor unit
 
 	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
+
+	dbBreak();
 }
 
 void MipsR3000Cpu::Divide( Instruction instr ) noexcept
@@ -404,15 +417,22 @@ void MipsR3000Cpu::Divide( Instruction instr ) noexcept
 	const int32_t x = static_cast<int32_t>( m_registers[ instr.rs() ] );
 	const int32_t y = static_cast<int32_t>( m_registers[ instr.rt() ] );
 
-	if ( y != 0 )
+	if ( y == 0 )
 	{
-		m_lo = static_cast<uint32_t>( x / y );
-		m_hi = static_cast<uint32_t>( x % y );
+		// divide by zero
+		m_lo = ( x >= 0 ) ? 0xffffffffu : 1u;
+		m_hi = static_cast<uint32_t>( x );
+	}
+	else if ( y == -1 && x == std::numeric_limits<int32_t>::min() )
+	{
+		// integer overflow (-INT_MIN does not fit in s32)
+		m_lo = 0x80000000;
+		m_hi = 0;
 	}
 	else
 	{
-		m_lo = ( x >= 0 ) ? 0xffffffffu : 1u;
-		m_hi = static_cast<uint32_t>( x );
+		m_lo = static_cast<uint32_t>( x / y );
+		m_hi = static_cast<uint32_t>( x % y );
 	}
 }
 
@@ -506,6 +526,8 @@ void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 
 		// TODO: make the value available to coprocessor unit
 		(void)value;
+
+		dbBreak();
 	}
 	else
 	{
@@ -722,7 +744,7 @@ void MipsR3000Cpu::ShiftRightLogicalVariable( Instruction instr ) noexcept
 
 void MipsR3000Cpu::Subtract( Instruction instr ) noexcept
 {
-	SubtractTrap( m_registers[ instr.rs() ], m_registers[ instr.rt() ], m_registers[ instr.rd() ] );
+	SubtractTrap( m_registers[ instr.rs() ], m_registers[ instr.rt() ], instr.rd() );
 }
 
 void MipsR3000Cpu::SubtractUnsigned( Instruction instr ) noexcept
@@ -742,6 +764,7 @@ void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction instr ) noexcept
 	const uint32_t address = GetVAddr( instr );
 	dbExpects( address % 4 == 0 ); // exception for non word-aligned address
 
+	dbBreak();
 	// TODO: coprocessor unit sources a word, which the processor writes tothe addressed memory
 }
 
@@ -800,7 +823,7 @@ void MipsR3000Cpu::BitwiseXorImmediate( Instruction instr ) noexcept
 
 void MipsR3000Cpu::IllegalInstruction( [[maybe_unused]] Instruction instr ) noexcept
 {
-	dbBreakMessage( "Illegal instruction [%X]", instr.value );
+	dbLogError( "Illegal instruction [%X]", instr.value );
 	RaiseException( Cop0::ExceptionCode::ReservedInstruction );
 }
 
