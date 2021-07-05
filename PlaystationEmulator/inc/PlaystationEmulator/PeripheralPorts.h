@@ -118,7 +118,7 @@ public:
 				return m_status | ( m_baudrateTimer << 11 ) | ( !m_rxBuffer.Empty() << 1 );
 
 			case Register::Mode:
-				dbLog( "PeripheralPorts::Read() -- Mode" );
+				// dbLog( "PeripheralPorts::Read() -- Mode" );
 				return m_mode.value;
 
 			case Register::Control:

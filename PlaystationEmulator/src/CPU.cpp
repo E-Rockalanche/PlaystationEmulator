@@ -47,20 +47,11 @@ void MipsR3000Cpu::Tick() noexcept
 		RaiseException( Cop0::ExceptionCode::Interrupt );
 	}
 
-	const Instruction instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) };
-
-	if ( m_logInstructions )
-		PrintDisassembly( instruction );
-
-	ExecuteInstruction( instruction );
+	ExecuteInstruction( Instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) } );
 
 	m_registers.Update();
 
 	m_cycleScheduler.AddCycles( 1 ); // overclock for now
-
-	if ( m_loadTestExe )
-	{
-	}
 }
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
@@ -303,12 +294,12 @@ void MipsR3000Cpu::Add( Instruction instr ) noexcept
 
 void MipsR3000Cpu::AddImmediate( Instruction instr ) noexcept
 {
-	AddTrap( m_registers[ instr.rs() ], instr.immediateSigned(), instr.rt() );
+	AddTrap( m_registers[ instr.rs() ], instr.immediateSignExtended(), instr.rt() );
 }
 
 void MipsR3000Cpu::AddImmediateUnsigned( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] + instr.immediateSigned() );
+	m_registers.Set( instr.rt(), m_registers[ instr.rs() ] + instr.immediateSignExtended() );
 }
 
 void MipsR3000Cpu::AddUnsigned( Instruction instr ) noexcept
@@ -537,31 +528,8 @@ void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 
 void MipsR3000Cpu::LoadWordLeft( Instruction instr ) noexcept
 {
-	uint32_t addr = GetVAddr( instr );
+	// load high bytes of word crossing word boundary
 
-	union
-	{
-		uint32_t reg;
-		uint8_t regBytes[ 4 ];
-	};
-
-	if ( m_registers.GetOutputIndex() == instr.rt() )
-		reg = m_registers.GetOutputValue();
-	else
-		reg = m_registers[ instr.rt() ];
-
-	uint8_t* regByte = regBytes;
-	do
-	{
-		*regByte++ = LoadImp<uint8_t>( addr++ );
-	}
-	while ( addr % 4 != 0 );
-
-	m_registers.Load( instr.rt(), reg );
-}
-
-void MipsR3000Cpu::LoadWordRight( Instruction instr ) noexcept
-{
 	uint32_t addr = GetVAddr( instr );
 
 	union
@@ -581,6 +549,33 @@ void MipsR3000Cpu::LoadWordRight( Instruction instr ) noexcept
 		*regByte-- = LoadImp<uint8_t>( addr-- );
 	}
 	while ( addr % 4 != 3 );
+
+	m_registers.Load( instr.rt(), reg );
+}
+
+void MipsR3000Cpu::LoadWordRight( Instruction instr ) noexcept
+{
+	// load low bytes of word crossing word boundary
+
+	uint32_t addr = GetVAddr( instr );
+
+	union
+	{
+		uint32_t reg;
+		uint8_t regBytes[ 4 ];
+	};
+
+	if ( m_registers.GetOutputIndex() == instr.rt() )
+		reg = m_registers.GetOutputValue();
+	else
+		reg = m_registers[ instr.rt() ];
+
+	uint8_t* regByte = regBytes;
+	do
+	{
+		*regByte++ = LoadImp<uint8_t>( addr++ );
+	}
+	while ( addr % 4 != 0 );
 
 	m_registers.Load( instr.rt(), reg );
 }
@@ -704,13 +699,15 @@ void MipsR3000Cpu::SetLessThan( Instruction instr ) noexcept
 
 void MipsR3000Cpu::SetLessThanImmediate( Instruction instr ) noexcept
 {
+	// immediate is sign extended and compared with rs. Both values are considered signed
 	const bool set = static_cast<int32_t>( m_registers[ instr.rs() ] ) < instr.immediateSigned();
 	m_registers.Set( instr.rt(), static_cast<uint32_t>( set ) );
 }
 
 void MipsR3000Cpu::SetLessThanImmediateUnsigned( Instruction instr ) noexcept
 {
-	const bool set = m_registers[ instr.rs() ] < instr.immediateSigned();
+	// immediate is sign extended and compared with rs. Both values are considered unsigned
+	const bool set = m_registers[ instr.rs() ] < instr.immediateSignExtended();
 	m_registers.Set( instr.rt(), static_cast<uint32_t>( set ) );
 }
 
@@ -770,25 +767,8 @@ void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction instr ) noexcept
 
 void MipsR3000Cpu::StoreWordLeft( Instruction instr ) noexcept
 {
-	uint32_t addr = GetVAddr( instr );
+	// store high bytes to word crossing word boundary
 
-	union
-	{
-		uint32_t reg;
-		uint8_t regBytes[ 4 ];
-	};
-	reg = m_registers[ instr.rt() ];
-
-	const uint8_t* regByte = regBytes;
-	do
-	{
-		StoreImp<uint8_t>( addr++, *( regByte++ ) );
-	}
-	while ( addr % 4 != 0 );
-}
-
-void MipsR3000Cpu::StoreWordRight( Instruction instr ) noexcept
-{
 	uint32_t addr = GetVAddr( instr );
 
 	union
@@ -804,6 +784,27 @@ void MipsR3000Cpu::StoreWordRight( Instruction instr ) noexcept
 		StoreImp<uint8_t>( addr--, *( regByte-- ) );
 	}
 	while ( addr % 4 != 3 );
+}
+
+void MipsR3000Cpu::StoreWordRight( Instruction instr ) noexcept
+{
+	// store low bytes to word crossing word boundary
+
+	uint32_t addr = GetVAddr( instr );
+
+	union
+	{
+		uint32_t reg;
+		uint8_t regBytes[ 4 ];
+	};
+	reg = m_registers[ instr.rt() ];
+
+	const uint8_t* regByte = regBytes;
+	do
+	{
+		StoreImp<uint8_t>( addr++, *( regByte++ ) );
+	}
+	while ( addr % 4 != 0 );
 }
 
 void MipsR3000Cpu::SystemCall( Instruction ) noexcept

@@ -26,10 +26,11 @@ struct Instruction
 
 	uint32_t op() const noexcept { return ( value >> 26 ); }
 
-	uint32_t immediateSigned() const noexcept { return static_cast<uint32_t>( static_cast<int32_t>( static_cast<int16_t>( value ) ) ); }
 	uint32_t immediateUnsigned() const noexcept { return value & 0x0000ffff; }
+	int32_t  immediateSigned() const noexcept { return static_cast<int32_t>( static_cast<int16_t>( value ) ); }
+	uint32_t immediateSignExtended() const noexcept { return static_cast<uint32_t>( immediateSigned() ); }
 
-	uint32_t offset() const noexcept { return immediateSigned(); }
+	uint32_t offset() const noexcept { return immediateSignExtended(); }
 
 	uint32_t base() const noexcept { return ( value >> 21 ) & 0x0000001f; }
 

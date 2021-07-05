@@ -403,7 +403,7 @@ void Gpu::GP0ImageLoad( uint32_t param ) noexcept
 		m_vramCopyState->Increment();
 	};
 
-	copyPixel( param & 0xff );
+	copyPixel( param & 0xffff );
 
 	if ( !m_vramCopyState->Finished() )
 		copyPixel( param >> 16 );
@@ -730,11 +730,12 @@ void Gpu::RenderPolygon() noexcept
 
 void Gpu::RenderRectangle() noexcept
 {
-	FlushVRam();
+	// FlushVRam();
 
 	Vertex vertices[ 4 ];
 
 	const uint32_t command = m_commandBuffer.Pop();
+	dbAssert( static_cast<PrimitiveType>( command >> 29 ) == PrimitiveType::Rectangle );
 
 	// set color
 	const bool noColorBlend = command & RenderCommand::TextureMode;
@@ -742,11 +743,13 @@ void Gpu::RenderRectangle() noexcept
 	for ( auto& v : vertices )
 		v.color = color;
 
+	// const bool semiTransparent = command & RenderCommand::SemiTransparency;
+
 	// set position/dimensions
 	const Position pos{ m_commandBuffer.Pop() };
 	uint32_t width;
 	uint32_t height;
-	switch ( static_cast<RectangleSize>( command >> 27 ) )
+	switch ( static_cast<RectangleSize>( ( command >> 27 ) & 0x3 ) )
 	{
 		case RectangleSize::Variable:
 			std::tie( width, height ) = DecodePosition( m_commandBuffer.Pop() );
@@ -776,6 +779,8 @@ void Gpu::RenderRectangle() noexcept
 
 	if ( command & RenderCommand::TextureMapping )
 	{
+		FlushVRam(); // DEBUG
+
 		const uint32_t value = m_commandBuffer.Pop();
 
 		const TexCoord topLeft{ value };
@@ -796,6 +801,15 @@ void Gpu::RenderRectangle() noexcept
 	m_renderer.PushQuad( vertices );
 
 	m_trianglesDrawn += 4;
+
+	// DEBUG
+	const uint16_t color555 = ( color.r >> 3 ) | ( ( color.g >> 3 ) << 5 ) | ( ( color.b >> 3 ) << 10 );
+	for ( uint32_t y = 0; y < height; ++y )
+	{
+		auto* row = m_vram.get() + ( y + pos.y ) * VRamWidth;
+		std::fill_n( row + pos.x, width, color555 );
+	}
+	m_vramDirty = true;
 }
 
 void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
@@ -863,6 +877,9 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 		// dbLog( "CPU cycles this frame: %u", m_totalCpuCyclesThisFrame );
 		dbLog( "CPU cycles over/under expected: %i", static_cast<int>( m_totalCpuCyclesThisFrame - CpuClockSpeed / GetRefreshRate() ) );
 		m_totalCpuCyclesThisFrame = 0;
+
+		// DEBUG
+		FlushVRam();
 	}
 	m_vblank = vblank;
 }

@@ -73,13 +73,19 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 		return false;
 	}
 
+	// TODO: zero fill
+
 	fin.read( ram.Data() + physicalRamDest, header.fileSize );
 
 	cpu.DebugSetProgramCounter( header.programCounter );
 
 	cpu.DebugSetRegister( 28, header.globalPointer );
-	cpu.DebugSetRegister( 29, header.stackPointerBase + header.stackPointerOffset ); // TODO: ?
-	cpu.DebugSetRegister( 30, header.stackPointerBase + header.stackPointerOffset ); // TODO: ?
+
+	if ( header.stackPointerBase != 0 )
+	{
+		cpu.DebugSetRegister( 29, header.stackPointerBase + header.stackPointerOffset ); // TODO: is this right?
+		cpu.DebugSetRegister( 30, header.stackPointerBase ); // TODO: is this right?
+	}
 
 	dbLog( "loaded %s", filename );
 
@@ -190,11 +196,6 @@ int main( int, char** )
 				case SDL_KEYDOWN:
 					switch ( event.key.keysym.sym )
 					{
-						case SDLK_d:
-							// toggle log instructions
-							cpu->SetLogInstructions( !cpu->GetLogInstructions() );
-							break;
-
 						case SDLK_t:
 							// load test EXE
 							LoadExecutable( "psxtest_cpu.exe", *cpu, *ram );

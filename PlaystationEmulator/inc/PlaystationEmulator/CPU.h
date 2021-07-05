@@ -37,22 +37,11 @@ public:
 
 	void Tick() noexcept;
 
-	// skip instruction in branch delay slot
-	void SetProgramCounter( uint32_t address )
-	{
-		dbExpects( address % 4 == 0 );
-		m_pc = address;
-		m_nextPC = address + 4;
-		m_inBranch = false;
-	}
-
-	// debug
-	void SetLogInstructions( bool enable ) { m_logInstructions = enable; }
-	bool GetLogInstructions() const { return m_logInstructions; }
-
 	void DebugSetProgramCounter( uint32_t address )
 	{
 		SetProgramCounter( address );
+		m_inBranch = false;
+		m_inDelaySlot = false;
 	}
 
 	void DebugSetRegister( uint32_t reg, uint32_t value )
@@ -175,6 +164,15 @@ private:
 		};
 		std::array<Flags, 256> m_flags;
 	};
+
+	// skip instruction in branch delay slot
+	void SetProgramCounter( uint32_t address )
+	{
+		dbExpects( address % 4 == 0 );
+		m_pc = address;
+		m_nextPC = address + 4;
+		m_inBranch = false;
+	}
 
 	void ExecuteInstruction( Instruction instr ) noexcept;
 
@@ -438,11 +436,6 @@ private:
 	uint32_t m_lo;
 
 	InstructionCache m_instructionCache;
-
-	// debug
-	bool m_logInstructions = false;
-	bool m_showPrevInstructions = false;
-	bool m_loadTestExe = false;
 };
 
 inline void MipsR3000Cpu::CheckProgramCounterAlignment() noexcept
