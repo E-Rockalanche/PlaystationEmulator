@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Cop0.h"
+#include "GeometryTransformationEngine.h"
 #include "Instruction.h"
 #include "MemoryMap.h"
 
@@ -422,6 +423,7 @@ private:
 	CycleScheduler& m_cycleScheduler;
 
 	Cop0 m_cop0;
+	GeometryTransformationEngine m_gte;
 
 	uint32_t m_currentPC; // pc of instruction being executed
 	uint32_t m_pc; // pc of instruction being fetched

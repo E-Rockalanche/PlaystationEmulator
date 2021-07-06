@@ -10,6 +10,9 @@
     <Filter Include="inc\stdx">
       <UniqueIdentifier>{0c4f9c44-e056-44ac-969a-0d728cabd902}</UniqueIdentifier>
     </Filter>
+    <Filter Include="inc\Math">
+      <UniqueIdentifier>{35ad4d97-a468-46c4-a58d-dddc5671f186}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\stdx\assert.h">
@@ -20,6 +23,18 @@
     </ClInclude>
     <ClInclude Include="inc\stdx\compiler.h">
       <Filter>inc\stdx</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\Math\Vector.h">
+      <Filter>inc\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\Math\Matrix.h">
+      <Filter>inc\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\Math\FixedPoint.h">
+      <Filter>inc\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\Math\Color.h">
+      <Filter>inc\Math</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

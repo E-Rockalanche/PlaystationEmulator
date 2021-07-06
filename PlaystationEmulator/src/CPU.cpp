@@ -372,9 +372,10 @@ void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction instr ) noexcept
 {
 	// TODO: the contents of coprocessor control register rd of coprocessor unit are loaded into general register rt
 
-	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
-
-	dbBreak();
+	if ( instr.z() == 2 )
+		m_registers.Set( instr.rt(), m_gte.Read( instr.rd() ) );
+	else
+		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable );
 }
 
 void MipsR3000Cpu::CoprocessorOperation( Instruction instr ) noexcept
@@ -388,6 +389,10 @@ void MipsR3000Cpu::CoprocessorOperation( Instruction instr ) noexcept
 			m_cop0.PrepareReturnFromException();
 			break;
 
+		case 2:
+			m_gte.ExecuteCommand( instr.value );
+			break;
+
 		default:
 			dbBreak(); // TODO
 			break;
@@ -398,9 +403,10 @@ void MipsR3000Cpu::MoveControlToCoprocessor( Instruction instr ) noexcept
 {
 	// TODO: the contents of general register rt are loaded into control register rd of coprocessor unit
 
-	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
-
-	dbBreak();
+	if ( instr.z() == 2 )
+		m_gte.Write( instr.rd(), m_registers[ instr.rt() ] );
+	else
+		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable );
 }
 
 void MipsR3000Cpu::Divide( Instruction instr ) noexcept
@@ -513,12 +519,14 @@ void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 	const auto address = GetVAddr( instr );
 	if ( address % 4 == 0 )
 	{
-		const auto value = LoadImp<int32_t>( address );
+		dbBreak(); // don't actually know if we need this yet
 
-		// TODO: make the value available to coprocessor unit
-		(void)value;
+		const auto value = LoadImp<int32_t>( address ); // TODO: do we load before checking the copprocessor?
 
-		dbBreak();
+		if ( instr.z() == 2 )
+			m_gte.Write( instr.rt(), value );
+		else
+			RaiseException( Cop0::ExceptionCode::CoprocessorUnusable ); // TODO: does this trigger if cop2 is disabled?
 	}
 	else
 	{
@@ -582,11 +590,17 @@ void MipsR3000Cpu::LoadWordRight( Instruction instr ) noexcept
 
 void MipsR3000Cpu::MoveFromCoprocessor( Instruction instr ) noexcept
 {
+	const uint32_t regIndex = instr.rd();
+
 	uint32_t value;
 	switch ( instr.z() )
 	{
 		case 0:
-			value = m_cop0.Read( instr.rd() );
+			value = m_cop0.Read( regIndex );
+			break;
+
+		case 2:
+			value = m_gte.Read( regIndex );
 			break;
 
 		default:
@@ -609,11 +623,16 @@ void MipsR3000Cpu::MoveFromLo( Instruction instr ) noexcept
 
 void MipsR3000Cpu::MoveToCoprocessor( Instruction instr ) noexcept
 {
+	const uint32_t regIndex = instr.rd();
 	const uint32_t value = m_registers[ instr.rt() ];
 	switch ( instr.z() )
 	{
 		case 0:
-			m_cop0.Write( instr.rd(), value );
+			m_cop0.Write( regIndex, value );
+			break;
+
+		case 2:
+			m_gte.Write( regIndex, value );
 			break;
 
 		default:

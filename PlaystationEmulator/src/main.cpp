@@ -179,6 +179,8 @@ int main( int, char** )
 
 	cycleScheduler.UpdateNow();
 
+	bool viewVRam = false;
+
 	bool quit = false;
 	while ( !quit )
 	{
@@ -200,6 +202,10 @@ int main( int, char** )
 							// load test EXE
 							LoadExecutable( "psxtest_cpu.exe", *cpu, *ram );
 							break;
+
+						case SDLK_v:
+							viewVRam = !viewVRam;
+							break;
 					}
 					break;
 			}
@@ -213,7 +219,8 @@ int main( int, char** )
 
 		renderer.DrawBatch();
 
-		// renderer.RenderVRamView();
+		if( viewVRam )
+			renderer.RenderVRamView();
 
 		SDL_GL_SwapWindow( window );
 
