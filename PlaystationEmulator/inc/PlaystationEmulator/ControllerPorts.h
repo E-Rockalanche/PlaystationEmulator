@@ -118,7 +118,7 @@ public:
 		return m_status | ( m_baudrateTimer << 11 ) | ( !m_rxBuffer.Empty() << 1 );
 	}
 
-	void WriteData( uint32_t value ) noexcept
+	void WriteData( [[maybe_unused]] uint32_t value ) noexcept
 	{
 		// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
 		// the written value is sent to the controller or memory card, and, simultaneously,

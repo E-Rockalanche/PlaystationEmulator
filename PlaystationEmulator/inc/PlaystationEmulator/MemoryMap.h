@@ -19,19 +19,6 @@
 namespace PSX
 {
 
-struct Range
-{
-	constexpr Range( uint32_t start_, uint32_t size_ ) noexcept : start{ start_ }, size{ size_ } {}
-
-	constexpr std::optional<uint32_t> Contains( uint32_t address ) const noexcept
-	{
-		return ( start <= address && address < start + size ) ? std::optional{ address - start } : std::nullopt;
-	}
-
-	uint32_t start;
-	uint32_t size;
-};
-
 class MemoryMap
 {
 public:
@@ -61,68 +48,67 @@ public:
 	{}
 
 	template <typename T>
-	T Read( uint32_t address ) const noexcept;
+	T Read( uint32_t address ) const noexcept
+	{
+		T value;
+		Access<T, true>( address, value );
+		return value;
+	}
 
 	template <typename T>
-	void Write( uint32_t address, T value ) const noexcept;
+	void Write( uint32_t address, T value ) const noexcept
+	{
+		Access<T, false>( address, value );
+	}
 
 private:
-	static constexpr Range RamRange{ 0x00000000, Ram::Size() };
-	static constexpr Range ExpansionRange{ 0x1f000000, 8 * 1024 * 1024 };
-	static constexpr Range ScratchpadRange{ 0x1f800000, Scratchpad::Size() };
-	static constexpr Range MemControlRange{ 0x1f801000, 0x24 };
-	static constexpr Range PeripheralPortRange{ 0x1f801040, 0x20 };
-	static constexpr Range RamSizeRange{ 0x1f801060, 4 };
-	static constexpr Range InterruptControlRange{ 0x1f801070, 8 };
-	static constexpr Range DmaChannelsRange{ 0x1f801080, 128 };
-	static constexpr Range TimersRange{ 0x1f801100, 48 };
-	static constexpr Range CDRomRange{ 0x1f801800, 4 };
-	static constexpr Range GpuRange{ 0x1f801810, 8 };
-	static constexpr Range SpuRange{ 0x1f801c00, 1024 };
-	static constexpr Range ExpansionRange2{ 0x1f802000, 128 };
-	static constexpr Range BiosRange{ 0x1fc00000, 512 * 1024 };
-	static constexpr Range CacheControlRange{ 0xfffe0130, 4 };
 
-	enum class Segment
+	enum : uint32_t
 	{
-		Invalid = -1,
+		RamStart = 0x00000000,
+		RamSize = 2 * 1024 * 1024,
+		RamMirrorSize = 8 * 1024 * 1024,
 
-		Ram = 0,
-		Expansion,
-		Scratchpad,
-		MemControl,
-		ControllerPorts,
-		RamSize,
-		InterruptControl,
-		DmaChannels,
-		Timers,
-		CDRomDrive,
-		Gpu,
-		Spu,
-		Expansion2,
-		Bios,
-		CacheControl,
+		Expansion1Start = 0x1f000000,
+		Expansion1Size = 8 * 1024 * 1024,
 
-		Count
-	};
+		ScratchpadStart = 0x1f800000,
+		ScratchpadSize = 1024,
 
-	static constexpr std::array<Range, static_cast<size_t>( Segment::Count )> Segments
-	{
-		RamRange,
-		ExpansionRange,
-		ScratchpadRange,
-		MemControlRange,
-		PeripheralPortRange,
-		RamSizeRange,
-		InterruptControlRange,
-		DmaChannelsRange,
-		TimersRange,
-		CDRomRange,
-		GpuRange,
-		SpuRange,
-		ExpansionRange2,
-		BiosRange,
-		CacheControlRange
+		MemControlStart = 0x1f801000,
+		MemControlSize = 0x24,
+		MemControlRamStart = 0x1f801060,
+		MemControlRamSize = 4,
+
+		ControllerStart = 0x1f801040,
+		ControllerSize = 0x20,
+
+		InterruptControlStart = 0x1f801070,
+		InterruptControlSize = 8,
+
+		DmaStart = 0x1f801080,
+		DmaSize = 128,
+
+		TimersStart = 0x1f801100,
+		TimersSize = 48,
+
+		CdRomStart = 0x1f801800,
+		CdRomSize = 4,
+
+		GpuStart = 0x1f801810,
+		GpuSize = 8,
+
+		SpuStart = 0x1f801c00,
+		SpuSize = 1024,
+
+		Expansion2Start = 0x1f802000,
+		Expansion2Size = 128,
+
+		BiosStart = 0x1fc00000,
+		BiosSize = 512 * 1024,
+
+		CacheControlStart = 0xfffe0130,
+		CacheControlSize = 4
 	};
 
 	// masks help strip region bits from virtual address to make a physical address
@@ -139,13 +125,40 @@ private:
 		0xffffffff, 0xffffffff
 	};
 
-	std::pair<MemoryMap::Segment, uint32_t> TranslateAddress( uint32_t address ) const noexcept;
-	
+	template <typename T, bool Read>
+	void Access( uint32_t address, T& value ) const noexcept;
+
 	// shift value if writing to register with non-aligned address
 	template <typename RegType, typename T>
-	static constexpr RegType ShiftValueForRegister( uint32_t address, T value ) noexcept
+	static inline constexpr RegType ShiftValueForRegister( T value, uint32_t address ) noexcept
 	{
 		return static_cast<RegType>( value ) << ( address & ( sizeof( RegType ) - 1 ) ) * 8;
+	}
+
+	template <typename T, bool Read, typename MemoryType>
+	inline void AccessMemory( MemoryType& memory, uint32_t offset, T& value ) const noexcept
+	{
+		if constexpr ( Read )
+			value = memory.Read<T>( offset );
+		else
+			memory.Write<T>( offset, value );
+	}
+
+	template <typename T, bool Read, typename Component>
+	inline void AccessComponent32( Component& component, uint32_t offset, T& value ) const noexcept
+	{
+		if constexpr ( Read )
+			value = static_cast<T>( component.Read( offset / 4 ) );
+		else
+			component.Write( offset / 4, ShiftValueForRegister<uint32_t>( value, offset ) );
+	}
+
+	template <typename T, bool Read>
+	void AccessControllerPort( uint32_t offset, T& value ) const noexcept;
+
+	static inline constexpr bool Within( uint32_t address, uint32_t start, uint32_t size ) noexcept
+	{
+		return ( start <= address && address < start + size );
 	}
 
 private:
@@ -163,151 +176,133 @@ private:
 	CycleScheduler& m_cycleScheduler;
 };
 
-template <typename T>
-T MemoryMap::Read( uint32_t address ) const noexcept
+template <typename T, bool Read>
+void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 {
-	dbExpects( ( address % sizeof( T ) == 0 ) );
+	// upper 3 bits determine segment
+	// convert virtual address to physical address
+	address &= RegionMasks[ address >> 29 ];
 
-	const auto[ region, offset ] = TranslateAddress( address );
-	switch ( region )
+	if ( address <= RamMirrorSize ) // ram starts at 0
 	{
-		case Segment::Ram:
-			// TODO: RAM can be mirrored to first 8MB (enabled by default)
-			return m_ram.Read<T>( offset );
-
-		case Segment::Expansion:
-			// dbLog( "read from expansion 1 [%X]", address );
-			return static_cast<T>( -1 ); // send all ones for missing expansion
-
-		case Segment::Scratchpad:
-			// TODO: not mirrored in KSEG1
-			return m_scratchpad.Read<T>( offset );
-
-		case Segment::MemControl:
-			return static_cast<T>( m_memoryControl.Read( offset / 4 ) );
-
-		case Segment::ControllerPorts:
-			// return static_cast<T>( m_controllerPorts.Read( offset/ 4 ) );
-			return 0;
-
-		case Segment::RamSize:
-			return static_cast<T>( m_memoryControl.ReadRamSize() );
-
-		case Segment::InterruptControl:
-			return static_cast<T>( m_interruptControl.Read( offset / 4 ) );
-
-		case Segment::DmaChannels:
-			return static_cast<T>( m_dma.Read( offset / 4 ) );
-
-		case Segment::Timers:
-			m_cycleScheduler.UpdateNow();
-			return static_cast<T>( m_timers.Read( offset ) );
-
-		case Segment::CDRomDrive:
-		{
-			if ( offset == 2 )
-				return m_cdRomDrive.ReadDataFifo<T>();
-			else
-				return m_cdRomDrive.Read( offset );
-		}
-
-		case Segment::Gpu:
-			return static_cast<T>( m_gpu.Read( offset / 4 ) );
-
-		case Segment::Spu:
-			// dbLog( "read SPU register [%X]", address );
-			return 0; // TODO
-
-		case Segment::Expansion2:
-			// dbLog( "read from expansion 2 [%X]", address );
-			return static_cast<T>( -1 ); // send all ones for missing expansion
-
-		case Segment::Bios:
-			// TODO: bios can be mirrored to last 4MB (disabled by default)
-			return m_bios.Read<T>( offset );
-
-		case Segment::CacheControl:
-			return static_cast<T>( m_memoryControl.ReadCacheControl() );
-
-		default:
+		AccessMemory<T, Read>( m_ram, address & ( RamSize - 1 ), value );
+	}
+	else if ( Within( address, BiosStart, BiosSize ) )
+	{
+		// read only
+		if constexpr ( Read )
+			value = m_bios.Read<T>( address - BiosStart );
+	}
+	else if ( Within( address, ScratchpadStart, ScratchpadSize ) )
+	{
+		AccessMemory<T, Read>( m_scratchpad, address - ScratchpadStart, value );
+	}
+	else if ( Within( address, MemControlStart, MemControlSize ) )
+	{
+		AccessComponent32<T, Read>( m_memoryControl, address - MemControlStart, value );
+	}
+	else if ( Within( address, ControllerStart, ControllerSize ) )
+	{
+		AccessControllerPort<T, Read>( address - ControllerStart, value );
+	}
+	else if ( Within( address, MemControlRamStart, MemControlRamSize ) )
+	{
+		if constexpr ( Read )
+			value = static_cast<T>( m_memoryControl.ReadRamSize() );
+		else
+			m_memoryControl.WriteRamSize( ShiftValueForRegister<uint32_t>( value, address ) );
+	}
+	else if ( Within( address, InterruptControlStart, InterruptControlSize ) )
+	{
+		AccessComponent32<T, Read>( m_interruptControl, address - InterruptControlStart, value );
+	}
+	else if ( Within( address, DmaStart, DmaSize ) )
+	{
+		AccessComponent32<T, Read>( m_dma, address - DmaStart, value );
+	}
+	else if ( Within( address, TimersStart, TimersSize ) )
+	{
+		m_cycleScheduler.UpdateNow();
+		AccessComponent32<T, Read>( m_timers, address - TimersStart, value );
+	}
+	else if ( Within( address, CdRomStart, CdRomSize ) )
+	{
+		if constexpr ( Read )
+			value = m_cdRomDrive.Read( address - CdRomStart );
+		else
+			m_cdRomDrive.Write( address - CdRomStart, static_cast<uint8_t>( value ) );
+	}
+	else if ( Within( address, GpuStart, GpuSize ) )
+	{
+		AccessComponent32<T, Read>( m_gpu, address - GpuStart, value );
+	}
+	else if ( Within( address, SpuStart, SpuSize ) )
+	{
+		// TODO
+	}
+	else if ( Within( address, CacheControlStart, CacheControlSize ) )
+	{
+		if constexpr ( Read )
+			value = static_cast<T>( m_memoryControl.ReadCacheControl() );
+		else
+			m_memoryControl.WriteCacheControl( ShiftValueForRegister<uint32_t>( value, address ) );
+	}
+	else if ( Within( address, Expansion1Start, Expansion1Size ) )
+	{
+		// TODO
+		if constexpr ( Read )
+			value = 0;
+	}
+	else if ( Within( address, Expansion2Start, Expansion2Size ) )
+	{
+		if constexpr ( Read )
+			value = static_cast<T>( -1 );
+	}
+	else
+	{
+		if constexpr ( Read )
 			dbBreakMessage( "Unhandled memory read [%X]", address );
-			return 0;
+		else
+			dbBreakMessage( "Unhandled memory write [%X <- %X]", address, value );
 	}
 }
 
-template <typename T>
-void MemoryMap::Write( uint32_t address, T value ) const noexcept
+template <typename T, bool Read>
+void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 {
-	dbExpects( ( address % sizeof( T ) == 0 ) );
-
-	auto[ region, offset ] = TranslateAddress( address );
-	switch ( region )
+	if constexpr ( Read )
 	{
-		case Segment::Bios:
-			// BIOS is read-only
-			dbBreakMessage( "write to BIOS [%X <- %X]", address, value );
-			break;
+		switch ( offset / 2 )
+		{
+			// 32bit registers
+			case 0:
+			case 1:	value = static_cast<T>( m_controllerPorts.ReadData() );					break;
+			case 2:
+			case 3:	value = static_cast<T>( m_controllerPorts.ReadStatus() );				break;
 
-		case Segment::Ram:
-			m_ram.Write<T>( offset, value );
-			break;
+			// 16bit registers
+			case 4:	value = static_cast<T>( m_controllerPorts.ReadMode() );					break;
+			case 5:	value = static_cast<T>( m_controllerPorts.ReadControl() );				break;
+			case 6:	value = 0;																break;
+			case 7:	value = static_cast<T>( m_controllerPorts.ReadBaudrateReloadValue() );	break;
+		}
+	}
+	else
+	{
+		switch ( offset / 2 )
+		{
+			// 32bit registers
+			case 0:
+			case 1:	m_controllerPorts.WriteData( ShiftValueForRegister<uint32_t>( value, offset ) );				break;
+			case 2:
+			case 3:																									break; // status is read-only
 
-		case Segment::Expansion:
-			// dbLog( "write to expansion 1 [%X <- %X]", address, value );
-			break; // ignore writes to missing expansion
-
-		case Segment::Scratchpad:
-			// TODO: not mirrored in KSEG1
-			m_scratchpad.Write<T>( offset, value );
-			break;
-
-		case Segment::MemControl:
-			m_memoryControl.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
-			break;
-
-		case Segment::ControllerPorts:
-			// m_controllerPorts.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
-			break;
-
-		case Segment::RamSize:
-			m_memoryControl.WriteRamSize( ShiftValueForRegister<uint32_t>( offset, value ) );
-			break;
-
-		case Segment::InterruptControl:
-			m_interruptControl.Write( offset / 4, value );
-			break;
-
-		case Segment::DmaChannels:
-			m_dma.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
-			break;
-
-		case Segment::Timers:
-			m_cycleScheduler.UpdateNow();
-			m_timers.Write( offset, value );
-			break;
-
-		case Segment::CDRomDrive:
-			m_cdRomDrive.Write( offset, static_cast<uint8_t>( value ) );
-			break;
-
-		case Segment::Gpu:
-			m_gpu.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
-
-		case Segment::Spu:
-			// dbLog( "write to SPU register [%X <- %X]", address, value );
-			break;
-
-		case Segment::Expansion2:
-			// dbLog( "write to expansion 2 [%X <- %X]", address, value );
-			break;
-
-		case Segment::CacheControl:
-			m_memoryControl.WriteCacheControl( ShiftValueForRegister<uint32_t>( offset, value ) );
-			break;
-
-		default:
-			dbBreakMessage( "Unhandled memory write [%X <- %X]", address, value );
-			break;
+			// 16bit registers
+			case 4:	m_controllerPorts.WriteMode( ShiftValueForRegister<uint16_t>( value, offset ) );				break;
+			case 5:	m_controllerPorts.WriteControl( ShiftValueForRegister<uint16_t>( value, offset ) );				break;
+			case 6:																									break;
+			case 7:	m_controllerPorts.WriteBaudrateReloadValue( ShiftValueForRegister<uint16_t>( value, offset ) );	break;
+		}
 	}
 }
 

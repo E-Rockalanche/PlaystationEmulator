@@ -90,23 +90,19 @@
 
 #else
 
-#define EmptyBlock do{}while(false)
-
-#define dbLog( ... ) EmptyBlock
-#define dbLogToStdErr( ... ) EmptyBlock
-#define dbLogErrorLocation() EmptyBlock
-#define dbLogError( ... ) EmptyBlock
-#define dbLogWarning( ... ) EmptyBlock
-#define dbBreak() EmptyBlock
-#define dbBreakMessage( ... ) EmptyBlock
+#define dbLog( ... ) do{}while(false)
+#define dbLogToStdErr( ... ) do{}while(false)
+#define dbLogErrorLocation() do{}while(false)
+#define dbLogError( ... ) do{}while(false)
+#define dbLogWarning( ... ) do{}while(false)
+#define dbBreak() do{}while(false)
+#define dbBreakMessage( ... ) do{}while(false)
 #define dbAssert( condition ) STDX_assume( condition )
 #define dbAssertMessage( condition, ... ) STDX_assume( condition )
 #define dbVerify( condition ) ( condition )
 #define dbVerifyMessage( condition, ... ) ( condition )
 #define dbExpects( condition ) STDX_assume( condition )
 #define dbEnsures( condition ) STDX_assume( condition )
-
-#undef EmptyBlock
 
 #endif
 
