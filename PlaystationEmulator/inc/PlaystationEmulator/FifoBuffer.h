@@ -30,7 +30,6 @@ public:
 
 	void Push( T value ) noexcept
 	{
-		dbExpects( m_size < MaxSize );
 		m_buffer[ m_size++ ] = value;
 	}
 
@@ -42,7 +41,6 @@ public:
 
 	T Pop() noexcept
 	{
-		dbExpects( m_index < m_size );
 		return m_buffer[ m_index++ ];
 	}
 

@@ -93,6 +93,10 @@ private:
 			dbExpects( index < 32 );
 			dbExpects( m_delayedLoad.index == 0 && m_delayedLoad.value == 0 );
 			m_delayedLoad = { index, value };
+
+			// loading into the same register twice in a row drops the first one
+			if ( m_output.index == index )
+				m_output = { 0, 0 };
 		}
 
 		void Reset() noexcept

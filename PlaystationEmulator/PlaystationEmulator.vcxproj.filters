@@ -30,9 +30,6 @@
     <ClInclude Include="inc\PlaystationEmulator\Cop0.h">
       <Filter>inc</Filter>
     </ClInclude>
-    <ClInclude Include="inc\PlaystationEmulator\Playstation.h">
-      <Filter>inc</Filter>
-    </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\SPU.h">
       <Filter>inc</Filter>
     </ClInclude>
@@ -63,13 +60,13 @@
     <ClInclude Include="inc\PlaystationEmulator\CycleScheduler.h">
       <Filter>inc</Filter>
     </ClInclude>
-    <ClInclude Include="inc\PlaystationEmulator\PeripheralPorts.h">
-      <Filter>inc</Filter>
-    </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\File.h">
       <Filter>inc</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\GeometryTransformationEngine.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\ControllerPorts.h">
       <Filter>inc</Filter>
     </ClInclude>
   </ItemGroup>

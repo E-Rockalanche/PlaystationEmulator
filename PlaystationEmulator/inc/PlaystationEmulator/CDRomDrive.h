@@ -25,8 +25,9 @@ public:
 	template <typename T>
 	T ReadDataFifo() noexcept
 	{
-		dbLog( "read CDROM data fifo [width=%i]", sizeof( T ) * 8 );
-		return 0; // TODO
+		// TODO
+		dbBreakMessage( "read CDROM data fifo [width=%i]", sizeof( T ) * 8 );
+		return 0;
 	}
 
 	uint8_t Read( uint32_t index ) noexcept;

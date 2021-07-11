@@ -151,20 +151,20 @@ enum class SpecialOpcode : uint8_t
 // RegImm functions in rt
 enum class RegImmOpcode : uint8_t
 {
-	BranchGreaterEqualZero = 0b00001,
-	BranchGreaterEqualZeroAndLink = 0b10001,
 	BranchLessThanZero = 0b00000,
+	BranchGreaterEqualZero = 0b00001,
 	BranchLessThanZeroAndLink = 0b10000,
+	BranchGreaterEqualZeroAndLink = 0b10001,
 };
 
 // coprocessor subop in rs
 enum class CoprocessorOpcode : uint8_t
 {
-	MoveControlFromCoprocessor = 0b00010,
-	// CoprocessorOperation = 0b1xxxx,
-	MoveControlToCoprocessor = 0b00110,
 	MoveFromCoprocessor = 0b00000,
+	MoveControlFromCoprocessor = 0b00010,
 	MoveToCoprocessor = 0b00100,
+	MoveControlToCoprocessor = 0b00110,
+	// CoprocessorOperation = 0b1xxxx,
 };
 
 enum class Cop0Opcode : uint8_t

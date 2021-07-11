@@ -35,6 +35,16 @@ struct ColorRGB
 
 	constexpr ColorRGB( T r_, T g_, T b_ ) noexcept : r{ r_ }, g{ g_ }, b{ b_ } {}
 
+	T& operator[]( size_t index ) noexcept
+	{
+		return ( &r )[ index ];
+	}
+
+	const T& operator[]( size_t index ) const noexcept
+	{
+		return ( &r )[ index ];
+	}
+
 	friend constexpr bool operator==( const ColorRGB& lhs, const ColorRGB& rhs ) noexcept
 	{
 		return lhs.r == rhs.r && lhs.g == rhs.g && lhs.b == rhs.b;
@@ -47,18 +57,18 @@ struct ColorRGB
 };
 
 template <typename T>
-constexpr ColorRGB<T> FromCode( uint32_t bgr ) noexcept
+constexpr ColorRGB<T> FromColorCode( uint32_t rgb ) noexcept
 {
 	return ColorRGB
 	{
-		ConvertColorComponent<T, uint8_t>( bgr & 0xff ),
-		ConvertColorComponent<T, uint8_t>( ( bgr >> 8 ) & 0xff ),
-		ConvertColorComponent<T, uint8_t>( ( bgr >> 16 ) & 0xff )
+		ConvertColorComponent<T, uint8_t>( rgb & 0xff ),
+		ConvertColorComponent<T, uint8_t>( ( rgb >> 8 ) & 0xff ),
+		ConvertColorComponent<T, uint8_t>( ( rgb >> 16 ) & 0xff )
 	};
 }
 
 template <typename T>
-constexpr uint32_t ToCode( const ColorRGB<T>& color ) noexcept
+constexpr uint32_t ToColorCode( const ColorRGB<T>& color ) noexcept
 {
 	return ConvertColorComponent<uint8_t, T>( color.r ) |
 		( ConvertColorComponent<uint8_t, T>( color.g ) << 8 ) |

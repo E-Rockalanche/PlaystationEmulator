@@ -7,7 +7,7 @@
 #include "DMA.h"
 #include "GPU.h"
 #include "MemoryControl.h"
-#include "PeripheralPorts.h"
+#include "ControllerPorts.h"
 #include "RAM.h"
 #include "Timers.h"
 
@@ -39,7 +39,7 @@ public:
 		Ram& ram,
 		Scratchpad& scratchpad,
 		MemoryControl& memControl,
-		PeripheralPorts& peripheralPorts,
+		ControllerPorts& peripheralPorts,
 		InterruptControl& interrupts,
 		Dma& dma,
 		Timers& timers,
@@ -50,7 +50,7 @@ public:
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
 		, m_memoryControl{ memControl }
-		, m_peripheralPorts{ peripheralPorts }
+		, m_controllerPorts{ peripheralPorts }
 		, m_interruptControl{ interrupts }
 		, m_dma{ dma }
 		, m_timers{ timers }
@@ -91,7 +91,7 @@ private:
 		Expansion,
 		Scratchpad,
 		MemControl,
-		PeripheralPorts,
+		ControllerPorts,
 		RamSize,
 		InterruptControl,
 		DmaChannels,
@@ -152,7 +152,7 @@ private:
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
 	MemoryControl& m_memoryControl;
-	PeripheralPorts& m_peripheralPorts;
+	ControllerPorts& m_controllerPorts;
 	InterruptControl& m_interruptControl;
 	Dma& m_dma;
 	Timers& m_timers;
@@ -186,8 +186,9 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 		case Segment::MemControl:
 			return static_cast<T>( m_memoryControl.Read( offset / 4 ) );
 
-		case Segment::PeripheralPorts:
-			return static_cast<T>( m_peripheralPorts.Read( offset/ 4 ) );
+		case Segment::ControllerPorts:
+			// return static_cast<T>( m_controllerPorts.Read( offset/ 4 ) );
+			return 0;
 
 		case Segment::RamSize:
 			return static_cast<T>( m_memoryControl.ReadRamSize() );
@@ -211,15 +212,7 @@ T MemoryMap::Read( uint32_t address ) const noexcept
 		}
 
 		case Segment::Gpu:
-		{
-			switch ( offset / 4 )
-			{
-				case 0: return static_cast<T>( m_gpu.GpuRead() );
-				case 1: return static_cast<T>( m_gpu.GpuStatus() );
-				default: dbBreak(); return 0;
-			}
-			break;
-		}
+			return static_cast<T>( m_gpu.Read( offset / 4 ) );
 
 		case Segment::Spu:
 			// dbLog( "read SPU register [%X]", address );
@@ -272,8 +265,8 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			m_memoryControl.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
 			break;
 
-		case Segment::PeripheralPorts:
-			m_peripheralPorts.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
+		case Segment::ControllerPorts:
+			// m_controllerPorts.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
 			break;
 
 		case Segment::RamSize:
@@ -298,16 +291,7 @@ void MemoryMap::Write( uint32_t address, T value ) const noexcept
 			break;
 
 		case Segment::Gpu:
-		{
-			const uint32_t shifted = ShiftValueForRegister<uint32_t>( offset, value );
-			switch ( offset / 4 )
-			{
-				case 0: m_gpu.WriteGP0( shifted );	break;
-				case 1: m_gpu.WriteGP1( shifted );	break;
-				default: dbBreak(); break;
-			}
-			break;
-		}
+			m_gpu.Write( offset / 4, ShiftValueForRegister<uint32_t>( offset, value ) );
 
 		case Segment::Spu:
 			// dbLog( "write to SPU register [%X <- %X]", address, value );

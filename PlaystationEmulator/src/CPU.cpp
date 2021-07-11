@@ -25,6 +25,7 @@ void MipsR3000Cpu::Reset()
 	m_hi = 0;
 
 	m_cop0.Reset();
+	m_gte.Reset();
 
 	m_instructionCache.Reset();
 }
@@ -231,26 +232,28 @@ void MipsR3000Cpu::Special( Instruction instr ) noexcept
 
 void MipsR3000Cpu::RegisterImmediate( Instruction instr ) noexcept
 {
-	switch ( static_cast<RegImmOpcode>( instr.rt() ) )
+	auto opcode = instr.rt();
+	opcode = ( ( ( opcode & 0x1e ) == 0x10 ) ? 0x10 : 0 ) | ( opcode & 1 );
+	switch ( static_cast<RegImmOpcode>( opcode ) )
 	{
-		case RegImmOpcode::BranchGreaterEqualZero:
-			BranchGreaterEqualZero( instr );
-			break;
-
-		case RegImmOpcode::BranchGreaterEqualZeroAndLink:
-			BranchGreaterEqualZeroAndLink( instr );
-			break;
-
 		case RegImmOpcode::BranchLessThanZero:
 			BranchLessThanZero( instr );
+			break;
+
+		case RegImmOpcode::BranchGreaterEqualZero:
+			BranchGreaterEqualZero( instr );
 			break;
 
 		case RegImmOpcode::BranchLessThanZeroAndLink:
 			BranchLessThanZeroAndLink( instr );
 			break;
 
+		case RegImmOpcode::BranchGreaterEqualZeroAndLink:
+			BranchGreaterEqualZeroAndLink( instr );
+			break;
+
 		default:
-			IllegalInstruction( instr );
+			dbBreak();
 			break;
 	}
 }
@@ -373,7 +376,7 @@ void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction instr ) noexcept
 	// TODO: the contents of coprocessor control register rd of coprocessor unit are loaded into general register rt
 
 	if ( instr.z() == 2 )
-		m_registers.Set( instr.rt(), m_gte.Read( instr.rd() ) );
+		m_registers.Set( instr.rt(), m_gte.ReadControl( instr.rd() ) );
 	else
 		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable );
 }
@@ -404,7 +407,7 @@ void MipsR3000Cpu::MoveControlToCoprocessor( Instruction instr ) noexcept
 	// TODO: the contents of general register rt are loaded into control register rd of coprocessor unit
 
 	if ( instr.z() == 2 )
-		m_gte.Write( instr.rd(), m_registers[ instr.rt() ] );
+		m_gte.WriteControl( instr.rd(), m_registers[ instr.rt() ] );
 	else
 		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable );
 }

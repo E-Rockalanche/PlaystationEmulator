@@ -157,11 +157,25 @@ public:
 
 	void Reset();
 
-	void WriteGP0( uint32_t value ) noexcept { std::invoke( m_gp0Mode, this, value ); }
-	void WriteGP1( uint32_t value ) noexcept;
+	uint32_t Read( uint32_t index ) noexcept
+	{
+		dbExpects( index < 2 );
+		if ( index == 0 )
+			return GpuRead();
+		else
+			return GpuStatus();
+	}
 
-	uint32_t GpuRead() const noexcept { return m_gpuRead; }
-	uint32_t GpuStatus() noexcept;
+	void Write( uint32_t index, uint32_t value ) noexcept
+	{
+		dbExpects( index < 2 );
+		if ( index == 0 )
+			WriteGP0( value );
+		else
+			WriteGP1( value );
+	}
+
+	void WriteGP0( uint32_t value ) noexcept { std::invoke( m_gp0Mode, this, value ); }
 
 	bool IsInterlaced() const noexcept { return m_status.verticalResolution && m_status.verticalInterlace; }
 
@@ -183,6 +197,11 @@ private:
 	using GP0Function = void( Gpu::* )( uint32_t ) noexcept;
 
 	using CommandFunction = void( Gpu::* )( ) noexcept;
+
+	void WriteGP1( uint32_t value ) noexcept;
+
+	uint32_t GpuRead() const noexcept { return m_gpuRead; }
+	uint32_t GpuStatus() noexcept;
 
 	void ClearCommandBuffer()
 	{

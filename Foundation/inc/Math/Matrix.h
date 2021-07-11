@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdx/assert.h>
+
 #include <array>
 #include <type_traits>
 
@@ -24,6 +26,12 @@ struct Matrix
 	explicit constexpr Matrix( T value ) noexcept
 	{
 		elements.fill( value );
+	}
+
+	constexpr Matrix( std::initializer_list<T> init ) noexcept
+	{
+		dbExpects( init.size() == Height * Width );
+		std::copy_n( init.begin(), Height * Width, elements.begin() );
 	}
 
 	constexpr Row& operator[]( size_t row ) noexcept

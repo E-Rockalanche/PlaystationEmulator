@@ -137,6 +137,7 @@
     <ClInclude Include="inc\Math\Vector.h" />
     <ClInclude Include="inc\stdx\assert.h" />
     <ClInclude Include="inc\stdx\bit.h" />
+    <ClInclude Include="inc\stdx\cast.h" />
     <ClInclude Include="inc\stdx\compiler.h" />
   </ItemGroup>
   <ItemGroup>

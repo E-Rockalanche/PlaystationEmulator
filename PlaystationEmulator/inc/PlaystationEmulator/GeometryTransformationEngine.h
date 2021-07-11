@@ -48,10 +48,10 @@ public:
 		MAC0, MAC1, MAC2, MAC3,
 
 		// convert 48bit RGB color to 15bit
-		IRGB, ORGB,
+		ColorConversionInput, ColorConversionOutput,
 
 		// count leading zero/ones (sign bits)
-		LZCS, LZCR,
+		LeadingBitsSource, LeadingBitsResult,
 
 		// control registers
 
@@ -59,19 +59,19 @@ public:
 		RT11RT12, RT13RT21, RT22RT23, RT31RT32, RT33,
 
 		// translation vector
-		TRX, TRY, TRZ,
+		TranslationX, TranslationY, TranslationZ,
 
 		// light source matrix (3x3)
 		L11L12, L13L21, L22L23, L31L32, L33,
 
 		// background color
-		RBK, GBK, BBK,
+		BackgroundRed, BackgroundGreen, BackgroundBlue,
 
 		// light color matrix source
 		LR1LR2, LR3LG1, LG2LG3, LB1LB2, LB3,
 
 		// far color
-		RFC, GFC, BFC,
+		FarColorRed, FarColorGreen, FarColorBlue,
 
 		// screen offset
 		ScreenOffsetX, ScreenOffsetY,
@@ -86,14 +86,12 @@ public:
 		DepthQueueB,
 
 		// average Z scale factors
-		ZSF3, ZSF4,
+		ZScaleFactor3, ZScaleFactor4,
 
 		// calculation errors
-		CalculationError,
-
-		Count
+		ErrorFlags
 	};
-	static_assert( static_cast<size_t>( Register::Count ) == 64 );
+	static_assert( static_cast<uint32_t>( Register::ErrorFlags ) == 63 );
 
 	struct ErorFlag
 	{
@@ -163,62 +161,94 @@ public:
 
 	void Write( uint32_t index, uint32_t value ) noexcept;
 
+	uint32_t ReadControl( uint32_t index ) const noexcept
+	{
+		return Read( index + 32 );
+	}
+
+	void WriteControl( uint32_t index, uint32_t value ) noexcept
+	{
+		Write( index + 32, value );
+	}
+
 	void ExecuteCommand( uint32_t command ) noexcept;
 
 private:
-	Math::Vector3<uint16_t> m_vector0;
-	Math::Vector3<uint16_t> m_vector1;
-	Math::Vector3<uint16_t> m_vector2;
+	void DoPerspectiveTransformation( const Math::Vector3<int16_t>& vector, bool shiftFraction ) noexcept;
+
+private:
+	using Matrix = Math::Matrix<int16_t, 3, 3>;
+
+	// signed 16bit
+	std::array<Math::Vector3<int16_t>, 3> m_vectors;
 
 	Math::ColorRGB<uint8_t> m_color;
 	uint8_t m_code;
 
 	uint16_t m_orderTableAvgZ;
 
-	uint16_t m_ir0;
-	Math::Vector3<uint16_t> m_ir123;
+	// signed 3bit integer 12bit fraction?
+	int16_t m_ir0;
+
+	// signed 16bit
+	Math::Vector3<int16_t> m_ir123;
 
 	// TODO: screen XY coordinate FIFOs
+	std::array<Math::Vector2<int16_t>, 3> m_screenXYFifo;
 
 	// TODO: screen Z coordinate FIFOs
+	std::array<uint16_t, 4> m_screenZFifo;
 
 	// TODO: color CRGB code/color FIFOs
+	std::array<uint32_t, 3> m_colorCodeFifo;
 
-	uint32_t m_mac0;
-	Math::Vector3<uint32_t> m_mac123;
+	// signed 32 bit
+	int32_t m_mac0;
+	Math::Vector3<int32_t> m_mac123;
 
-	// convert rgb color 48bit to 15bit
-	uint16_t m_irgb;
-	uint16_t m_orgb;
+	// convert rgb color between 48bit and 15bit
+	Math::ColorRGB<uint8_t> m_colorConversion; // 5bits per component. R/W as uint16_t
 
 	// count leading zeroes/ones
-	uint32_t m_lzcs;
-	uint32_t m_lzcr;
+	uint32_t m_leadingBitsSource; // R/W
+	uint32_t m_leadingBitsResult; // R
 
-	Math::Matrix<uint16_t, 3, 3> m_rotation;
+	// signed 3bit integer 12bit fraction
+	Matrix m_rotation;
 
-	Math::Vector2<uint32_t> m_translation;
+	// signed 31bit integer
+	Math::Vector3<int32_t> m_translation;
 
-	Math::Matrix<uint16_t, 3, 3> m_lightSource;
+	// signed 3bit integer 12bit fraction
+	Matrix m_lightSource;
 
-	Math::ColorRGB<uint32_t> m_backgroundColor;
+	// signed 19bit integer 12bit fraction
+	Math::ColorRGB<int32_t> m_backgroundColor;
 
-	Math::Matrix<uint16_t, 3, 3> m_lightColorMatrixSource;
+	// signed 3bit integer 12bit fraction
+	Matrix m_lightColor;
 
-	Math::ColorRGB<uint32_t> m_farColor;
+	// signed 27bit integer 4bit fraction
+	Math::ColorRGB<int32_t> m_farColor;
 
-	Math::Vector2<uint32_t> m_screenOffset;
+	// signed 15bit integer 16bit fraction
+	Math::Vector2<int32_t> m_screenOffset;
 
+	// unsigned 16bit integer (but it gets sign expanded when read as 32bit), H register
 	uint16_t m_projectionPlaneDistance;
 
-	uint16_t m_depthQueueParamA;
-	uint32_t m_depthQueueParamB;
+	// signed 7bit integer 8bit fraction
+	int16_t m_depthQueueParamA;
+
+	// signed 7bit integer 24bit fraction?
+	int32_t m_depthQueueParamB;
 	
 	// average Z scale factors
-	uint16_t m_zsf3;
-	uint16_t m_zsf4;
+	// signed 3bit integer 12bit fraction?
+	int16_t m_zScaleFactor3;
+	int16_t m_zScaleFactor4;
 
-	uint32_t m_errorFlag;
+	uint32_t m_errorFlags;
 };
 
 }

@@ -8,7 +8,7 @@
 #include "InterruptControl.h"
 #include "MemoryControl.h"
 #include "MemoryMap.h"
-#include "PeripheralPorts.h"
+#include "ControllerPorts.h"
 #include "RAM.h"
 #include "Renderer.h"
 #include "SPU.h"
@@ -167,11 +167,11 @@ int main( int, char** )
 
 	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
 
-	PSX::Dma dma{ *ram, gpu };
+	PSX::Dma dma{ *ram, gpu, interruptControl };
 
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 
-	PSX::PeripheralPorts peripheralPorts;
+	PSX::ControllerPorts peripheralPorts;
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios, cycleScheduler };
 

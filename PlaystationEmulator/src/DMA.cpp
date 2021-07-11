@@ -1,5 +1,10 @@
 #include "DMA.h"
 
+#include "GPU.h"
+#include "InterruptControl.h"
+
+#include <stdx/bit.h>
+
 namespace PSX
 {
 
@@ -73,7 +78,7 @@ uint32_t Dma::Read( uint32_t index ) const noexcept
 	{
 		default:	return m_channels[ index / 4 ].Read( index % 4 );
 		case 28:	return m_controlRegister;
-		case 29:	return m_interruptRegister;
+		case 29:	return m_interruptRegister | GetIrqMasterFlag() * InterruptRegister::IrqMasterFlag;
 
 		// unused registers? garbage data?
 		case 30:	return 0x7ffac68b;
@@ -138,12 +143,32 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 	}
 }
 
+void Dma::FinishTransfer( uint32_t channelIndex ) noexcept
+{
+	m_channels[ channelIndex ].SetTransferComplete();
+
+	const uint32_t enableMask = InterruptRegister::IrqMasterEnable | ( 1 << ( channelIndex + 16 ) );
+	if ( stdx::all_of( m_interruptRegister, enableMask ) )
+	{
+		// trigger IRQ on 0 to 1 of master flag
+		if ( !GetIrqMasterFlag() )
+			m_interruptControl.SetInterrupt( Interrupt::Dma );
+
+		m_interruptRegister |= ( 1 << ( channelIndex + 24 ) );
+	}
+}
+
 void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 {
 	auto& channel = m_channels[ channelIndex ];
 
 	const bool toRam = channel.GetTransferDirection() == Channel::TransferDirection::ToMainRam;
-	dbLog( "Dma::DoBlockTransfer() -- channel: %u, direction: %s", channelIndex, toRam ? "to RAM" : "from RAM" );
+	dbLog( "Dma::DoBlockTransfer() -- channel: %u, direction: %i, chopping: %i, dmaChopSize: %u, cpuChopSize: %i",
+		channelIndex,
+		(int)toRam,
+		channel.GetChoppingEnable(),
+		channel.GetChoppingDmaWindowSize(),
+		channel.GetChoppingCpuWindowSize() );
 
 	const int32_t increment = ( channel.GetMemoryAddressStep() == Channel::MemoryAddressStep::Forward ) ? 4 : -4;
 
@@ -201,16 +226,20 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		}
 	}
 
-	channel.SetTransferComplete();
+	FinishTransfer( channelIndex );
 }
 
 void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 {
-	dbLog( "Dma::DoLinkedListTransfer()" );
-	dbAssert( channelIndex == ChannelIndex::Gpu ); // must transfer to GPU
-
+	dbExpects( channelIndex == ChannelIndex::Gpu ); // must transfer to GPU
 	auto& channel = m_channels[ channelIndex ];
+
 	dbAssert( channel.GetTransferDirection() == Channel::TransferDirection::FromMainRam ); // must transfer from RAM
+
+	dbLog( "Dma::DoLinkedListTransfer() -- chopping: %i, dmaChopSize: %u, cpuChopSize: %i",
+		channel.GetChoppingEnable(),
+		channel.GetChoppingDmaWindowSize(),
+		channel.GetChoppingCpuWindowSize() );
 
 	uint32_t address = channel.GetBaseAddress();
 	dbAssert( address % 4 == 0 );
@@ -231,7 +260,7 @@ void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 	}
 	while ( address != 0x00ffffff );
 
-	channel.SetTransferComplete();
+	FinishTransfer( channelIndex );
 }
 
 }

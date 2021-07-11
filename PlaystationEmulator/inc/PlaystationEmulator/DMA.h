@@ -1,6 +1,5 @@
 #pragma once
 
-#include "GPU.h"
 #include "RAM.h"
 
 #include <stdx/assert.h>
@@ -10,6 +9,9 @@
 
 namespace PSX
 {
+
+class Gpu;
+class InterruptControl;
 
 class Dma
 {
@@ -171,7 +173,8 @@ public:
 	};
 
 public:
-	Dma( Ram& ram, Gpu& gpu ) : m_ram{ ram }, m_gpu{ gpu }
+	Dma( Ram& ram, Gpu& gpu, InterruptControl& interruptControl )
+		: m_ram{ ram }, m_gpu{ gpu }, m_interruptControl{ interruptControl }
 	{
 		Reset();
 	}
@@ -202,20 +205,28 @@ public:
 
 	// interrupt register
 
+private:
+	void FinishTransfer( uint32_t channelIndex ) noexcept;
+
 	bool GetForceIrq() const noexcept { return m_interruptRegister & InterruptRegister::ForceIrq; }
 
 	uint32_t GetIrqEnables() const noexcept { return ( m_interruptRegister >> 16 ) & 0x0000007f; }
+
 	bool GetIrqMasterEnable() const noexcept { return m_interruptRegister & InterruptRegister::IrqMasterEnable; }
 
 	uint32_t GetIrqFlags() const noexcept { return ( m_interruptRegister >> 24 ) & 0x0000007f; }
-	bool GetIrqMasterFlag() const noexcept { return m_interruptRegister & InterruptRegister::IrqMasterFlag; }
+
+	bool GetIrqMasterFlag() const noexcept
+	{
+		return GetForceIrq() || ( GetIrqMasterEnable() && ( GetIrqEnables() & GetIrqFlags() ) != 0 );
+	}
 
 private:
 	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
 
-private:
 	Ram& m_ram;
 	Gpu& m_gpu;
+	InterruptControl& m_interruptControl;
 
 	std::array<Channel, 7> m_channels;
 
