@@ -24,8 +24,10 @@ public:
 	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
 	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
 
-	MipsR3000Cpu( MemoryMap& memoryMap, Scratchpad& scratchpad, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
+	MipsR3000Cpu( MemoryMap& memoryMap, Ram& ram, Bios& bios, Scratchpad& scratchpad, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
 		: m_memoryMap{ memoryMap }
+		, m_ram{ ram }
+		, m_bios{ bios }
 		, m_scratchpad{ scratchpad }
 		, m_interruptControl{ interruptControl }
 		, m_cycleScheduler{ cycleScheduler }
@@ -142,7 +144,7 @@ private:
 
 		// return true if instruction at address is cached
 		// simulates pre-fetching of next words from RAM by updating cache flags
-		bool CheckCache( uint32_t address ) noexcept
+		bool CheckAndPrefetch( uint32_t address ) noexcept
 		{
 			dbExpects( address % 4 == 0 ); // instructions must be word-aligned
 
@@ -161,6 +163,11 @@ private:
 			return inCache;
 		}
 
+		void Write( uint32_t index, uint32_t )
+		{
+			m_flags[ index ].valid = 0;
+		}
+
 	private:
 		struct Flags
 		{
@@ -170,6 +177,7 @@ private:
 		std::array<Flags, 256> m_flags;
 	};
 
+private:
 	// skip instruction in branch delay slot
 	void SetProgramCounter( uint32_t address )
 	{
@@ -178,6 +186,8 @@ private:
 		m_nextPC = address + 4;
 		m_inBranch = false;
 	}
+
+	Instruction FetchInstruction( uint32_t address ) noexcept;
 
 	void ExecuteInstruction( Instruction instr ) noexcept;
 
@@ -421,6 +431,8 @@ private:
 
 private:
 	MemoryMap& m_memoryMap;
+	Ram& m_ram;
+	Bios& m_bios;
 	Scratchpad& m_scratchpad;
 	InterruptControl& m_interruptControl;
 
@@ -498,6 +510,7 @@ void MipsR3000Cpu::StoreImp( uint32_t address, T value ) noexcept
 		else
 		{
 			dbLog( "write cache [%X <= %X]", address, value );
+			m_instructionCache.Write( address / 16, value );
 		}
 	}
 	else

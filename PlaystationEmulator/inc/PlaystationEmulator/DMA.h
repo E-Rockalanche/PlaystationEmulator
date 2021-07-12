@@ -10,6 +10,7 @@
 namespace PSX
 {
 
+class CycleScheduler;
 class Gpu;
 class InterruptControl;
 
@@ -173,8 +174,11 @@ public:
 	};
 
 public:
-	Dma( Ram& ram, Gpu& gpu, InterruptControl& interruptControl )
-		: m_ram{ ram }, m_gpu{ gpu }, m_interruptControl{ interruptControl }
+	Dma( Ram& ram, Gpu& gpu, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
+		: m_ram{ ram }
+		, m_gpu{ gpu }
+		, m_interruptControl{ interruptControl }
+		, m_cycleScheduler{ cycleScheduler }
 	{
 		Reset();
 	}
@@ -227,6 +231,7 @@ private:
 	Ram& m_ram;
 	Gpu& m_gpu;
 	InterruptControl& m_interruptControl;
+	CycleScheduler& m_cycleScheduler;
 
 	std::array<Channel, 7> m_channels;
 

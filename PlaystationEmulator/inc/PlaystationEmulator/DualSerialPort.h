@@ -16,8 +16,7 @@ public:
 		// read/write pairs occupy the same address
 		enum : uint32_t
 		{
-			Mode1A = 0,
-			Mode2A = 0,
+			ModeA = 0,
 
 			StatusA = 1,
 			ClockSelectA = 1,
@@ -40,8 +39,7 @@ public:
 			TimerCurrentValueLower = 7,
 			TimerReloadValueLower = 7,
 
-			Mode1B = 8,
-			Mode2V = 8,
+			ModeB = 8,
 
 			StatusB = 9,
 			ClockSelectB = 9,
@@ -75,15 +73,22 @@ public:
 				if ( char( value ) == '\n' )
 					dbBreakMessage( "\n########## LOG UPDATE ##########%s\n", m_log.c_str() );
 				break;
-
 			default:
 				break;
 		}
 	}
 
-	uint8_t Read() const noexcept
+	uint8_t Read( uint32_t offset ) const noexcept
 	{
-		return uint8_t( -1 );
+		switch ( offset )
+		{
+			case Register::StatusA:
+			case Register::StatusB:
+				return 0b00000100;
+
+			default:
+				return 0;
+		}
 	}
 
 private:

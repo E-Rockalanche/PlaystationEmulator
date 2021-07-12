@@ -48,11 +48,47 @@ void MipsR3000Cpu::Tick() noexcept
 		RaiseException( Cop0::ExceptionCode::Interrupt );
 	}
 
-	ExecuteInstruction( Instruction{ m_memoryMap.Read<uint32_t>( m_currentPC ) } );
+	// TEMP CODE
+	// hook std_out_putchar(char)
+	if ( ( m_currentPC & 0x1fffffff ) == 0xb0 && m_registers[ 9 ] == 0x3d )
+	{
+		char c = static_cast<char>( m_registers[ 4 ] );
+		std::putchar( c );
+	}
+
+	Instruction instruction = FetchInstruction( m_currentPC );
+
+	ExecuteInstruction( instruction );
 
 	m_registers.Update();
 
-	m_cycleScheduler.AddCycles( 1 ); // overclock for now
+	m_cycleScheduler.AddCycles( 1 ); // TODO: more accurate CPU timing
+}
+
+Instruction MipsR3000Cpu::FetchInstruction( uint32_t address ) noexcept
+{
+	Instruction result;
+
+	// convert to physical address
+	address &= 0x1fffffff;
+
+	if ( address < MemoryMap::RamMirrorSize )
+	{
+		result = Instruction{ m_ram.Read<uint32_t>( address % MemoryMap::RamSize ) };
+		// m_cycleScheduler.AddCycles( m_instructionCache.CheckAndPrefetch( address ) ? 1 : 2 );
+	}
+	else if ( MemoryMap::BiosStart <= address && address < MemoryMap::BiosStart + MemoryMap::BiosSize )
+	{
+		result = Instruction{ m_bios.Read<uint32_t>( address - MemoryMap::BiosStart ) };
+		// m_cycleScheduler.AddCycles( m_instructionCache.CheckAndPrefetch( address ) ? 1 : 12 );
+	}
+	else
+	{
+		dbBreak(); // not sure how this is gonna work if we return another instruction
+		RaiseException( Cop0::ExceptionCode::BusErrorInstructionFetch );
+	}
+
+	return result;
 }
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept

@@ -1,5 +1,6 @@
 #include "DMA.h"
 
+#include "CycleScheduler.h"
 #include "GPU.h"
 #include "InterruptControl.h"
 
@@ -179,6 +180,19 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	uint32_t wordCount = channel.GetWordCount();
 	dbAssert( wordCount != 0 );
 
+	/*
+	DMA Transfer Rates
+	DMA0 MDEC.IN     1 clk/word   ;0110h clks per 100h words ;\plus whatever
+	DMA1 MDEC.OUT    1 clk/word   ;0110h clks per 100h words ;/decompression time
+	DMA2 GPU         1 clk/word   ;0110h clks per 100h words ;-plus ...
+	DMA3 CDROM/BIOS  24 clks/word ;1800h clks per 100h words ;\plus single/double
+	DMA3 CDROM/GAMES 40 clks/word ;2800h clks per 100h words ;/speed sector rate
+	DMA4 SPU         4 clks/word  ;0420h clks per 100h words ;-plus ...
+	DMA5 PIO         20 clks/word ;1400h clks per 100h words ;-not actually used
+	DMA6 OTC         1 clk/word   ;0110h clks per 100h words ;-plus nothing
+	*/
+	m_cycleScheduler.AddCycles( wordCount ); // TODO: be more accurate
+
 	if ( toRam )
 	{
 		switch ( channelIndex )
@@ -198,7 +212,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 			{
 				// TODO
 				for ( ; wordCount > 0; --wordCount, address += increment )
-					m_ram.Write<uint32_t>( address, 0 );
+					m_ram.Write<uint32_t>( address, m_gpu.GpuRead() );
 
 				break;
 			}
@@ -244,6 +258,8 @@ void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 	uint32_t address = channel.GetBaseAddress();
 	dbAssert( address % 4 == 0 );
 
+	uint32_t totalCount = 0;
+
 	do
 	{
 		uint32_t header = m_ram.Read<uint32_t>( address );
@@ -257,8 +273,12 @@ void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 		}
 
 		address = header & 0x00ffffff;
+
+		totalCount += wordCount;
 	}
 	while ( address != 0x00ffffff );
+
+	m_cycleScheduler.AddCycles( totalCount ); // TODO: be more accurate
 
 	FinishTransfer( channelIndex );
 }

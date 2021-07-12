@@ -2,6 +2,8 @@
 
 #include <fstream>
 
+#include "Instruction.h"
+
 namespace PSX
 {
 
@@ -21,7 +23,7 @@ bool LoadBios( const char* filename, Bios& bios )
 	fin.read( bios.Data(), BiosSize );
 	fin.close();
 
-	// patch BIOS to force TTY output
+	// patch BIOS to force TTY output (seems to require proper dual serial port)
 	// bios.Write<uint32_t>( 0x1bc3 << 2, 0x24010001 );
 	// bios.Write<uint32_t>( 0x1bc5 << 2, 0xaf81a9c0 );
 

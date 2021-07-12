@@ -167,17 +167,17 @@ int main( int, char** )
 
 	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
 
-	PSX::Dma dma{ *ram, gpu, interruptControl };
+	PSX::Dma dma{ *ram, gpu, interruptControl, cycleScheduler };
 
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 
 	PSX::ControllerPorts peripheralPorts;
 
-	PSX::DualSerialPort dualSerialPort;
+	// PSX::DualSerialPort dualSerialPort;
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, dualSerialPort, *bios };
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
 
-	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad, interruptControl, cycleScheduler );
+	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
 
 	cycleScheduler.ScheduleNextSubscriberUpdate();
 

@@ -239,43 +239,52 @@ void Timers::AddCycles( uint32_t cycles ) noexcept
 {
 	dbExpects( cycles > 0 );
 
-	auto& dotTimer = m_timers[ 0 ];
-	if ( dotTimer.GetClockSource() % 2 == 0 )
-		if ( dotTimer.Update( cycles ) )
-			m_interruptControl.SetInterrupt( Interrupt::Timer0 );
-
-	auto& hblankTimer = m_timers[ 1 ];
-	if ( hblankTimer.GetClockSource() % 2 == 0 )
-		if ( hblankTimer.Update( cycles ) )
-			m_interruptControl.SetInterrupt( Interrupt::Timer1 );
-
-	auto& cpuTimer = m_timers[ 2 ];
-	const bool useDiv8 = cpuTimer.GetClockSource() & 0x2;
-	uint32_t ticks;
-	if ( useDiv8 )
+	// timer0
 	{
-		ticks = ( cycles + m_cyclesDiv8Remainder ) / 8;
-		m_cyclesDiv8Remainder = ( cycles + m_cyclesDiv8Remainder ) % 8;
-	}
-	else
-	{
-		ticks = cycles;
+		auto& dotTimer = m_timers[ 0 ];
+		if ( dotTimer.GetClockSource() % 2 == 0 )
+			if ( dotTimer.Update( cycles ) )
+				m_interruptControl.SetInterrupt( Interrupt::Timer0 );
 	}
 
-	if ( cpuTimer.Update( ticks ) )
+	// timer1
 	{
-		m_interruptControl.SetInterrupt( Interrupt::Timer2 );
+		auto& hblankTimer = m_timers[ 1 ];
+		if ( hblankTimer.GetClockSource() % 2 == 0 )
+			if ( hblankTimer.Update( cycles ) )
+				m_interruptControl.SetInterrupt( Interrupt::Timer1 );
+	}
 
-		const auto syncMode = cpuTimer.GetSyncMode();
-		if ( syncMode == 0 || syncMode == 3 )
+	// timer2
+	{
+		auto& cpuTimer = m_timers[ 2 ];
+		const bool useDiv8 = cpuTimer.GetClockSource() & 0x2;
+		uint32_t ticks;
+		if ( useDiv8 )
 		{
-			// stop at current value with no restart
-			cpuTimer.PauseAtTarget();
+			ticks = ( cycles + m_cyclesDiv8Remainder ) / 8;
+			m_cyclesDiv8Remainder = ( cycles + m_cyclesDiv8Remainder ) % 8;
 		}
 		else
 		{
-			// switch to free run
-			cpuTimer.SetSyncEnable( false );
+			ticks = cycles;
+		}
+
+		if ( cpuTimer.Update( ticks ) )
+		{
+			m_interruptControl.SetInterrupt( Interrupt::Timer2 );
+
+			const auto syncMode = cpuTimer.GetSyncMode();
+			if ( syncMode == 0 || syncMode == 3 )
+			{
+				// stop at current value with no restart
+				cpuTimer.PauseAtTarget();
+			}
+			else
+			{
+				// switch to free run
+				cpuTimer.SetSyncEnable( false );
+			}
 		}
 	}
 }

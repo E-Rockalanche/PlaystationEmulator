@@ -176,6 +176,7 @@ public:
 	}
 
 	void WriteGP0( uint32_t value ) noexcept { std::invoke( m_gp0Mode, this, value ); }
+	uint32_t GpuRead() noexcept { return std::invoke( m_gpuReadMode, this ); }
 
 	bool IsInterlaced() const noexcept { return m_status.verticalResolution && m_status.verticalInterlace; }
 
@@ -199,11 +200,6 @@ private:
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
 	void WriteGP1( uint32_t value ) noexcept;
-
-	uint32_t GpuRead() noexcept
-	{
-		return std::invoke( m_gpuReadMode, this );
-	}
 
 	uint32_t GpuStatus() noexcept;
 

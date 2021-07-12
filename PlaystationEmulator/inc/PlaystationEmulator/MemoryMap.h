@@ -22,47 +22,6 @@ namespace PSX
 class MemoryMap
 {
 public:
-	MemoryMap(
-		Ram& ram,
-		Scratchpad& scratchpad,
-		MemoryControl& memControl,
-		ControllerPorts& peripheralPorts,
-		InterruptControl& interrupts,
-		Dma& dma,
-		Timers& timers,
-		CDRomDrive& cdRomDrive,
-		Gpu& gpu,
-		DualSerialPort& dualSerialPort,
-		Bios& bios )
-		: m_ram{ ram }
-		, m_scratchpad{ scratchpad }
-		, m_memoryControl{ memControl }
-		, m_controllerPorts{ peripheralPorts }
-		, m_interruptControl{ interrupts }
-		, m_dma{ dma }
-		, m_timers{ timers }
-		, m_cdRomDrive{ cdRomDrive }
-		, m_gpu{ gpu }
-		, m_dualSerialPort{ dualSerialPort }
-		, m_bios{ bios }
-	{}
-
-	template <typename T>
-	T Read( uint32_t address ) const noexcept
-	{
-		T value;
-		Access<T, true>( address, value );
-		return value;
-	}
-
-	template <typename T>
-	void Write( uint32_t address, T value ) const noexcept
-	{
-		Access<T, false>( address, value );
-	}
-
-private:
-
 	enum : uint32_t
 	{
 		RamStart = 0x00000000,
@@ -110,6 +69,51 @@ private:
 		CacheControlStart = 0xfffe0130,
 		CacheControlSize = 4
 	};
+
+	MemoryMap(
+		Ram& ram,
+		Scratchpad& scratchpad,
+		MemoryControl& memControl,
+		ControllerPorts& peripheralPorts,
+		InterruptControl& interrupts,
+		Dma& dma,
+		Timers& timers,
+		CDRomDrive& cdRomDrive,
+		Gpu& gpu,
+		Bios& bios )
+		: m_ram{ ram }
+		, m_scratchpad{ scratchpad }
+		, m_memoryControl{ memControl }
+		, m_controllerPorts{ peripheralPorts }
+		, m_interruptControl{ interrupts }
+		, m_dma{ dma }
+		, m_timers{ timers }
+		, m_cdRomDrive{ cdRomDrive }
+		, m_gpu{ gpu }
+		, m_bios{ bios }
+	{}
+
+
+	template <typename T>
+	T Read( uint32_t address ) const noexcept
+	{
+		T value;
+		Access<T, true>( address, value );
+		return value;
+	}
+
+	template <typename T>
+	void Write( uint32_t address, T value ) const noexcept
+	{
+		Access<T, false>( address, value );
+	}
+
+	void SetDualSerialPort( DualSerialPort* dualSerialPort ) noexcept
+	{
+		m_dualSerialPort = dualSerialPort;
+	}
+
+private:
 
 	// masks help strip region bits from virtual address to make a physical address
 	// KSEG2 doesn't mirror the other regions so it's essentially ignored
@@ -171,8 +175,9 @@ private:
 	Timers& m_timers;
 	CDRomDrive& m_cdRomDrive;
 	Gpu& m_gpu;
-	DualSerialPort& m_dualSerialPort;
 	Bios& m_bios;
+
+	DualSerialPort* m_dualSerialPort = nullptr;
 };
 
 template <typename T, bool Read>
@@ -254,9 +259,11 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	else if ( Within( address, Expansion2Start, Expansion2Size ) )
 	{
 		if constexpr ( Read )
-			value = T( -1 );
-		else
-			m_dualSerialPort.Write( address - Expansion2Start, static_cast<uint8_t>( value ) );
+			value = m_dualSerialPort
+				? static_cast<T>( m_dualSerialPort->Read( address - Expansion2Start ) )
+				: T( -1 );
+		else if ( m_dualSerialPort )
+			m_dualSerialPort->Write( address - Expansion2Start, static_cast<uint8_t>( value ) );
 	}
 	else
 	{

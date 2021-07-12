@@ -28,21 +28,24 @@ public:
 		m_cyclesUntilEvent = 0;
 	}
 
-	void AddCycles( uint32_t cycles ) noexcept
+	// add any amount of cycles to trigger one or more events
+	void AddCycles( uint32_t cycles ) noexcept;
+
+	// update cycles early (typically called before accessing registers that could alter the result)
+	void UpdateSubscriberCycles() noexcept
 	{
-		m_cycles += cycles;
-		if ( m_cycles >= m_cyclesUntilEvent )
-		{
-			UpdateSubscriberCycles();
-			ScheduleNextSubscriberUpdate();
-		}
+		UpdateSubscriberCycles( m_cycles );
+		m_cycles = 0;
 	}
 
-	void UpdateSubscriberCycles() noexcept;
+	// calculates cycles until next event
 	void ScheduleNextSubscriberUpdate() noexcept;
 
 	uint32_t GetCycles() const noexcept { return m_cycles; }
 	uint32_t GetCyclesUntilEvent() const noexcept { return m_cyclesUntilEvent; }
+
+private:
+	void UpdateSubscriberCycles( uint32_t cycles ) noexcept;
 
 private:
 	struct Subscription

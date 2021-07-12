@@ -3,15 +3,25 @@
 namespace PSX
 {
 
-
-void CycleScheduler::UpdateSubscriberCycles() noexcept
+void CycleScheduler::AddCycles( uint32_t cycles ) noexcept
 {
-	if ( m_cycles > 0 )
+	m_cycles += cycles;
+	while ( m_cycles >= m_cyclesUntilEvent )
+	{
+		UpdateSubscriberCycles( m_cyclesUntilEvent );
+		m_cycles -= m_cyclesUntilEvent;
+
+		ScheduleNextSubscriberUpdate();
+	}
+}
+
+void CycleScheduler::UpdateSubscriberCycles( uint32_t cycles ) noexcept
+{
+	if ( cycles > 0 )
 	{
 		for ( auto& subscription : m_subscriptions )
-			subscription.update( m_cycles );
+			subscription.update( cycles );
 	}
-	m_cycles = 0;
 }
 
 void CycleScheduler::ScheduleNextSubscriberUpdate() noexcept
