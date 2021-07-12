@@ -53,33 +53,7 @@ public:
 		return m_registers[ index ];
 	}
 
-	void Write( uint32_t index, uint32_t value ) noexcept
-	{
-		switch ( index )
-		{
-			case Register::Expansion1BaseAddress:
-			case Register::Expansion2BaseAddress:
-				m_registers[ index ] = 0x1f000000 | ( value & 0x00ffffff );
-				break;
-
-			case Register::Expansion1DelaySize:
-			case Register::Expansion3DelaySize:
-			case Register::BiosRomDelaySize:
-			case Register::SpuDelaySize:
-			case Register::CDRomDelaySize:
-			case Register::Expansion2DelaySize:
-				m_registers[ index ] = value & 0xabffffff;
-				break;
-
-			case Register::CommonDelay:
-				m_registers[ Register::CommonDelay ] = value;
-				break;
-
-			default:
-				dbBreak();
-				break;
-		}
-	}
+	void Write( uint32_t index, uint32_t value ) noexcept;
 
 	uint32_t ReadRamSize() const noexcept
 	{
@@ -95,12 +69,12 @@ public:
 
 	uint32_t ReadCacheControl() const noexcept
 	{
-		return m_cacheControl & 0xfffffddf;
+		return m_cacheControl;
 	}
 
 	void WriteCacheControl( uint32_t value ) noexcept
 	{
-		m_cacheControl = value;
+		m_cacheControl = value & 0xfffffddf;
 	}
 
 private:

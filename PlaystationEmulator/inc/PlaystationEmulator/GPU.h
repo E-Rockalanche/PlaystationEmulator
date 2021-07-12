@@ -195,40 +195,41 @@ public:
 
 private:
 	using GP0Function = void( Gpu::* )( uint32_t ) noexcept;
-
+	using GpuReadFunction = uint32_t( Gpu::* )( ) noexcept;
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
 	void WriteGP1( uint32_t value ) noexcept;
 
-	uint32_t GpuRead() const noexcept { return m_gpuRead; }
+	uint32_t GpuRead() noexcept
+	{
+		return std::invoke( m_gpuReadMode, this );
+	}
+
 	uint32_t GpuStatus() noexcept;
 
-	void ClearCommandBuffer()
-	{
-		m_commandBuffer.Reset();
-		m_remainingParamaters = 0;
-		m_commandFunction = nullptr;
+	void ClearCommandBuffer() noexcept;
 
-		m_gp0Mode = &Gpu::GP0Command;
-	}
+	void InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept;
 
-	void InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function )
-	{
-		dbExpects( m_commandBuffer.Empty() );
-		m_commandBuffer.Push( command );
-		m_remainingParamaters = paramaterCount;
-		m_commandFunction = function;
+	void SetupVRamCopy() noexcept;
 
-		m_gp0Mode = &Gpu::GP0Params;
-	}
-
-	void SetDrawOffset( int16_t x, int16_t y );
+	void SetDrawOffset( int16_t x, int16_t y ) noexcept;
 
 	// GP0 modes
-	void GP0Command( uint32_t ) noexcept;
-	void GP0Params( uint32_t ) noexcept;
-	void GP0PolyLine( uint32_t ) noexcept;
-	void GP0ImageLoad( uint32_t ) noexcept; // affected by mask settings
+	void GP0_Command( uint32_t ) noexcept;
+	void GP0_Params( uint32_t ) noexcept;
+	void GP0_PolyLine( uint32_t ) noexcept;
+	void GP0_Image( uint32_t ) noexcept; // affected by mask settings
+
+	void SetGP0Mode( GP0Function f ) noexcept
+	{
+		m_gp0Mode = f;
+		m_status.readyToReceiveCommand = ( f == &Gpu::GP0_Command );
+	}
+
+	// GPUREAD modes
+	uint32_t GpuRead_Normal() noexcept;
+	uint32_t GpuRead_Image() noexcept;
 
 	// command functions
 	void FillRectangle() noexcept;
@@ -245,24 +246,24 @@ private:
 		ClearCommandBuffer();
 	}
 
-	float GetCyclesPerFrame() const noexcept
+	float GetVideoCyclesPerFrame() const noexcept
 	{
 		return VideoClockSpeed / GetRefreshRate();
 	}
 
-	float GetCyclesPerScanline() const noexcept
+	float GetVideoCyclesPerScanline() const noexcept
 	{
-		return GetCyclesPerFrame() / GetScanlines();
+		return GetVideoCyclesPerFrame() / GetScanlines();
 	}
 
-	float GetDotsPerCycle() const noexcept
+	float GetDotsPerVideoCycle() const noexcept
 	{
 		return GetHorizontalResolution() / 2560.0f;
 	}
 
 	float GetDotsPerScanline() const noexcept
 	{
-		return GetDotsPerCycle() * GetCyclesPerScanline();
+		return GetDotsPerVideoCycle() * GetVideoCyclesPerScanline();
 	}
 
 	// operations on vram
@@ -287,6 +288,7 @@ private:
 	GP0Function m_gp0Mode;
 
 	uint32_t m_gpuRead;
+	GpuReadFunction m_gpuReadMode;
 
 	Status m_status;
 
@@ -347,7 +349,7 @@ private:
 		uint32_t x = 0;
 		uint32_t y = 0;
 
-		bool Finished() const noexcept { return x == 0 && y == height; }
+		bool IsFinished() const noexcept { return x == 0 && y == height; }
 
 		uint32_t GetWrappedX() const noexcept { return ( left + x ) % VRamWidth; }
 

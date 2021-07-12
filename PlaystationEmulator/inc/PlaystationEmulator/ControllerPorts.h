@@ -2,6 +2,8 @@
 
 #include "FifoBuffer.h"
 
+#include <stdx/bit.h>
+
 #include <cstdint>
 
 namespace PSX
@@ -61,30 +63,24 @@ public:
 		Eight
 	};
 
-	union Control
+	struct Control
 	{
-		static constexpr uint16_t WriteMask = 0x3f7f;
-
-		struct
+		enum : uint16_t
 		{
-			uint16_t txEnable : 1;
-			uint16_t joynOutput : 1;
-			uint16_t rxEnable : 1;
-			uint16_t : 1; // unknown
-			uint16_t acknowledge : 1;
-			uint16_t : 1; // unkown
-			uint16_t reset : 1;
-			uint16_t : 1; // always 0
-			uint16_t rxInterruptMode : 2;
-			uint16_t txInterruptEnable : 1;
-			uint16_t rxInterruptEnable : 1;
-			uint16_t ackInterruptEnable : 1;
-			uint16_t desiredSlotNumber : 1;
-			uint16_t : 2; // always 0;
+			TXEnable = 1 << 0,
+			JoyNOutput = 1 << 1,
+			RXEnable = 1 << 2,
+			Acknowledge = 1 << 4,
+			Reset = 1 << 6,
+			RXInterruptMode = 0x3 << 8,
+			TXInterruptMode = 1 << 10,
+			RXInterruptEnable =  1 << 11,
+			ACKInterruptEnable = 1 << 12,
+			DesiredSlotNumber = 1 << 13,
+
+			WriteMask = 0b11111100101111
 		};
-		uint16_t value;
 	};
-	static_assert( sizeof( Control ) == 2 );
 
 	void Reset()
 	{
@@ -95,7 +91,7 @@ public:
 		m_mode.baudrateReloadFactor = 1;
 		// TODO: mode defaults to 8bit and no parity?
 
-		m_control.value = 0;
+		m_control = 0;
 		m_baudrateReloadValue = 0x0088;
 
 		m_txBuffer.Reset();
@@ -139,7 +135,7 @@ public:
 	uint16_t ReadControl() const noexcept
 	{
 		dbLog( "ControllerPorts::Read() -- Control" );
-		return m_control.value;
+		return m_control;
 	}
 
 	uint16_t ReadBaudrateReloadValue() const noexcept
@@ -157,7 +153,20 @@ public:
 	void WriteControl( uint16_t value ) noexcept
 	{
 		dbLog( "ControllerPorts::Write() -- Control [%X]", value );
-		m_control.value = static_cast<uint16_t>( value ) & Control::WriteMask;
+		m_control = value & Control::WriteMask;
+
+		if ( value & Control::Reset )
+		{
+			// soft reset
+			m_control = 0;
+			m_status = 0;
+			m_mode.value = 0;
+		}
+
+		if ( value & Control::Acknowledge )
+		{
+			stdx::reset_bits( m_status, Status::RxParityError | Status::InterruptRequest );
+		}
 	}
 
 	void WriteBaudrateReloadValue( uint16_t value ) noexcept
@@ -176,7 +185,7 @@ public:
 	}
 
 private:
-	void ReloadBaudrateTimer()
+	void ReloadBaudrateTimer() noexcept
 	{
 		uint16_t factor = 1;
 		switch ( m_mode.baudrateReloadFactor )
@@ -187,11 +196,16 @@ private:
 		m_baudrateTimer = ( m_baudrateReloadValue * factor ) / 2; // max value will be 21 bits
 	}
 
+	uint16_t GetRXInterruptMode() const noexcept
+	{
+		return ( m_control << 8 ) & 0x3;
+	}
+
 private:
 	uint32_t m_status;
 	uint32_t m_baudrateTimer;
 	Mode m_mode;
-	Control m_control;
+	uint16_t m_control;
 	uint16_t m_baudrateReloadValue;
 
 	FifoBuffer<uint8_t, 2> m_txBuffer;

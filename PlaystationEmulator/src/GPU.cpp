@@ -107,12 +107,12 @@ void Gpu::Reset()
 	ClearCommandBuffer();
 
 	m_gpuRead = 0;
+	m_gpuReadMode = &Gpu::GpuRead_Normal;
 
 	m_status.value = 0;
 	m_status.displayDisable = true;
 	m_status.readyToReceiveCommand = true;
 	m_status.readyToReceiveDmaBlock = true;
-	m_status.readyToSendVRamToCpu = true;
 
 	m_texturedRectFlipX = false;
 	m_texturedRectFlipY = false;
@@ -158,7 +158,34 @@ void Gpu::Reset()
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 }
 
-void Gpu::SetDrawOffset( int16_t x, int16_t y )
+void Gpu::ClearCommandBuffer() noexcept
+{
+	m_commandBuffer.Reset();
+	m_remainingParamaters = 0;
+	m_commandFunction = nullptr;
+	SetGP0Mode( &Gpu::GP0_Command );
+}
+
+void Gpu::InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept
+{
+	dbExpects( m_commandBuffer.Empty() );
+	m_commandBuffer.Push( command );
+	m_remainingParamaters = paramaterCount;
+	m_commandFunction = function;
+	SetGP0Mode( &Gpu::GP0_Params );
+}
+
+void Gpu::SetupVRamCopy() noexcept
+{
+	dbExpects( !m_vramCopyState.has_value() ); // already doing a copy!
+	m_vramCopyState.emplace();
+
+	m_commandBuffer.Pop(); // pop command
+	std::tie( m_vramCopyState->left, m_vramCopyState->top ) = DecodePosition( m_commandBuffer.Pop() );
+	std::tie( m_vramCopyState->width, m_vramCopyState->height ) = DecodePosition( m_commandBuffer.Pop() );
+}
+
+void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
 {
 	dbLog( "Gpu::SetDrawOffset() -- %i, %i", x, y );
 	m_drawOffsetX = x;
@@ -183,14 +210,14 @@ uint32_t Gpu::GetHorizontalResolution() const noexcept
 	return 0;
 }
 
-void Gpu::GP0Command( uint32_t value ) noexcept
+void Gpu::GP0_Command( uint32_t value ) noexcept
 {
 	const uint8_t opcode = static_cast<uint8_t>( value >> 24 );
 	switch ( opcode )
 	{
 		case 0xe1: // draw mode setting
 		{
-			dbLog( "Gpu::GP0Command() -- set draw mode [%X]", value );
+			dbLog( "Gpu::GP0_Command() -- set draw mode [%X]", value );
 
 			static constexpr uint32_t WriteMask = 0x3f;
 			m_status.value = ( m_status.value & ~WriteMask ) | ( value & WriteMask );
@@ -204,7 +231,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 
 		case 0xe2: // texture window setting
 		{
-			dbLog( "Gpu::GP0Command() -- set texture window [%X]", value );
+			dbLog( "Gpu::GP0_Command() -- set texture window [%X]", value );
 
 			m_textureWindowMaskX = value & 0x1f;
 			m_textureWindowMaskY = ( value >> 5 ) & 0x1f;
@@ -218,7 +245,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 			m_drawAreaLeft = value & 0x3ff;
 			m_drawAreaTop = ( value >> 10 ) & 0x1ff;
 
-			dbLog( "Gpu::GP0Command() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
+			dbLog( "Gpu::GP0_Command() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
 
 			// TODO: does this affect blanking?
 			break;
@@ -229,7 +256,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 			m_drawAreaRight = value & 0x3ff;
 			m_drawAreaBottom = ( value >> 10 ) & 0x1ff;
 
-			dbLog( "Gpu::GP0Command() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
+			dbLog( "Gpu::GP0_Command() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
 
 			// TODO: does this affect blanking?
 			break;
@@ -249,7 +276,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 
 		case 0xe6: // mask bit setting
 		{
-			dbLog( "Gpu::GP0Command() -- set mask bits [%X]", value );
+			dbLog( "Gpu::GP0_Command() -- set mask bits [%X]", value );
 
 			m_status.setMaskOnDraw = value & 1;
 			m_status.checkMaskOnDraw = ( value >> 1 ) & 1;
@@ -282,7 +309,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 
 		case 0x1f: // interrupt request
 		{
-			dbLog( "Gpu::GP0Command() -- request interrupt" );
+			dbLog( "Gpu::GP0_Command() -- request interrupt" );
 			if ( !m_status.interruptRequest ) // edge triggered
 			{
 				m_status.interruptRequest = true;
@@ -327,12 +354,12 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 					m_commandFunction = &Gpu::TempFinishCommandParams;
 					if ( value & RenderCommand::NumLines )
 					{
-						m_gp0Mode = &Gpu::GP0PolyLine;
+						SetGP0Mode( &Gpu::GP0_PolyLine );
 					}
 					else
 					{
 						m_remainingParamaters = ( value & RenderCommand::Shading ) ? 3 : 2;
-						m_gp0Mode = &Gpu::GP0Params;
+						SetGP0Mode( &Gpu::GP0_Params );
 					}
 
 					break;
@@ -357,7 +384,7 @@ void Gpu::GP0Command( uint32_t value ) noexcept
 	}
 }
 
-void Gpu::GP0Params( uint32_t param ) noexcept
+void Gpu::GP0_Params( uint32_t param ) noexcept
 {
 	dbExpects( m_remainingParamaters > 0 );
 	m_commandBuffer.Push( param );
@@ -369,7 +396,7 @@ void Gpu::GP0Params( uint32_t param ) noexcept
 	}
 }
 
-void Gpu::GP0PolyLine( uint32_t param ) noexcept
+void Gpu::GP0_PolyLine( uint32_t param ) noexcept
 {
 	static constexpr uint32_t TerminationCode = 0x50005000; // should use 0x55555555, but Wild Arms 2 uses 0x50005000
 	if ( stdx::all_of( param, TerminationCode ) )
@@ -383,10 +410,10 @@ void Gpu::GP0PolyLine( uint32_t param ) noexcept
 	}
 }
 
-void Gpu::GP0ImageLoad( uint32_t param ) noexcept
+void Gpu::GP0_Image( uint32_t param ) noexcept
 {
 	dbExpects( m_vramCopyState.has_value() );
-	dbExpects( !m_vramCopyState->Finished() );
+	dbExpects( !m_vramCopyState->IsFinished() );
 
 	const uint16_t checkMask = m_status.GetCheckMask();
 	const uint16_t setMask = m_status.GetSetMask();
@@ -405,16 +432,51 @@ void Gpu::GP0ImageLoad( uint32_t param ) noexcept
 
 	copyPixel( param & 0xffff );
 
-	if ( !m_vramCopyState->Finished() )
+	if ( !m_vramCopyState->IsFinished() )
 		copyPixel( param >> 16 );
 
 	m_vramDirty = true;
 
-	if ( m_vramCopyState->Finished() )
+	if ( m_vramCopyState->IsFinished() )
 	{
 		m_vramCopyState = std::nullopt;
 		ClearCommandBuffer();
 	}
+}
+
+uint32_t Gpu::GpuRead_Normal() noexcept
+{
+	return m_gpuRead;
+}
+
+uint32_t Gpu::GpuRead_Image() noexcept
+{
+	dbExpects( m_vramCopyState.has_value() );
+	dbExpects( !m_vramCopyState->IsFinished() );
+
+	auto getPixel = [this]
+	{
+		const auto x = m_vramCopyState->GetWrappedX();
+		const auto y = m_vramCopyState->GetWrappedY();
+		m_vramCopyState->Increment();
+		return *( m_vram.get() + y * VRamWidth + x );
+	};
+
+	m_gpuRead = getPixel();
+
+	if ( !m_vramCopyState->IsFinished() )
+		m_gpuRead |= getPixel() << 16;
+
+	if ( m_vramCopyState->IsFinished() )
+	{
+		m_gpuReadMode = &Gpu::GpuRead_Normal;
+		m_status.readyToReceiveCommand = true;
+		m_status.readyToReceiveDmaBlock = true;
+		m_status.readyToSendVRamToCpu = false;
+		m_vramCopyState = std::nullopt;
+	}
+
+	return m_gpuRead;
 }
 
 void Gpu::WriteGP1( uint32_t value ) noexcept
@@ -520,15 +582,20 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			dbLog( "Gpu::WriteGP1() -- set display mode [%X]", value );
 
-			m_cycleScheduler.UpdateSubscriberCycles();
-
 			static constexpr uint32_t WriteMask = 0x3f << 17;
-			m_status.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
-			m_status.horizontalResolution2 = ( value >> 6 ) & 1;
-			m_status.reverseFlag = ( value >> 7 ) & 1;
-			m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+			Status newStatus;
+			newStatus.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
+			newStatus.horizontalResolution2 = ( value >> 6 ) & 1;
+			newStatus.reverseFlag = ( value >> 7 ) & 1;
 
-			m_cycleScheduler.ScheduleNextSubscriberUpdate();
+			// update cycles and renderer if the new status is different
+			if ( newStatus.value != m_status.value )
+			{
+				m_cycleScheduler.UpdateSubscriberCycles();
+				m_status.value = newStatus.value;
+				m_cycleScheduler.ScheduleNextSubscriberUpdate();
+				m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+			}
 			break;
 		}
 
@@ -579,7 +646,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 uint32_t Gpu::GpuStatus() noexcept
 {
 	// update timers if it could affect the even/odd bit
-	const auto dotAfterCycles = m_currentDot + m_cycleScheduler.GetCycles() * GetDotsPerCycle();
+	const auto dotAfterCycles = m_currentDot + m_cycleScheduler.GetCycles() * GetDotsPerVideoCycle();
 	if ( dotAfterCycles >= GetDotsPerScanline() )
 	{
 		m_cycleScheduler.UpdateSubscriberCycles();
@@ -627,35 +694,20 @@ void Gpu::CopyRectangle() noexcept
 void Gpu::CopyRectangleToVram() noexcept
 {
 	// affected by mask settings
-
-	m_vramCopyState.emplace();
-
-	m_commandBuffer.Pop(); // pop command
-	std::tie( m_vramCopyState->left, m_vramCopyState->top ) = DecodePosition( m_commandBuffer.Pop() );
-	std::tie( m_vramCopyState->width, m_vramCopyState->height ) = DecodePosition( m_commandBuffer.Pop() );
-
+	SetupVRamCopy();
 	dbLog( "Gpu::CopyRectangleToVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
-
-	m_gp0Mode = &Gpu::GP0ImageLoad;
+	SetGP0Mode( &Gpu::GP0_Image );
 }
 
 void Gpu::CopyRectangleFromVram() noexcept
 {
-	dbLog( "Gpu::CopyRectangleFromVram()" );
-
-	// TODO
-	m_commandBuffer.Pop();
-	m_commandBuffer.Pop();
-
-	auto dimensions = m_commandBuffer.Pop();
-	const uint32_t width = dimensions & 0xffff;
-	const uint32_t height = dimensions >> 16;
-
-	dbLog( "copy rectangle from VRAM to CPU [%ux%u]", width, height );
-
-	// TODO: provide data on GPUREAD
-
-	ClearCommandBuffer();
+	SetupVRamCopy();
+	dbLog( "Gpu::CopyRectangleFromVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
+	m_gpuReadMode = &Gpu::GpuRead_Image;
+	m_status.readyToReceiveCommand = false;
+	m_status.readyToReceiveDmaBlock = false;
+	m_status.readyToSendVRamToCpu = true;
+	ClearCommandBuffer(); // TODO: clear buffer here after image copy?
 }
 
 void Gpu::RenderPolygon() noexcept
@@ -824,7 +876,7 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 	m_totalCpuCyclesThisFrame += cpuTicks;
 
 	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuTicks ) );
-	const float dots = gpuTicks * GetDotsPerCycle();
+	const float dots = gpuTicks * GetDotsPerVideoCycle();
 
 	auto& dotTimer = m_timers[ 0 ];
 	if ( dotTimer.GetClockSource() % 2 )
@@ -895,30 +947,32 @@ uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 
 	const auto horRez = GetHorizontalResolution();
 
+	const float dotsPerCycle = GetDotsPerVideoCycle();
+
 	auto& dotTimer = m_timers[ 0 ];
 	if ( dotTimer.GetSyncEnable() ) // dot timer synchronizes with hblanks
 	{
-		const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / GetDotsPerCycle();
+		const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / dotsPerCycle;
 
 		gpuTicks = std::min( gpuTicks, ticksUntilHblankChange );
 	}
 
 	if ( !dotTimer.GetPaused() && dotTimer.GetClockSource() % 2 )
 	{
-		const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / GetDotsPerCycle();
+		const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / dotsPerCycle;
 
 		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 	}
 
 	const uint32_t linesUntilVblankChange = ( m_currentScanline < 240 ? 240 : GetScanlines() ) - m_currentScanline;
-	const float ticksUntilVblankChange = linesUntilVblankChange * GetCyclesPerScanline() - m_currentDot / GetDotsPerCycle();
+	const float ticksUntilVblankChange = linesUntilVblankChange * GetVideoCyclesPerScanline() - m_currentDot / dotsPerCycle;
 	gpuTicks = std::min( gpuTicks, ticksUntilVblankChange );
 
 	auto& hblankTimer = m_timers[ 1 ];
 	if ( !hblankTimer.GetPaused() && hblankTimer.GetClockSource() % 2 )
 	{
-		const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / GetDotsPerCycle();
-		const float ticksUntilIrq = hblankTimer.GetTicksUntilIrq() * GetCyclesPerScanline() - ticksUntilHblank;
+		const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / dotsPerCycle;
+		const float ticksUntilIrq = hblankTimer.GetTicksUntilIrq() * GetVideoCyclesPerScanline() - ticksUntilHblank;
 
 		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 	}

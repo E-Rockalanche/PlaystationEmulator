@@ -4,6 +4,7 @@
 #include "CDRomDrive.h"
 #include "InterruptControl.h"
 #include "DMA.h"
+#include "DualSerialPort.h"
 #include "GPU.h"
 #include "MemoryControl.h"
 #include "ControllerPorts.h"
@@ -31,6 +32,7 @@ public:
 		Timers& timers,
 		CDRomDrive& cdRomDrive,
 		Gpu& gpu,
+		DualSerialPort& dualSerialPort,
 		Bios& bios )
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
@@ -41,6 +43,7 @@ public:
 		, m_timers{ timers }
 		, m_cdRomDrive{ cdRomDrive }
 		, m_gpu{ gpu }
+		, m_dualSerialPort{ dualSerialPort }
 		, m_bios{ bios }
 	{}
 
@@ -168,6 +171,7 @@ private:
 	Timers& m_timers;
 	CDRomDrive& m_cdRomDrive;
 	Gpu& m_gpu;
+	DualSerialPort& m_dualSerialPort;
 	Bios& m_bios;
 };
 
@@ -245,12 +249,14 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	{
 		// TODO
 		if constexpr ( Read )
-			value = 0;
+			value = T( -1 );
 	}
 	else if ( Within( address, Expansion2Start, Expansion2Size ) )
 	{
 		if constexpr ( Read )
-			value = static_cast<T>( -1 );
+			value = T( -1 );
+		else
+			m_dualSerialPort.Write( address - Expansion2Start, static_cast<uint8_t>( value ) );
 	}
 	else
 	{

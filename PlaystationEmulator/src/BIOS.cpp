@@ -21,6 +21,10 @@ bool LoadBios( const char* filename, Bios& bios )
 	fin.read( bios.Data(), BiosSize );
 	fin.close();
 
+	// patch BIOS to force TTY output
+	// bios.Write<uint32_t>( 0x1bc3 << 2, 0x24010001 );
+	// bios.Write<uint32_t>( 0x1bc5 << 2, 0xaf81a9c0 );
+
 	return true;
 }
 

@@ -173,7 +173,9 @@ int main( int, char** )
 
 	PSX::ControllerPorts peripheralPorts;
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
+	PSX::DualSerialPort dualSerialPort;
+
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, dualSerialPort, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad, interruptControl, cycleScheduler );
 
