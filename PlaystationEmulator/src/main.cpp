@@ -173,11 +173,11 @@ int main( int, char** )
 
 	PSX::ControllerPorts peripheralPorts;
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios, cycleScheduler };
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *scratchpad, interruptControl, cycleScheduler );
 
-	cycleScheduler.UpdateNow();
+	cycleScheduler.ScheduleNextSubscriberUpdate();
 
 	bool viewVRam = false;
 

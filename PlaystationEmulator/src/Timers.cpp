@@ -223,7 +223,9 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 
 	if ( registerIndex < 3 )
 	{
+		m_cycleScheduler.UpdateSubscriberCycles();
 		m_timers[ timerIndex ].Write( registerIndex, static_cast<uint16_t>( value ) );
+		m_cycleScheduler.ScheduleNextSubscriberUpdate();
 	}
 	else
 	{

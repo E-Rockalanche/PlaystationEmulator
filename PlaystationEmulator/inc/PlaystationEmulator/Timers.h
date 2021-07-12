@@ -111,10 +111,11 @@ class Timers
 public:
 	Timers( InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
 		: m_interruptControl{ interruptControl }
+		, m_cycleScheduler{ cycleScheduler }
 	{
 		Reset();
 
-		cycleScheduler.Register(
+		m_cycleScheduler.Register(
 			[this]( uint32_t cycles ) { AddCycles( cycles ); },
 			[this] { return GetCyclesUntilIrq(); } );
 	}
@@ -134,6 +135,7 @@ public:
 
 private:
 	InterruptControl& m_interruptControl;
+	CycleScheduler& m_cycleScheduler;
 
 	std::array<Timer, 3> m_timers;
 

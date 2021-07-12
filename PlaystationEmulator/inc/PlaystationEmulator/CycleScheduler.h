@@ -17,11 +17,6 @@ public:
 	using UpdateFunction = std::function<void( uint32_t )>;
 	using GetCyclesFunction = std::function<uint32_t()>;
 
-	CycleScheduler()
-	{
-		Reset();
-	}
-
 	void Register( UpdateFunction update, GetCyclesFunction getCycles )
 	{
 		m_subscriptions.push_back( { std::move( update ), std::move( getCycles ) } );
@@ -37,10 +32,14 @@ public:
 	{
 		m_cycles += cycles;
 		if ( m_cycles >= m_cyclesUntilEvent )
-			UpdateNow();
+		{
+			UpdateSubscriberCycles();
+			ScheduleNextSubscriberUpdate();
+		}
 	}
 
-	void UpdateNow() noexcept;
+	void UpdateSubscriberCycles() noexcept;
+	void ScheduleNextSubscriberUpdate() noexcept;
 
 	uint32_t GetCycles() const noexcept { return m_cycles; }
 	uint32_t GetCyclesUntilEvent() const noexcept { return m_cyclesUntilEvent; }
@@ -54,8 +53,8 @@ private:
 
 	std::vector<Subscription> m_subscriptions;
 
-	uint32_t m_cycles;
-	uint32_t m_cyclesUntilEvent;
+	uint32_t m_cycles = 0;
+	uint32_t m_cyclesUntilEvent = 0;
 };
 
 }

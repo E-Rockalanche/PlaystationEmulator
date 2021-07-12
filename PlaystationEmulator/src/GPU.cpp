@@ -520,13 +520,15 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			dbLog( "Gpu::WriteGP1() -- set display mode [%X]", value );
 
-			m_cycleScheduler.UpdateNow();
+			m_cycleScheduler.UpdateSubscriberCycles();
 
 			static constexpr uint32_t WriteMask = 0x3f << 17;
 			m_status.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
 			m_status.horizontalResolution2 = ( value >> 6 ) & 1;
 			m_status.reverseFlag = ( value >> 7 ) & 1;
 			m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+
+			m_cycleScheduler.ScheduleNextSubscriberUpdate();
 			break;
 		}
 
@@ -579,7 +581,10 @@ uint32_t Gpu::GpuStatus() noexcept
 	// update timers if it could affect the even/odd bit
 	const auto dotAfterCycles = m_currentDot + m_cycleScheduler.GetCycles() * GetDotsPerCycle();
 	if ( dotAfterCycles >= GetDotsPerScanline() )
-		m_cycleScheduler.UpdateNow();
+	{
+		m_cycleScheduler.UpdateSubscriberCycles();
+		m_cycleScheduler.ScheduleNextSubscriberUpdate();
+	}
 
 	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
 }

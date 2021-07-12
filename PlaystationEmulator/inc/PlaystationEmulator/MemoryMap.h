@@ -2,7 +2,6 @@
 
 #include "BIOS.h"
 #include "CDRomDrive.h"
-#include "CycleScheduler.h"
 #include "InterruptControl.h"
 #include "DMA.h"
 #include "GPU.h"
@@ -32,8 +31,7 @@ public:
 		Timers& timers,
 		CDRomDrive& cdRomDrive,
 		Gpu& gpu,
-		Bios& bios,
-		CycleScheduler& cycleScheduler )
+		Bios& bios )
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
 		, m_memoryControl{ memControl }
@@ -44,7 +42,6 @@ public:
 		, m_cdRomDrive{ cdRomDrive }
 		, m_gpu{ gpu }
 		, m_bios{ bios }
-		, m_cycleScheduler{ cycleScheduler }
 	{}
 
 	template <typename T>
@@ -172,8 +169,6 @@ private:
 	CDRomDrive& m_cdRomDrive;
 	Gpu& m_gpu;
 	Bios& m_bios;
-
-	CycleScheduler& m_cycleScheduler;
 };
 
 template <typename T, bool Read>
@@ -222,7 +217,6 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	}
 	else if ( Within( address, TimersStart, TimersSize ) )
 	{
-		m_cycleScheduler.UpdateNow();
 		AccessComponent32<T, Read>( m_timers, address - TimersStart, value );
 	}
 	else if ( Within( address, CdRomStart, CdRomSize ) )
