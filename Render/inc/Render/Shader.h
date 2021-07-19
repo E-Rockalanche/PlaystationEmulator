@@ -6,7 +6,6 @@
 #include <stdx/assert.h>
 
 #include <iostream>
-#include <utility>
 
 namespace Render
 {
@@ -25,12 +24,16 @@ class Shader
 public:
 	Shader() = default;
 
-	Shader( Shader&& other ) : m_program{ std::exchange( other.m_program, 0 ) } {}
+	Shader( Shader&& other ) noexcept : m_program{ other.m_program }
+	{
+		other.m_program = 0;
+	}
 
-	Shader& operator=( Shader&& other )
+	Shader& operator=( Shader&& other ) noexcept
 	{
 		Reset();
-		m_program = std::exchange( other.m_program, 0 );
+		m_program = other.m_program;
+		other.m_program = 0;
 		return *this;
 	}
 
@@ -59,6 +62,7 @@ public:
 
 	void Use()
 	{
+		dbExpects( m_program != 0 );
 		glUseProgram( m_program );
 		dbCheckRenderErrors();
 	}

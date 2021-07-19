@@ -87,6 +87,7 @@ public:
 
 	void Bind()
 	{
+		dbExpects( m_buffer != 0 );
 		glBindBuffer( static_cast<GLuint>( Type ), m_buffer );
 	}
 

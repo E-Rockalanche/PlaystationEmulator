@@ -88,6 +88,11 @@ public:
 		};
 
 	public:
+		Channel()
+		{
+			Reset();
+		}
+
 		void Reset();
 
 		uint32_t Read( uint32_t index ) const noexcept;
@@ -154,9 +159,9 @@ public:
 		}
 
 	private:
-		uint32_t m_baseAddress;
-		uint32_t m_blockControl;
-		uint32_t m_channelControl;
+		uint32_t m_baseAddress = 0;
+		uint32_t m_blockControl = 0;
+		uint32_t m_channelControl = 0;
 	};
 
 	static constexpr uint32_t ControlRegisterResetValue = 0x07654321;
@@ -235,8 +240,8 @@ private:
 
 	std::array<Channel, 7> m_channels;
 
-	uint32_t m_controlRegister;
-	uint32_t m_interruptRegister;
+	uint32_t m_controlRegister = 0;
+	uint32_t m_interruptRegister = 0;
 };
 
 }

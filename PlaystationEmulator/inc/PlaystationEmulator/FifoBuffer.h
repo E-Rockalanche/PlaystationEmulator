@@ -18,14 +18,19 @@ public:
 		m_index = 0;
 	}
 
+	size_t Size() const noexcept
+	{
+		return m_size - m_index;
+	}
+
 	bool Empty() const noexcept
 	{
-		return m_size == 0;
+		return m_size == m_index;
 	}
 
 	bool Full() const noexcept
 	{
-		return m_size == MaxSize;
+		return Size() == MaxSize;
 	}
 
 	void Push( T value ) noexcept
@@ -44,6 +49,11 @@ public:
 		return m_buffer[ m_index++ ];
 	}
 
+	T Peek() const noexcept
+	{
+		return m_buffer[ m_index ];
+	}
+
 	void Unpop() noexcept
 	{
 		dbExpects( m_index > 0 );
@@ -55,10 +65,15 @@ public:
 		return m_buffer.data();
 	}
 
+	void Fill( T value ) noexcept
+	{
+		m_buffer.fill( value );
+	}
+
 private:
 	size_t m_size = 0;
 	size_t m_index = 0;
-	std::array<T, MaxSize> m_buffer;
+	std::array<T, MaxSize> m_buffer{};
 };
 
 }

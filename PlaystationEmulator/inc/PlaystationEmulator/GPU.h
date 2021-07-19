@@ -44,6 +44,8 @@ public:
 
 	union Status
 	{
+		Status() : value{ 0 } {}
+
 		struct
 		{
 			// draw mode
@@ -279,62 +281,58 @@ private:
 	CycleScheduler& m_cycleScheduler;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
-	uint32_t m_remainingParamaters;
-	CommandFunction m_commandFunction;
-	GP0Function m_gp0Mode;
+	uint32_t m_remainingParamaters = 0;
+	CommandFunction m_commandFunction = nullptr;
+	GP0Function m_gp0Mode = nullptr;
 
-	uint32_t m_gpuRead;
-	GpuReadFunction m_gpuReadMode;
+	uint32_t m_gpuRead = 0;
+	GpuReadFunction m_gpuReadMode = nullptr;
 
 	Status m_status;
 
 	// draw mode
-	bool m_texturedRectFlipX;
-	bool m_texturedRectFlipY;
+	bool m_texturedRectFlipX = false;
+	bool m_texturedRectFlipY = false;
 
 	// texture window
-	uint8_t m_textureWindowMaskX;
-	uint8_t m_textureWindowMaskY;
-	uint8_t m_textureWindowOffsetX;
-	uint8_t m_textureWindowOffsetY;
+	uint8_t m_textureWindowMaskX = 0;
+	uint8_t m_textureWindowMaskY = 0;
+	uint8_t m_textureWindowOffsetX = 0;
+	uint8_t m_textureWindowOffsetY = 0;
 
 	// drawing area
-	uint16_t m_drawAreaLeft;
-	uint16_t m_drawAreaTop;
-	uint16_t m_drawAreaRight;
-	uint16_t m_drawAreaBottom;
+	uint16_t m_drawAreaLeft = 0;
+	uint16_t m_drawAreaTop = 0;
+	uint16_t m_drawAreaRight = 0;
+	uint16_t m_drawAreaBottom = 0;
 
 	// use SetDrawOffset(x,y) to change values
-	int16_t m_drawOffsetX;
-	int16_t m_drawOffsetY;
+	int16_t m_drawOffsetX = 0;
+	int16_t m_drawOffsetY = 0;
 
 	// start of display area
-	uint16_t m_displayAreaStartX;
-	uint16_t m_displayAreaStartY;
+	uint16_t m_displayAreaStartX = 0;
+	uint16_t m_displayAreaStartY = 0;
 
 	// horizontal display range
-	uint16_t m_horDisplayRange1;
-	uint16_t m_horDisplayRange2;
+	uint16_t m_horDisplayRange1 = 0;
+	uint16_t m_horDisplayRange2 = 0;
 
 	// vertical display range
-	uint16_t m_verDisplayRange1;
-	uint16_t m_verDisplayRange2;
+	uint16_t m_verDisplayRange1 = 0;
+	uint16_t m_verDisplayRange2 = 0;
 
 	// timing
-	uint32_t m_currentScanline;
-	float m_currentDot;
-	float m_dotTimerFraction;
-	bool m_hblank;
-	bool m_vblank;
+	uint32_t m_currentScanline = 0;
+	float m_currentDot = 0.0f;
+	float m_dotTimerFraction = 0.0f;
+	bool m_hblank = false;
+	bool m_vblank = false;
 
-	bool m_displayFrame;
-
-	// temp stats
-	uint32_t m_totalCpuCyclesThisFrame = 0;
-	uint32_t m_trianglesDrawn = 0;
+	bool m_displayFrame = false;
 
 	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512
-	bool m_vramDirty;
+	bool m_vramDirty = false;
 
 	struct VRamCopyState
 	{

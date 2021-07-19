@@ -75,7 +75,7 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 
 	// TODO: zero fill
 
-	fin.read( ram.Data() + physicalRamDest, header.fileSize );
+	fin.read( (char*)ram.Data() + physicalRamDest, header.fileSize );
 
 	cpu.DebugSetProgramCounter( header.programCounter );
 
@@ -145,6 +145,7 @@ int main( int, char** )
 		return -1;
 	
 	auto bios = std::make_unique<PSX::Bios>();
+	bios->Fill( 0 );
 	if ( !PSX::LoadBios( "bios.bin", *bios ) )
 	{
 		std::cout << "could not find BIOS" << std::endl;
@@ -152,32 +153,41 @@ int main( int, char** )
 	}
 
 	auto ram = std::make_unique<PSX::Ram>();
-	ram->Fill( char( -1 ) );
+	ram->Fill( 0 );
 
 	auto scratchpad = std::make_unique<PSX::Scratchpad>();
-	scratchpad->Fill( char( -1 ) );
+	scratchpad->Fill( 0 );
 
 	PSX::MemoryControl memControl;
+	memControl.Reset();
 
 	PSX::InterruptControl interruptControl;
+	interruptControl.Reset();
 
 	PSX::CycleScheduler cycleScheduler;
+	cycleScheduler.Reset();
 
 	PSX::Timers timers{ interruptControl, cycleScheduler };
+	timers.Reset();
 
 	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
+	gpu.Reset();
 
 	PSX::Dma dma{ *ram, gpu, interruptControl, cycleScheduler };
+	dma.Reset();
 
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
+	cdRomDrive->Reset();
 
 	PSX::ControllerPorts peripheralPorts;
+	peripheralPorts.Reset();
 
 	// PSX::DualSerialPort dualSerialPort;
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
+	cpu->Reset();
 
 	cycleScheduler.ScheduleNextSubscriberUpdate();
 
@@ -224,6 +234,7 @@ int main( int, char** )
 		if( viewVRam )
 			renderer.RenderVRamView();
 
+		dbLog( "SDL_GL_SwapWindow()" );
 		SDL_GL_SwapWindow( window );
 
 		dbCheckRenderErrors();

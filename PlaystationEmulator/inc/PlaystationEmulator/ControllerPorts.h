@@ -40,6 +40,8 @@ public:
 	{
 		static constexpr uint16_t WriteMask = 0x013f;
 
+		Mode() : value{ 0 } {}
+
 		struct
 		{
 			uint16_t baudrateReloadFactor : 2;
@@ -104,14 +106,16 @@ public:
 	{
 		// A data byte can be read when JOY_STAT.1=1. Data should be read only via 8bit memory access
 		// (the 16bit/32bit "preview" feature is rather unusable, and usually there shouldn't be more than 1 byte in the FIFO anyways).
-		dbLog( "ControllerPorts::Read() -- Data" );
-		return *reinterpret_cast<const uint32_t*>( m_rxBuffer.Data() );
+		const uint32_t data = *reinterpret_cast<const uint32_t*>( m_rxBuffer.Data() );
+		dbLog( "ControllerPorts::Read() -- data [%X]", data );
+		return data;
 	}
 
 	uint32_t ReadStatus() const noexcept
 	{
-		dbLog( "ControllerPorts::Read() -- Status" );
-		return m_status | ( m_baudrateTimer << 11 ) | ( !m_rxBuffer.Empty() << 1 );
+		const uint32_t status = m_status | ( m_baudrateTimer << 11 ) | ( !m_rxBuffer.Empty() << 1 );
+		dbLog( "ControllerPorts::Read() -- status [%X]", status );
+		return status;
 	}
 
 	void WriteData( [[maybe_unused]] uint32_t value ) noexcept
@@ -119,7 +123,7 @@ public:
 		// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
 		// the written value is sent to the controller or memory card, and, simultaneously,
 		// a byte is received (and stored in RX FIFO if JOY_CTRL.1 or JOY_CTRL.2 is set).
-		dbLog( "ControllerPorts::Write() -- Data [%X]", value );
+		dbLog( "ControllerPorts::Write() -- data [%X]", value );
 		// m_txBuffer.Push( static_cast<uint8_t>( value ) );
 		// TODO: start transfer to controller/memory card
 	}
@@ -128,36 +132,37 @@ public:
 
 	uint16_t ReadMode() const noexcept
 	{
-		// dbLog( "ControllerPorts::Read() -- Mode" );
+		dbLog( "ControllerPorts::Read() -- mode [%X]", m_mode.value );
 		return m_mode.value;
 	}
 
 	uint16_t ReadControl() const noexcept
 	{
-		dbLog( "ControllerPorts::Read() -- Control" );
+		dbLog( "ControllerPorts::Read() -- control [%X]", m_control );
 		return m_control;
 	}
 
 	uint16_t ReadBaudrateReloadValue() const noexcept
 	{
-		dbLog( "ControllerPorts::Read() -- BaudrateReloadValue" );
+		dbLog( "ControllerPorts::Read() -- baudrate reload value [%X]", m_baudrateReloadValue );
 		return m_baudrateReloadValue;
 	}
 
 	void WriteMode( uint16_t value ) noexcept
 	{
-		dbLog( "ControllerPorts::Write() -- Mode [%X]", value );
+		dbLog( "ControllerPorts::Write() -- mode [%X]", value );
 		m_mode.value = static_cast<uint16_t>( value ) & Mode::WriteMask;
 	}
 
 	void WriteControl( uint16_t value ) noexcept
 	{
-		dbLog( "ControllerPorts::Write() -- Control [%X]", value );
+		dbLog( "ControllerPorts::Write() -- control [%X]", value );
 		m_control = value & Control::WriteMask;
 
 		if ( value & Control::Reset )
 		{
 			// soft reset
+			dbLog( "\tsoft reset" );
 			m_control = 0;
 			m_status = 0;
 			m_mode.value = 0;
@@ -165,6 +170,7 @@ public:
 
 		if ( value & Control::Acknowledge )
 		{
+			dbLog( "\tacknowledge" );
 			stdx::reset_bits( m_status, Status::RxParityError | Status::InterruptRequest );
 		}
 	}
@@ -179,7 +185,7 @@ public:
 		// The default BAUD value is 0088h( equivalent to 44h cpu cycles ), and default factor is MUL1, so CLK pulses are 44h cpu cycles LOW,
 		// and 44h cpu cycles HIGH, giving it a transfer rate of circa 250kHz per bit( 33MHz divided by 88h cycles ).
 		// Note: The Baudrate Timer is always running; even if there's no transfer in progress.
-		dbLog( "ControllerPorts::Write() -- BaudrateReloadValue [%X]", value );
+		dbLog( "ControllerPorts::Write() -- baudrate reload value [%X]", value );
 		m_baudrateReloadValue = static_cast<uint16_t>( value );
 		ReloadBaudrateTimer();
 	}
@@ -202,11 +208,11 @@ private:
 	}
 
 private:
-	uint32_t m_status;
-	uint32_t m_baudrateTimer;
-	Mode m_mode;
-	uint16_t m_control;
-	uint16_t m_baudrateReloadValue;
+	uint32_t m_status = 0;
+	uint32_t m_baudrateTimer = 0;
+	Mode m_mode{};
+	uint16_t m_control = 0;
+	uint16_t m_baudrateReloadValue = 0;
 
 	FifoBuffer<uint8_t, 2> m_txBuffer;
 	FifoBuffer<uint8_t, 8> m_rxBuffer;

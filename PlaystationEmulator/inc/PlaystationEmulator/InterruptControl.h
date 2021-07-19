@@ -28,11 +28,6 @@ public:
 
 	static constexpr uint32_t WriteMask = 0xffff07ffu;
 
-	InterruptControl()
-	{
-		Reset();
-	}
-
 	void Reset()
 	{
 		m_status = 0;
@@ -56,11 +51,11 @@ public:
 		switch ( index )
 		{
 			case 0:
-				dbLog( "InterruptControl::Read -- interrupt status" );
+				dbLog( "InterruptControl::Read -- interrupt status [%X]", m_status );
 				return m_status;
 
 			case 1:
-				dbLog( "InterruptControl::Read -- interrupt mask" );
+				dbLog( "InterruptControl::Read -- interrupt mask [%X]", m_mask );
 				return m_mask;
 
 			default:
@@ -87,8 +82,8 @@ public:
 	}
 
 private:
-	uint32_t m_status;
-	uint32_t m_mask;
+	uint32_t m_status = 0;
+	uint32_t m_mask = 0;
 };
 
 }

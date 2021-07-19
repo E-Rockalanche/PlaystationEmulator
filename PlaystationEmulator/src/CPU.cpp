@@ -62,6 +62,7 @@ void MipsR3000Cpu::Tick() noexcept
 
 	m_registers.Update();
 
+	// on average: 1 cycle to execute instruction, 1 cycle for memory load
 	m_cycleScheduler.AddCycles( 1 ); // TODO: more accurate CPU timing
 }
 
@@ -84,8 +85,8 @@ Instruction MipsR3000Cpu::FetchInstruction( uint32_t address ) noexcept
 	}
 	else
 	{
-		dbBreak(); // not sure how this is gonna work if we return another instruction
 		RaiseException( Cop0::ExceptionCode::BusErrorInstructionFetch );
+		dbBreak(); // this def isn't right. Return a NOP at least so nothing bad happens before we start the exception handler
 	}
 
 	return result;
@@ -159,6 +160,8 @@ void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 
 void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor ) noexcept
 {
+	dbExpects( code == Cop0::ExceptionCode::Interrupt || code == Cop0::ExceptionCode::Syscall );
+
 	// exceptions in delay slot return to branch instruction
 	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
 

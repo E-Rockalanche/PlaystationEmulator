@@ -20,7 +20,7 @@ bool LoadBios( const char* filename, Bios& bios )
 
 	fin.seekg( 0, std::ios::beg );
 
-	fin.read( bios.Data(), BiosSize );
+	fin.read( (char*)bios.Data(), BiosSize );
 	fin.close();
 
 	// patch BIOS to force TTY output (seems to require proper dual serial port)

@@ -36,9 +36,9 @@ struct Color
 {
 	Color() = default;
 
-	Color( uint8_t r_, uint8_t g_, uint8_t b_ ) : r{ r_ }, g{ g_ }, b{ b_ } {}
+	constexpr Color( uint8_t r_, uint8_t g_, uint8_t b_ ) : r{ r_ }, g{ g_ }, b{ b_ } {}
 
-	explicit Color( uint32_t gpuParam )
+	explicit constexpr Color( uint32_t gpuParam )
 		: r{ static_cast<uint8_t>( gpuParam ) }
 		, g{ static_cast<uint8_t>( gpuParam >> 8 ) }
 		, b{ static_cast<uint8_t>( gpuParam >> 16 ) }
@@ -53,10 +53,10 @@ struct TexCoord
 {
 	TexCoord() = default;
 
-	TexCoord( uint16_t u_, uint16_t v_ ) : u{ u_ }, v{ v_ } {}
+	constexpr TexCoord( uint16_t u_, uint16_t v_ ) : u{ u_ }, v{ v_ } {}
 
 	// tex coords are only 8bit in gpu param
-	explicit TexCoord( uint32_t gpuParam )
+	explicit constexpr TexCoord( uint32_t gpuParam )
 		: u{ static_cast<uint16_t>( gpuParam & 0xff ) }
 		, v{ static_cast<uint16_t>( ( gpuParam >> 8 ) & 0xff ) }
 	{}

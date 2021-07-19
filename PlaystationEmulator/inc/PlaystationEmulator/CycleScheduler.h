@@ -58,6 +58,8 @@ private:
 
 	uint32_t m_cycles = 0;
 	uint32_t m_cyclesUntilEvent = 0;
+
+	bool m_inUpdate = false;
 };
 
 }

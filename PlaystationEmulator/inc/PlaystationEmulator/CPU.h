@@ -128,7 +128,7 @@ private:
 		};
 
 	private:
-		std::array<uint32_t, 32> m_input; // current register values
+		std::array<uint32_t, 32> m_input{}; // current register values
 		DelayedLoad m_output; // new register value to update after instruction
 		DelayedLoad m_delayedLoad; // delayed load which will update register after next instruction
 	};
@@ -171,6 +171,8 @@ private:
 	private:
 		struct Flags
 		{
+			Flags() : tag{ 0 }, valid{ 0 } {}
+
 			uint32_t tag : 20;
 			uint32_t valid : 4;
 		};
@@ -441,17 +443,17 @@ private:
 	Cop0 m_cop0;
 	GeometryTransformationEngine m_gte;
 
-	uint32_t m_currentPC; // pc of instruction being executed
-	uint32_t m_pc; // pc of instruction being fetched
-	uint32_t m_nextPC;
+	uint32_t m_currentPC = 0; // pc of instruction being executed
+	uint32_t m_pc = 0; // pc of instruction being fetched
+	uint32_t m_nextPC = 0;
 
-	bool m_inBranch;
-	bool m_inDelaySlot;
+	bool m_inBranch = false;
+	bool m_inDelaySlot = false;
 
 	Registers m_registers;
 
-	uint32_t m_hi;
-	uint32_t m_lo;
+	uint32_t m_hi = 0;
+	uint32_t m_lo = 0;
 
 	InstructionCache m_instructionCache;
 };

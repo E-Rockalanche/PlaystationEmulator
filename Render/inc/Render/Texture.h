@@ -52,7 +52,9 @@ class BaseTexture
 {
 public:
 	BaseTexture() noexcept = default;
+
 	BaseTexture( const BaseTexture& ) = delete;
+
 	BaseTexture( BaseTexture&& other ) noexcept : m_texture{ other.m_texture }
 	{
 		other.m_texture = 0;
@@ -64,6 +66,7 @@ public:
 	}
 
 	BaseTexture& operator=( const BaseTexture& ) = delete;
+
 	BaseTexture& operator=( BaseTexture&& other ) noexcept
 	{
 		Reset();
@@ -98,6 +101,7 @@ class IntermediateTexture : public BaseTexture
 public:
 	void Bind()
 	{
+		dbExpects( m_texture != 0 );
 		glBindTexture( static_cast<GLenum>( Type ), m_texture );
 	}
 
@@ -151,6 +155,7 @@ public:
 	{
 		dbExpects( width < GL_MAX_TEXTURE_SIZE );
 		dbExpects( height < GL_MAX_TEXTURE_SIZE );
+
 		Bind();
 		glTexImage2D( GetType(), mipmapLevel, internalColorFormat, width, height, 0, colorFormat, pixelType, pixels );
 		dbCheckRenderErrors();
@@ -163,6 +168,7 @@ public:
 	{
 		dbExpects( x + width <= m_width );
 		dbExpects( y + height <= m_height );
+
 		Bind();
 		glTexSubImage2D( GetType(), mipmapLevel, x, y, width, height, colorFormat, pixelType, pixels );
 		dbCheckRenderErrors();

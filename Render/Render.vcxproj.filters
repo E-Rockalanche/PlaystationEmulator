@@ -47,5 +47,8 @@
     <ClInclude Include="inc\Render\Texture.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\Render\FrameBuffer.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

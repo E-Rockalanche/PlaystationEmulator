@@ -71,6 +71,8 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 {
 	dbExpects( index < 64 );
 
+	dbLog( "GeometryTransformationEngine::Read() -- [%u]", index );
+
 	auto readVXYn = [this]( size_t n ) -> uint32_t
 	{
 		auto& v = m_vectors[ n ];
@@ -195,6 +197,8 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexcept
 {
 	dbExpects( index < 64 );
+
+	dbLog( "GeometryTransformationEngine::Write() -- [%u <- %X]", index, value );
 
 	auto assignVXYn = [this]( size_t index, uint32_t value )
 	{
@@ -346,6 +350,8 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 
 void GeometryTransformationEngine::ExecuteCommand( uint32_t command ) noexcept
 {
+	dbLog( "GeometryTransformationEngine::ExecuteCommand() -- [%X]", command );
+
 	const auto opcode = static_cast<Opcode>( command & 0x3f );
 	const bool shiftFraction = command & ( 1 << 19 );
 

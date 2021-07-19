@@ -146,8 +146,6 @@ void Gpu::Reset()
 
 	m_displayFrame = false;
 
-	m_totalCpuCyclesThisFrame = 0; // temp
-
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0x801f } );
 	m_renderer.UploadVRam( m_vram.get() );
@@ -220,7 +218,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			dbLog( "Gpu::GP0_Command() -- set draw mode [%X]", value );
 
 			static constexpr uint32_t WriteMask = 0x3f;
-			m_status.value = ( m_status.value & ~WriteMask ) | ( value & WriteMask );
+			stdx::masked_set( m_status.value, WriteMask, value );
 
 			m_status.textureDisable = ( value >> 11 ) & 1;
 
@@ -284,26 +282,26 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 		}
 
 		case 0x01: // clear cache
-			dbLog( "clear GPU cache" );
+			dbLog( "Gpu::GP0_Command() -- clear GPU cache" );
 			break;
 
 		case 0x02: // fill rectangle in VRAM
-			dbLog( "fill rectangle in VRAM [%x]", value );
+			dbLog( "Gpu::GP0_Command() -- fill rectangle in VRAM" );
 			InitCommand( value, 2, &Gpu::FillRectangle );
 			break;
 
 		case 0x80: // copy rectangle (VRAM to VRAM)
-			dbLog( "copy rectangle (VRAM to VRAM) [%x]", value );
+			dbLog( "Gpu::GP0_Command() -- copy rectangle (VRAM to VRAM)" );
 			InitCommand( value, 3, &Gpu::CopyRectangle );
 			break;
 
 		case 0xa0: // copy rectangle (CPU to VRAM)
-			dbLog( "copy rectangle (CPU to VRAM) [%x]", value );
+			dbLog( "Gpu::GP0_Command() -- copy rectangle (CPU to VRAM)" );
 			InitCommand( value, 2, &Gpu::CopyRectangleToVram );
 			break;
 
 		case 0xc0: // copy rectangle (VRAM to CPU)
-			dbLog( "copy rectangle (VRAM to CPU) [%x]", value );
+			dbLog( "Gpu::GP0_Command() -- copy rectangle (VRAM to CPU)" );
 			InitCommand( value, 2, &Gpu::CopyRectangleFromVram );
 			break;
 
@@ -376,7 +374,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				}
 
 				default:
-					dbBreakMessage( "unhandled GP0 opcode [%x]", opcode );
+					dbBreakMessage( "Gpu::GP0_Command() -- unhandled GP0 opcode [%X]", opcode );
 					break;
 			}
 			break;
@@ -653,6 +651,7 @@ uint32_t Gpu::GpuStatus() noexcept
 		m_cycleScheduler.ScheduleNextSubscriberUpdate();
 	}
 
+	// no logging since GpuStatus is called very often
 	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
 }
 
@@ -781,8 +780,6 @@ void Gpu::RenderPolygon() noexcept
 		m_renderer.PushTriangle( vertices + 1 );
 
 	ClearCommandBuffer();
-
-	m_trianglesDrawn += quad ? 4 : 3;
 }
 
 void Gpu::RenderRectangle() noexcept
@@ -857,8 +854,6 @@ void Gpu::RenderRectangle() noexcept
 
 	m_renderer.PushQuad( vertices );
 
-	m_trianglesDrawn += 4;
-
 	// DEBUG
 	const uint16_t color555 = ( color.r >> 3 ) | ( ( color.g >> 3 ) << 5 ) | ( ( color.b >> 3 ) << 10 );
 	for ( uint32_t y = 0; y < height; ++y )
@@ -872,8 +867,6 @@ void Gpu::RenderRectangle() noexcept
 void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 {
 	// dbLog( "Gpu::UpdateTimers()" );
-
-	m_totalCpuCyclesThisFrame += cpuTicks;
 
 	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuTicks ) );
 	const float dots = gpuTicks * GetDotsPerVideoCycle();
@@ -925,15 +918,8 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 
 		m_displayFrame = true;
 
-		dbLog( "Triangles drawn this frame: %u", m_trianglesDrawn );
-		m_trianglesDrawn = 0;
-
 		if ( IsInterlaced() )
 			m_status.drawingEvenOdd ^= 1;
-
-		// dbLog( "CPU cycles this frame: %u", m_totalCpuCyclesThisFrame );
-		dbLog( "CPU cycles over/under expected: %i", static_cast<int>( m_totalCpuCyclesThisFrame - CpuClockSpeed / GetRefreshRate() ) );
-		m_totalCpuCyclesThisFrame = 0;
 
 		// DEBUG
 		FlushVRam();

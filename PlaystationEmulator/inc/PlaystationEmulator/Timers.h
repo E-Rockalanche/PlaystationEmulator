@@ -18,6 +18,8 @@ public:
 
 	union CounterMode
 	{
+		CounterMode() : value{ 0 } {}
+
 		struct
 		{
 			uint32_t syncEnable : 1; // 0=free run, 1=sync mode
@@ -54,6 +56,9 @@ public:
 		};
 		uint32_t value;
 	};
+	static_assert( sizeof( CounterMode ) == 4 );
+
+	Timer( uint32_t index ) noexcept : m_index{ index } {}
 
 	void Reset()
 	{
@@ -97,13 +102,15 @@ private:
 	bool TrySignalIrq() noexcept;
 
 private:
-	uint32_t m_counter;
+	uint32_t m_counter = 0;
 	CounterMode m_mode;
-	uint32_t m_target;
+	uint32_t m_target = 0;
 
-	bool m_irq;
-	bool m_paused;
-	bool m_inBlank;
+	bool m_irq = false;
+	bool m_paused = false;
+	bool m_inBlank = false;
+
+	uint32_t m_index = 0;
 };
 
 class Timers
@@ -137,9 +144,9 @@ private:
 	InterruptControl& m_interruptControl;
 	CycleScheduler& m_cycleScheduler;
 
-	std::array<Timer, 3> m_timers;
+	std::array<Timer, 3> m_timers{ Timer( 0 ), Timer( 1 ), Timer( 2 ) };
 
-	uint32_t m_cyclesDiv8Remainder;
+	uint32_t m_cyclesDiv8Remainder = 0;
 };
 
 }

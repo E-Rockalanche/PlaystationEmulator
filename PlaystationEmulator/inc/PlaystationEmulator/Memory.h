@@ -14,21 +14,21 @@ class Memory
 	static_assert( MemorySize % 4 == 0 );
 
 public:
-	char& operator[]( uint32_t offset ) noexcept
+	uint8_t& operator[]( uint32_t offset ) noexcept
 	{
 		dbExpects( offset < MemorySize );
 		return m_data[ offset ];
 	}
 
-	const char& operator[]( uint32_t offset ) const noexcept
+	const uint8_t& operator[]( uint32_t offset ) const noexcept
 	{
 		dbExpects( offset < MemorySize );
 		return m_data[ offset ];
 	}
 
-	char* Data() noexcept { return m_data; }
+	uint8_t* Data() noexcept { return m_data; }
 
-	const char* Data() const noexcept { return m_data; }
+	const uint8_t* Data() const noexcept { return m_data; }
 
 	template <typename T>
 	T Read( uint32_t offset ) const noexcept
@@ -46,23 +46,16 @@ public:
 		*reinterpret_cast<T*>( m_data + offset ) = value;
 	}
 
-	void Fill( char value ) noexcept
+	void Fill( uint8_t value ) noexcept
 	{
 		for ( auto& byte : m_data )
 			byte = value;
 	}
 
-	void Fill( uint32_t value ) noexcept
-	{
-		uint32_t* data = reinterpret_cast<uint32_t*>( m_data );
-		for ( const auto last = data + MemorySize / 4; data != last; ++data )
-			*data = value;
-	}
-
 	static constexpr uint32_t Size() noexcept { return static_cast<uint32_t>( MemorySize ); }
 
 private:
-	char m_data[ MemorySize ];
+	uint8_t m_data[ MemorySize ];
 };
 
 }

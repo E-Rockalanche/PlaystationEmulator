@@ -90,7 +90,10 @@ public:
 		};
 	};
 
-	Cop0( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl } {}
+	Cop0( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl }
+	{
+		Reset();
+	}
 
 	void Reset();
 
@@ -136,17 +139,17 @@ public:
 private:
 	InterruptControl& m_interruptControl;
 
-	uint32_t m_breakpointOnExecute;
-	uint32_t m_breakpointOnDataAccess;
-	uint32_t m_jumpDestination;
-	uint32_t m_breakpointControl;
-	uint32_t m_badVirtualAddress;
-	uint32_t m_dataAccessBreakpointMask;
-	uint32_t m_executeBreakpointMask;
-	uint32_t m_systemStatus;
-	uint32_t m_exceptionCause; // bit 10 tied to interrupt control
-	uint32_t m_trapReturnAddress;
-	uint32_t m_processorId;
+	uint32_t m_breakpointOnExecute = 0;
+	uint32_t m_breakpointOnDataAccess = 0;
+	uint32_t m_jumpDestination = 0;
+	uint32_t m_breakpointControl = 0;
+	uint32_t m_badVirtualAddress = 0;
+	uint32_t m_dataAccessBreakpointMask = 0;
+	uint32_t m_executeBreakpointMask = 0;
+	uint32_t m_systemStatus = 0;
+	uint32_t m_exceptionCause = 0; // bit 10 tied to interrupt control
+	uint32_t m_trapReturnAddress = 0;
+	uint32_t m_processorId = 0;
 };
 
 }

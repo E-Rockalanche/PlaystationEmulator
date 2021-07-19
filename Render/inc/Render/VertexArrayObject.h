@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdx/assert.h>
 #include <glad/glad.h>
 
 namespace Render
@@ -10,12 +11,12 @@ class VertexArrayObject
 public:
 	VertexArrayObject() = default;
 
-	VertexArrayObject( VertexArrayObject&& other ) : m_vao{ other.m_vao }
+	VertexArrayObject( VertexArrayObject&& other ) noexcept : m_vao{ other.m_vao }
 	{
 		other.m_vao = 0;
 	}
 
-	VertexArrayObject& operator=( VertexArrayObject&& other )
+	VertexArrayObject& operator=( VertexArrayObject&& other ) noexcept
 	{
 		Reset();
 		m_vao = other.m_vao;
@@ -29,6 +30,11 @@ public:
 	~VertexArrayObject()
 	{
 		Reset();
+	}
+
+	bool Valid() const noexcept
+	{
+		return m_vao != 0;
 	}
 
 	void Reset()
@@ -47,6 +53,7 @@ public:
 	// calls to glEnableVertexAttribArray, glDisableVertexAttribArray, glVertexAttribPointer, and glVertexAttribPointer will modify VAO state while bound
 	void Bind()
 	{
+		dbExpects( m_vao != 0 );
 		glBindVertexArray( m_vao );
 	}
 

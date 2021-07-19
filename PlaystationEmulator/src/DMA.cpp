@@ -126,14 +126,14 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 
 		case 29:
 		{
+			bool oldMasterIRQ = GetIrqMasterFlag();
+
 			const uint32_t irqFlags = ( m_interruptRegister & ~value ) & InterruptRegister::IrqFlagsMask; // write 1 to reset irq flags
 			m_interruptRegister = ( value & InterruptRegister::WriteMask ) | irqFlags;
 
-			if ( GetForceIrq() || ( GetIrqMasterEnable() && ( GetIrqEnables() & GetIrqFlags() ) != 0 ) )
-			{
-				m_interruptRegister |= InterruptRegister::IrqMasterFlag;
-				// TODO: Upon 0-to-1 transition of Bit31, the IRQ3 flag (in Port 1F801070h) gets set.
-			}
+			// trigger IRQ on 0 to 1 of master flag
+			if ( !oldMasterIRQ && GetIrqMasterFlag() )
+				m_interruptControl.SetInterrupt( Interrupt::Dma );
 
 			break;
 		}

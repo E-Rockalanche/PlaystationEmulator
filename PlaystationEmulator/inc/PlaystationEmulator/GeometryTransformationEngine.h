@@ -180,75 +180,75 @@ private:
 	using Matrix = Math::Matrix<int16_t, 3, 3>;
 
 	// signed 16bit
-	std::array<Math::Vector3<int16_t>, 3> m_vectors;
+	std::array<Math::Vector3<int16_t>, 3> m_vectors{};
 
-	Math::ColorRGB<uint8_t> m_color;
-	uint8_t m_code;
+	Math::ColorRGB<uint8_t> m_color{ 0 };
+	uint8_t m_code = 0;
 
-	uint16_t m_orderTableAvgZ;
+	uint16_t m_orderTableAvgZ = 0;
 
 	// signed 3bit integer 12bit fraction?
-	int16_t m_ir0;
+	int16_t m_ir0 = 0;
 
 	// signed 16bit
-	Math::Vector3<int16_t> m_ir123;
+	Math::Vector3<int16_t> m_ir123{ 0 };
 
 	// TODO: screen XY coordinate FIFOs
-	std::array<Math::Vector2<int16_t>, 3> m_screenXYFifo;
+	std::array<Math::Vector2<int16_t>, 3> m_screenXYFifo{};
 
 	// TODO: screen Z coordinate FIFOs
-	std::array<uint16_t, 4> m_screenZFifo;
+	std::array<uint16_t, 4> m_screenZFifo{};
 
 	// TODO: color CRGB code/color FIFOs
-	std::array<uint32_t, 3> m_colorCodeFifo;
+	std::array<uint32_t, 3> m_colorCodeFifo{};
 
 	// signed 32 bit
-	int32_t m_mac0;
-	Math::Vector3<int32_t> m_mac123;
+	int32_t m_mac0 = 0;
+	Math::Vector3<int32_t> m_mac123{ 0 };
 
 	// convert rgb color between 48bit and 15bit
-	Math::ColorRGB<uint8_t> m_colorConversion; // 5bits per component. R/W as uint16_t
+	Math::ColorRGB<uint8_t> m_colorConversion{ 0 }; // 5bits per component. R/W as uint16_t
 
 	// count leading zeroes/ones
-	uint32_t m_leadingBitsSource; // R/W
-	uint32_t m_leadingBitsResult; // R
+	uint32_t m_leadingBitsSource = 0; // R/W
+	uint32_t m_leadingBitsResult = 0; // R
 
 	// signed 3bit integer 12bit fraction
-	Matrix m_rotation;
+	Matrix m_rotation = Matrix( 0 );
 
 	// signed 31bit integer
-	Math::Vector3<int32_t> m_translation;
+	Math::Vector3<int32_t> m_translation{ 0 };
 
 	// signed 3bit integer 12bit fraction
-	Matrix m_lightSource;
+	Matrix m_lightSource = Matrix( 0 );
 
 	// signed 19bit integer 12bit fraction
-	Math::ColorRGB<int32_t> m_backgroundColor;
+	Math::ColorRGB<int32_t> m_backgroundColor{ 0 };
 
 	// signed 3bit integer 12bit fraction
-	Matrix m_lightColor;
+	Matrix m_lightColor = Matrix( 0 );
 
 	// signed 27bit integer 4bit fraction
-	Math::ColorRGB<int32_t> m_farColor;
+	Math::ColorRGB<int32_t> m_farColor{ 0 };
 
 	// signed 15bit integer 16bit fraction
-	Math::Vector2<int32_t> m_screenOffset;
+	Math::Vector2<int32_t> m_screenOffset{ 0 };
 
 	// unsigned 16bit integer (but it gets sign expanded when read as 32bit), H register
-	uint16_t m_projectionPlaneDistance;
+	uint16_t m_projectionPlaneDistance = 0;
 
 	// signed 7bit integer 8bit fraction
-	int16_t m_depthQueueParamA;
+	int16_t m_depthQueueParamA = 0;
 
 	// signed 7bit integer 24bit fraction?
-	int32_t m_depthQueueParamB;
+	int32_t m_depthQueueParamB = 0;
 	
 	// average Z scale factors
 	// signed 3bit integer 12bit fraction?
-	int16_t m_zScaleFactor3;
-	int16_t m_zScaleFactor4;
+	int16_t m_zScaleFactor3 = 0;
+	int16_t m_zScaleFactor4 = 0;
 
-	uint32_t m_errorFlags;
+	uint32_t m_errorFlags = 0;
 };
 
 }

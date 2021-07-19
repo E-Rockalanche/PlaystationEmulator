@@ -79,7 +79,7 @@ public:
 
 private:
 	// 0x1f801000 - 0x1f801023
-	std::array<uint32_t, Register::Count > m_registers;
+	std::array<uint32_t, Register::Count > m_registers{};
 
 	// 0x1f801060
 	uint32_t m_ramSize = 0;

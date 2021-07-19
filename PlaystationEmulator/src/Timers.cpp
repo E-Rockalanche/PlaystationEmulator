@@ -9,12 +9,12 @@ uint32_t Timer::Read( uint32_t index ) noexcept
 	switch ( index )
 	{
 		case 0:
-			dbLog( "Timer::Read() -- counter" );
+			dbLog( "Timer%u::Read() -- counter [%X]", m_index, m_counter );
 			return m_counter;
 
 		case 1:
 		{
-			dbLog( "Timer::Read() -- mode" );
+			dbLog( "Timer%u::Read() -- mode [%X]", m_index, m_mode.value );
 			const uint32_t value = m_mode.value;
 			m_mode.reachedTarget = false;
 			m_mode.reachedMax = false;
@@ -22,7 +22,7 @@ uint32_t Timer::Read( uint32_t index ) noexcept
 		}
 
 		case 2:
-			dbLog( "Timer::Read() -- target" );
+			dbLog( "Timer%u::Read() -- target [%X]", m_index, m_target );
 			return m_target;
 
 		default:
@@ -37,13 +37,13 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 	switch ( index )
 	{
 		case 0:
-			dbLog( "Timer::Write() -- counter value [%X]", value );
+			dbLog( "Timer%u::Write() -- counter [%X]", m_index, value );
 			m_counter = value;
 			break;
 
 		case 1:
 		{
-			dbLog( "Timer::Write() -- mode [%X]", value );
+			dbLog( "Timer%u::Write() -- mode [%X]", m_index, value );
 			static constexpr uint32_t WriteMask = 0x03ff;
 			stdx::masked_set<uint32_t>( m_mode.value, WriteMask, value );
 
@@ -61,7 +61,7 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 		}
 
 		case 2:
-			dbLog( "Timer::Write() -- target [%X]", value );
+			dbLog( "Timer%u::Write() -- target [%X]", m_index, value );
 			m_target = value;
 			break;
 	}
@@ -197,10 +197,10 @@ void Timers::Reset()
 
 uint32_t Timers::Read( uint32_t offset ) noexcept
 {
-	const uint32_t timerIndex = offset >> 4;
+	const uint32_t timerIndex = offset / 4;
 	dbAssert( timerIndex < 3 );
 
-	const uint32_t registerIndex = ( offset & 0xf ) / 4;
+	const uint32_t registerIndex = offset & 0x3;
 	dbAssert( registerIndex < 3 );
 
 	if ( registerIndex < 3 )
@@ -218,10 +218,11 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 
 void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 {
-	const uint32_t timerIndex = offset >> 4;
+	const uint32_t timerIndex = offset / 4;
 	dbAssert( timerIndex < 3 );
 
-	const uint32_t registerIndex = ( offset & 0xf ) / 4;
+	const uint32_t registerIndex = offset & 0x3;
+	dbAssert( registerIndex < 3 );
 
 	if ( registerIndex < 3 )
 	{
