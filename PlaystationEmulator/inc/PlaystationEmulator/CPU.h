@@ -32,9 +32,7 @@ public:
 		, m_interruptControl{ interruptControl }
 		, m_cycleScheduler{ cycleScheduler }
 		, m_cop0{ interruptControl }
-	{
-		Reset();
-	}
+	{}
 
 	void Reset();
 
@@ -94,6 +92,7 @@ private:
 		{
 			dbExpects( index < 32 );
 			dbExpects( m_delayedLoad.index == 0 && m_delayedLoad.value == 0 );
+
 			m_delayedLoad = { index, value };
 
 			// loading into the same register twice in a row drops the first one
@@ -113,6 +112,13 @@ private:
 			m_input[ m_output.index ] = m_output.value;
 			m_input[ Zero ] = 0; // zero register is always 0
 			m_output = m_delayedLoad;
+			m_delayedLoad = { 0, 0 };
+		}
+
+		void Flush() noexcept
+		{
+			m_input[ m_output.index ] = m_output.value;
+			m_input[ Zero ] = 0; // zero register is always 0
 			m_delayedLoad = { 0, 0 };
 		}
 
@@ -180,13 +186,20 @@ private:
 	};
 
 private:
-	// skip instruction in branch delay slot
+	// skip instruction in branch delay slot and flush pipeline
 	void SetProgramCounter( uint32_t address )
 	{
 		dbExpects( address % 4 == 0 );
 		m_pc = address;
 		m_nextPC = address + 4;
+
 		m_inBranch = false;
+
+		/*
+		m_inDelaySlot = false;
+
+		m_registers.Flush();
+		*/
 	}
 
 	Instruction FetchInstruction( uint32_t address ) noexcept;

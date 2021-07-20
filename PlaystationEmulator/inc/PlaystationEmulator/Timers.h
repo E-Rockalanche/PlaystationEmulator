@@ -99,6 +99,7 @@ public:
 	bool Update( uint32_t ticks ) noexcept;
 
 private:
+	void UpdatePaused() noexcept;
 	bool TrySignalIrq() noexcept;
 
 private:
@@ -120,8 +121,6 @@ public:
 		: m_interruptControl{ interruptControl }
 		, m_cycleScheduler{ cycleScheduler }
 	{
-		Reset();
-
 		m_cycleScheduler.Register(
 			[this]( uint32_t cycles ) { AddCycles( cycles ); },
 			[this] { return GetCyclesUntilIrq(); } );

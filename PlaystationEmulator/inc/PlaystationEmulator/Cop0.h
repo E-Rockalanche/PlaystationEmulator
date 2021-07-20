@@ -90,10 +90,7 @@ public:
 		};
 	};
 
-	Cop0( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl }
-	{
-		Reset();
-	}
+	Cop0( InterruptControl& interruptControl ) : m_interruptControl{ interruptControl } {}
 
 	void Reset();
 

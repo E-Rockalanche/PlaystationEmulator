@@ -92,10 +92,8 @@ Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer
 	, m_interruptControl{ interruptControl }
 	, m_renderer{ renderer }
 	, m_cycleScheduler{ cycleScheduler }
+	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
-	m_vram = std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ); // 1MB of VRAM
-	Reset();
-
 	m_cycleScheduler.Register(
 		[this]( uint32_t cycles ) {UpdateTimers( cycles ); },
 		[this] { return GetCpuCyclesUntilEvent(); } );

@@ -19,22 +19,22 @@ namespace PSX
 
 struct Position
 {
-	Position() = default;
+	constexpr Position() = default;
 
-	Position( int16_t x_, int16_t y_ ) : x{ x_ }, y{ y_ } {}
+	constexpr Position( int16_t x_, int16_t y_ ) : x{ x_ }, y{ y_ } {}
 
-	explicit Position( uint32_t gpuParam )
+	explicit constexpr Position( uint32_t gpuParam )
 		: x{ static_cast<int16_t>( gpuParam ) }
 		, y{ static_cast<int16_t>( gpuParam >> 16 ) }
 	{}
 
-	int16_t x;
-	int16_t y;
+	int16_t x = 0;
+	int16_t y = 0;
 };
 
 struct Color
 {
-	Color() = default;
+	constexpr Color() = default;
 
 	constexpr Color( uint8_t r_, uint8_t g_, uint8_t b_ ) : r{ r_ }, g{ g_ }, b{ b_ } {}
 
@@ -44,14 +44,14 @@ struct Color
 		, b{ static_cast<uint8_t>( gpuParam >> 16 ) }
 	{}
 
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
+	uint8_t r = 0;
+	uint8_t g = 0;
+	uint8_t b = 0;
 };
 
 struct TexCoord
 {
-	TexCoord() = default;
+	constexpr TexCoord() = default;
 
 	constexpr TexCoord( uint16_t u_, uint16_t v_ ) : u{ u_ }, v{ v_ } {}
 
@@ -62,8 +62,8 @@ struct TexCoord
 	{}
 
 	// tex coords need to be larger than 8bit for rectangles
-	uint16_t u;
-	uint16_t v;
+	uint16_t u = 0;
+	uint16_t v = 0;
 };
 
 struct Vertex
@@ -71,7 +71,7 @@ struct Vertex
 	Position position;
 	Color color;
 	TexCoord texCoord;
-	uint16_t clut;
+	uint16_t clut = 0;
 	uint16_t drawMode = ( 1 << 11 ); // disable texture
 };
 

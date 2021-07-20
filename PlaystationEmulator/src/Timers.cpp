@@ -39,6 +39,7 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 		case 0:
 			dbLog( "Timer%u::Write() -- counter [%X]", m_index, value );
 			m_counter = value;
+			// TODO: this can trigger an IRQ?
 			break;
 
 		case 1:
@@ -48,56 +49,64 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 			stdx::masked_set<uint32_t>( m_mode.value, WriteMask, value );
 
 			// reset IRQ on write
-			m_mode.noInterruptRequest = true;
+			// m_mode.noInterruptRequest = true; // I don't see this in duckstation
 			m_irq = false;
 
 			// reset counter on write
 			m_counter = 0;
 
-			if ( !m_mode.syncEnable )
-				m_paused = false;
+			if ( m_index < 2 )
+				UpdatePaused();
 
+			// TODO: this can trigger an IRQ?
 			break;
 		}
 
 		case 2:
 			dbLog( "Timer%u::Write() -- target [%X]", m_index, value );
 			m_target = value;
+
+			// TODO: this can trigger an IRQ?
 			break;
 	}
 }
 
 void Timer::UpdateBlank( bool blanked ) noexcept
 {
-	dbExpects( m_mode.syncEnable );
-
 	if ( m_inBlank == blanked )
 		return;
 
 	m_inBlank = blanked;
 
-	switch ( GetSyncMode() )
+	if ( m_mode.syncEnable && blanked )
 	{
-		case 0:
-			m_paused = blanked;
-			break;
+		switch ( GetSyncMode() )
+		{
+			case 0:								break;
+			case 1:	m_counter = 0;				break;
+			case 2: m_counter = 0;				break;
+			case 3: m_mode.syncEnable = false;	break;
+		}
+	}
 
-		case 1:
-			if ( blanked )
-				m_counter = 0;
-			break;
+	UpdatePaused();
+}
 
-		case 2:
-			if ( blanked )
-				m_counter = 0;
-			m_paused = !blanked;
-			break;
-
-		case 3:
-			m_paused = !blanked;
-			if ( blanked )
-				m_mode.syncEnable = false;
-			break;
+void Timer::UpdatePaused() noexcept
+{
+	if ( m_mode.syncEnable )
+	{
+		switch ( GetSyncMode() )
+		{
+			case 0:	m_paused = m_inBlank;	break;
+			case 1:	m_paused = false;		break;
+			case 2:
+			case 3:	m_paused = !m_inBlank;	break;
+		}
+	}
+	else
+	{
+		m_paused = false;
 	}
 }
 
@@ -105,16 +114,24 @@ uint32_t Timer::GetTicksUntilIrq() const noexcept
 {
 	dbExpects( m_counter <= 0xffff );
 
+	auto minTicks = std::numeric_limits<uint32_t>::max();
+
 	if ( !m_paused )
 	{
-		if ( m_mode.irqOnTarget && m_counter < m_target )
-			return m_target - m_counter;
+		if ( m_mode.irqOnTarget )
+		{
+			const auto ticks = ( m_counter < m_target ) ? ( m_target - m_counter ) : ( ( 0xffff - m_counter ) + m_target );
+			minTicks = std::min( minTicks, ticks );
+		}
 
 		if ( m_mode.irqOnMax )
-			return 0xffffu - m_counter;
+		{
+			const auto ticks = 0xffffu - m_counter;
+			minTicks = std::min( minTicks, ticks );
+		}
 	}
 
-	return std::numeric_limits<uint32_t>::max();
+	return minTicks;
 }
 
 bool Timer::Update( uint32_t ticks ) noexcept
@@ -132,18 +149,22 @@ bool Timer::Update( uint32_t ticks ) noexcept
 		m_mode.reachedTarget = true;
 		irq |= m_mode.irqOnTarget;
 
+		/*
+		// TODO: does counter continue if target is 0?
 		if ( m_mode.resetCounter )
-		{
-			// TODO: counter actually resets when it exceeds target
 			m_counter = ( m_target > 0 ) ? ( m_counter % m_target ) : 0;
-		}
+		*/
+
+		// duckstation does this
+		if ( m_mode.resetCounter && m_target > 0 )
+			m_counter %= m_target;
 	}
 
 	if ( m_counter >= 0xffff )
 	{
 		m_mode.reachedMax = true;
 		irq |= m_mode.irqOnMax;
-		m_counter %= 0xffff; // TODO: counter actually resets when it overflows
+		m_counter %= 0xffffu;
 	}
 
 	if ( irq )
@@ -170,6 +191,7 @@ bool Timer::TrySignalIrq() noexcept
 {
 	if ( !m_irq || m_mode.irqRepeat )
 	{
+		dbLog( "Timer%u signalled IRQ", m_index );
 		m_irq = true;
 		return true;
 	}
@@ -183,6 +205,8 @@ void Timer::PauseAtTarget() noexcept
 		m_counter = m_target;
 	else if ( m_mode.irqOnMax )
 		m_counter = 0xffff;
+	else
+		dbBreak(); // impossible?
 
 	m_paused = true;
 }
@@ -292,32 +316,34 @@ void Timers::AddCycles( uint32_t cycles ) noexcept
 
 uint32_t Timers::GetCyclesUntilIrq() const noexcept
 {
-	uint32_t cycles = std::numeric_limits<uint32_t>::max();
+	uint32_t minCycles = std::numeric_limits<uint32_t>::max();
 
 	auto& dotTimer = m_timers[ 0 ];
 	if ( dotTimer.GetClockSource() % 2 == 0 )
 	{
-		cycles = std::min( cycles, dotTimer.GetTicksUntilIrq() );
+		minCycles = std::min( minCycles, dotTimer.GetTicksUntilIrq() );
 	}
 
 	auto& hblankTimer = m_timers[ 0 ];
 	if ( hblankTimer.GetClockSource() % 2 == 0 )
 	{
-		cycles = std::min( cycles, hblankTimer.GetTicksUntilIrq() );
+		minCycles = std::min( minCycles, hblankTimer.GetTicksUntilIrq() );
 	}
 
 	auto& cpuTimer = m_timers[ 2 ];
 	if ( cpuTimer.GetClockSource() & 0x2 )
 	{
-		cycles = std::min( cycles, cpuTimer.GetTicksUntilIrq() * 8 - m_cyclesDiv8Remainder );
+		const auto rawCycles = cpuTimer.GetTicksUntilIrq();
+		if ( rawCycles != std::numeric_limits<uint32_t>::max() )
+			minCycles = std::min( minCycles, rawCycles * 8 - m_cyclesDiv8Remainder );
 	}
 	else
 	{
-		cycles = std::min( cycles, cpuTimer.GetTicksUntilIrq() );
+		minCycles = std::min( minCycles, cpuTimer.GetTicksUntilIrq() );
 	}
 
-	dbAssert( cycles > 0 );
-	return cycles;
+	dbAssert( minCycles > 0 );
+	return minCycles;
 }
 
 }

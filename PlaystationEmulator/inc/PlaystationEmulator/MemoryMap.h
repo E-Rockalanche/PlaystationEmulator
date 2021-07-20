@@ -93,7 +93,6 @@ public:
 		, m_bios{ bios }
 	{}
 
-
 	template <typename T>
 	T Read( uint32_t address ) const noexcept
 	{

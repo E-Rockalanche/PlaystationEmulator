@@ -11,7 +11,6 @@
 #include "ControllerPorts.h"
 #include "RAM.h"
 #include "Renderer.h"
-#include "SPU.h"
 #include "Timers.h"
 
 #include <Render/Error.h>
@@ -145,7 +144,7 @@ int main( int, char** )
 		return -1;
 	
 	auto bios = std::make_unique<PSX::Bios>();
-	bios->Fill( 0 );
+	bios->Fill( 0xfe );
 	if ( !PSX::LoadBios( "bios.bin", *bios ) )
 	{
 		std::cout << "could not find BIOS" << std::endl;
@@ -153,10 +152,10 @@ int main( int, char** )
 	}
 
 	auto ram = std::make_unique<PSX::Ram>();
-	ram->Fill( 0 );
+	ram->Fill( 0xfe );
 
 	auto scratchpad = std::make_unique<PSX::Scratchpad>();
-	scratchpad->Fill( 0 );
+	scratchpad->Fill( 0xfe );
 
 	PSX::MemoryControl memControl;
 	memControl.Reset();
@@ -192,7 +191,6 @@ int main( int, char** )
 	cycleScheduler.ScheduleNextSubscriberUpdate();
 
 	bool viewVRam = false;
-
 	bool quit = false;
 	while ( !quit )
 	{

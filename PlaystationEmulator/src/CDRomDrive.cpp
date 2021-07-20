@@ -148,8 +148,6 @@ CDRomDrive::CDRomDrive( InterruptControl& interruptControl, CycleScheduler& cycl
 	: m_interruptControl{ interruptControl }
 	, m_cycleScheduler{ cycleScheduler }
 {
-	Reset();
-
 	m_cycleScheduler.Register(
 		[this]( uint32_t cycles ) { AddCycles( cycles ); },
 		[this] { return GetCyclesUntilCommand(); } );

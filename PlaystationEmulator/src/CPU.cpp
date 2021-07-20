@@ -94,6 +94,9 @@ Instruction MipsR3000Cpu::FetchInstruction( uint32_t address ) noexcept
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 {
+	if ( instr.value == 0 )
+		return; // NOP
+
 #define OP_CASE( opcode ) case Opcode::opcode:	opcode( instr );	break;
 
 	switch ( static_cast<Opcode>( instr.op() ) )
@@ -160,7 +163,7 @@ void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 
 void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor ) noexcept
 {
-	dbExpects( code == Cop0::ExceptionCode::Interrupt || code == Cop0::ExceptionCode::Syscall );
+	// dbExpects( code == Cop0::ExceptionCode::Interrupt || code == Cop0::ExceptionCode::Syscall );
 
 	// exceptions in delay slot return to branch instruction
 	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
@@ -742,9 +745,7 @@ void MipsR3000Cpu::StoreHalfword( Instruction instr ) noexcept
 
 void MipsR3000Cpu::ShiftLeftLogical( Instruction instr ) noexcept
 {
-	// SSL is commonly used as NOP
-	if ( instr.value != 0 )
-		m_registers.Set( instr.rd(), m_registers[ instr.rt() ] << instr.shamt() );
+	m_registers.Set( instr.rd(), m_registers[ instr.rt() ] << instr.shamt() );
 }
 
 void MipsR3000Cpu::ShiftLeftLogicalVariable( Instruction instr ) noexcept
