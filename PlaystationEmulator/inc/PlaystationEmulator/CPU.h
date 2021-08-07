@@ -518,7 +518,7 @@ void MipsR3000Cpu::StoreImp( uint32_t address, T value ) noexcept
 {
 	if ( address % sizeof( T ) == 0 )
 	{
-		if ( !m_cop0.GetIsolateCache() )
+		if ( !m_cop0.GetIsolateCache() || address & 0x80000000 )
 		{
 			m_memoryMap.Write<T>( address, value );
 		}

@@ -45,18 +45,20 @@ void Timer::Write( uint32_t index, uint16_t value ) noexcept
 		case 1:
 		{
 			dbLog( "Timer%u::Write() -- mode [%X]", m_index, value );
-			static constexpr uint32_t WriteMask = 0x03ff;
+			static constexpr uint32_t WriteMask = 0b1110001111111111;
 			stdx::masked_set<uint32_t>( m_mode.value, WriteMask, value );
 
 			// reset IRQ on write
-			// m_mode.noInterruptRequest = true; // I don't see this in duckstation
 			m_irq = false;
 
 			// reset counter on write
 			m_counter = 0;
 
-			if ( m_index < 2 )
-				UpdatePaused();
+			// In Toggle mode, Bit10 is set after writing to the Mode register, and becomes inverted on each IRQ
+			if ( m_mode.irqToggle )
+				m_mode.noInterruptRequest = true;
+
+			UpdatePaused();
 
 			// TODO: this can trigger an IRQ?
 			break;
@@ -96,12 +98,19 @@ void Timer::UpdatePaused() noexcept
 {
 	if ( m_mode.syncEnable )
 	{
-		switch ( GetSyncMode() )
+		if ( m_index != 2 )
 		{
-			case 0:	m_paused = m_inBlank;	break;
-			case 1:	m_paused = false;		break;
-			case 2:
-			case 3:	m_paused = !m_inBlank;	break;
+			switch ( GetSyncMode() )
+			{
+				case 0:	m_paused = m_inBlank;	break;
+				case 1:	m_paused = false;		break;
+				case 2:
+				case 3:	m_paused = !m_inBlank;	break;
+			}
+		}
+		else
+		{
+			m_paused = m_paused && ( GetSyncMode() % 3 == 0 );
 		}
 	}
 	else
@@ -136,8 +145,11 @@ uint32_t Timer::GetTicksUntilIrq() const noexcept
 
 bool Timer::Update( uint32_t ticks ) noexcept
 {
-	if ( m_mode.syncEnable && m_paused )
+	if ( m_paused )
+	{
+		dbAssert( m_mode.syncEnable );
 		return false;
+	}
 
 	const auto oldCounter = m_counter;
 	m_counter += ticks;
@@ -171,10 +183,13 @@ bool Timer::Update( uint32_t ticks ) noexcept
 	{
 		if ( m_mode.irqToggle )
 		{
-			m_mode.noInterruptRequest ^= true;
+			if ( m_mode.irqRepeat || m_mode.noInterruptRequest )
+			{
+				m_mode.noInterruptRequest ^= true;
 
-			if ( m_mode.noInterruptRequest == false )
-				return TrySignalIrq();
+				if ( m_mode.noInterruptRequest == false )
+					return TrySignalIrq();
+			}
 		}
 		else
 		{
@@ -201,12 +216,17 @@ bool Timer::TrySignalIrq() noexcept
 
 void Timer::PauseAtTarget() noexcept
 {
-	if ( m_mode.irqOnTarget )
+	dbExpects( m_mode.syncEnable );
+
+	if ( m_mode.irqOnTarget && m_mode.reachedTarget )
+	{
 		m_counter = m_target;
-	else if ( m_mode.irqOnMax )
-		m_counter = 0xffff;
+	}
 	else
-		dbBreak(); // impossible?
+	{
+		dbAssert( m_mode.irqOnMax && m_mode.reachedMax );
+		m_counter = 0xffff;
+	}
 
 	m_paused = true;
 }
@@ -224,14 +244,15 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 	const uint32_t timerIndex = offset / 4;
 	dbAssert( timerIndex < 3 );
 
-	const uint32_t registerIndex = offset & 0x3;
+	const uint32_t registerIndex = offset % 4;
 	dbAssert( registerIndex < 3 );
 
 	if ( registerIndex < 3 )
 	{
 		m_cycleScheduler.UpdateSubscriberCycles();
+		const auto value = m_timers[ timerIndex ].Read( registerIndex );
 		m_cycleScheduler.ScheduleNextSubscriberUpdate();
-		return m_timers[ timerIndex ].Read( registerIndex );
+		return value;
 	}
 	else
 	{
@@ -245,7 +266,7 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	const uint32_t timerIndex = offset / 4;
 	dbAssert( timerIndex < 3 );
 
-	const uint32_t registerIndex = offset & 0x3;
+	const uint32_t registerIndex = offset % 4;
 	dbAssert( registerIndex < 3 );
 
 	if ( registerIndex < 3 )
@@ -299,16 +320,14 @@ void Timers::AddCycles( uint32_t cycles ) noexcept
 		{
 			m_interruptControl.SetInterrupt( Interrupt::Timer2 );
 
-			const auto syncMode = cpuTimer.GetSyncMode();
-			if ( syncMode == 0 || syncMode == 3 )
+			if ( cpuTimer.GetSyncEnable() )
 			{
-				// stop at current value with no restart
-				cpuTimer.PauseAtTarget();
-			}
-			else
-			{
-				// switch to free run
-				cpuTimer.SetSyncEnable( false );
+				const auto syncMode = cpuTimer.GetSyncMode();
+				if ( syncMode == 0 || syncMode == 3 )
+				{
+					// stop at current value with no restart
+					cpuTimer.PauseAtTarget();
+				}
 			}
 		}
 	}
