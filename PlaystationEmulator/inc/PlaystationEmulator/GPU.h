@@ -222,7 +222,9 @@ private:
 	void SetGP0Mode( GP0Function f ) noexcept
 	{
 		m_gp0Mode = f;
-		m_status.readyToReceiveCommand = ( f == &Gpu::GP0_Command );
+
+		// this line breaks amidog CPU tests for some reason
+		// m_status.readyToReceiveCommand = ( f == &Gpu::GP0_Command );
 	}
 
 	// GPUREAD modes
