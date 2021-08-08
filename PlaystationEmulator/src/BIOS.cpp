@@ -240,11 +240,11 @@ const char* const FunctionNamesA[]
 };
 static_assert( std::size( FunctionNamesA ) == 0xb5 );
 
-void LogKernalCallA( uint32_t call )
+void LogKernalCallA( uint32_t call, uint32_t pc )
 {
 	auto str = ( call < std::size( FunctionNamesA ) ) ? FunctionNamesA[ call ] : nullptr;
 	if ( str )
-		std::printf( "A(%02X): %s\n", call, str );
+		std::printf( "A(%02X): %s from %08X\n", call, str, pc );
 }
 
 const char* const FunctionNamesB[]
@@ -357,11 +357,11 @@ const char* const FunctionNamesB[]
 };
 static_assert( std::size( FunctionNamesB ) == 0x5e );
 
-void LogKernalCallB( uint32_t call )
+void LogKernalCallB( uint32_t call, uint32_t pc )
 {
 	auto str = ( call < std::size( FunctionNamesB ) ) ? FunctionNamesB[ call ] : nullptr;
 	if ( str )
-		std::printf( "B(%02X): %s\n", call, str );
+		std::printf( "B(%02X): %s from %08X\n", call, str, pc );
 }
 
 const char* const FunctionNamesC[]
@@ -402,11 +402,11 @@ const char* const FunctionNamesC[]
 };
 static_assert( std::size( FunctionNamesC ) == 0x1e );
 
-void LogKernalCallC( uint32_t call )
+void LogKernalCallC( uint32_t call, uint32_t pc )
 {
 	auto str = ( call < std::size( FunctionNamesC ) ) ? FunctionNamesC[ call ] : nullptr;
 	if ( str )
-		std::printf( "C(%02X): %s\n", call, str );
+		std::printf( "C(%02X): %s from %08X\n", call, str, pc );
 }
 
 const char* const SystemCallNames[]
@@ -417,10 +417,10 @@ const char* const SystemCallNames[]
 	"ChangeThreadSubFunction"
 };
 
-void LogSystemCall( uint32_t arg0 )
+void LogSystemCall( uint32_t arg0, uint32_t pc )
 {
 	auto str = ( arg0 < std::size( SystemCallNames ) ) ? SystemCallNames[ arg0 ] : "DeliverEvent";
-	std::printf( "SYS(%02X): %s\n", arg0, str );
+	std::printf( "SYS(%02X): %s from %08X\n", arg0, str, pc );
 }
 
 

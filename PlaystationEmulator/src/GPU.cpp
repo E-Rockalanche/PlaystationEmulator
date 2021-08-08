@@ -912,7 +912,9 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 
 	if ( !m_vblank && vblank )
 	{
-		// dbLog( "VBLANK" );
+		dbLog( "VBLANK" );
+
+		m_interruptControl.SetInterrupt( Interrupt::VBlank );
 
 		m_displayFrame = true;
 

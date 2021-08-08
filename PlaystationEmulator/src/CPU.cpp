@@ -35,18 +35,19 @@ void MipsR3000Cpu::Tick() noexcept
 	// the MIPS cpu is pipelined. The next instruction is fetched while the current one executes
 	// this causes instructions after branches and jumps to always be executed
 
-	m_currentPC = m_pc;
-	m_pc = m_nextPC;
-	m_nextPC += 4;
-
 	m_inDelaySlot = m_inBranch;
 	m_inBranch = false;
 
 	if ( m_cop0.ShouldTriggerInterrupt() )
 	{
-		// TODO what is the return address supposed to be?
+		// update current PC now so we can save the proper return address
+		m_currentPC = m_pc;
 		RaiseException( Cop0::ExceptionCode::Interrupt );
 	}
+
+	m_currentPC = m_pc;
+	m_pc = m_nextPC;
+	m_nextPC += 4;
 
 	InterceptBios( m_currentPC );
 
@@ -68,11 +69,12 @@ void MipsR3000Cpu::InterceptBios( uint32_t pc )
 	const auto call = m_registers[ 9 ];
 	if ( EnableKernelLogging )
 	{
+		const auto retAddr = m_registers[ Registers::ReturnAddress ] - 8;
 		switch ( pc )
 		{
-			case 0xa0:	LogKernalCallA( call );	break;
-			case 0xb0:	LogKernalCallB( call );	break;
-			case 0xc0:	LogKernalCallC( call );	break;
+			case 0xa0:	LogKernalCallA( call, retAddr );	break;
+			case 0xb0:	LogKernalCallB( call, retAddr );	break;
+			case 0xc0:	LogKernalCallC( call, retAddr );	break;
 		}
 	}
 
@@ -183,7 +185,7 @@ void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 {
 	if ( EnableCpuLogging )
 	{
-		std::printf( "pc(%04X): ", m_currentPC );
+		std::printf( "pc(%08X): ", m_currentPC );
 		PrintDisassembly( instr );
 	}
 
@@ -964,7 +966,9 @@ void MipsR3000Cpu::StoreWordRight( Instruction instr ) noexcept
 
 void MipsR3000Cpu::SystemCall( Instruction ) noexcept
 {
-	LogSystemCall( m_registers[ Registers::Arg0 ] );
+	if ( EnableKernelLogging )
+		LogSystemCall( m_registers[ Registers::Arg0 ], m_currentPC );
+
 	RaiseException( Cop0::ExceptionCode::Syscall );
 }
 

@@ -11,9 +11,9 @@ using Bios = Memory<BiosSize>;
 
 bool LoadBios( const char* filename, Bios& bios );
 
-void LogKernalCallA( uint32_t call );
-void LogKernalCallB( uint32_t call );
-void LogKernalCallC( uint32_t call );
-void LogSystemCall( uint32_t arg0 );
+void LogKernalCallA( uint32_t call, uint32_t pc );
+void LogKernalCallB( uint32_t call, uint32_t pc );
+void LogKernalCallC( uint32_t call, uint32_t pc );
+void LogSystemCall( uint32_t arg0, uint32_t pc );
 
 }

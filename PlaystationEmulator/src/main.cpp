@@ -241,7 +241,6 @@ int main( int, char** )
 		if( viewVRam )
 			renderer.RenderVRamView();
 
-		dbLog( "SDL_GL_SwapWindow()" );
 		SDL_GL_SwapWindow( window );
 
 		dbCheckRenderErrors();

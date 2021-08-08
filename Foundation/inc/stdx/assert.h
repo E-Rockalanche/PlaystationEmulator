@@ -47,7 +47,7 @@
 #define dbAssertFail()	\
 	MULTI_LINE_MACRO_BEGIN	\
 		dbLogErrorLocation();	\
-		dbLogToStdErr( "Assertion failed" );	\
+		dbLogToStdErr( "Assertion failed\n" );	\
 	MULTI_LINE_MACRO_END
 
 #define dbAssert( condition )	\
