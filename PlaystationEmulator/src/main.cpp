@@ -191,6 +191,7 @@ int main( int, char** )
 	cycleScheduler.ScheduleNextSubscriberUpdate();
 
 	bool viewVRam = false;
+
 	bool quit = false;
 	while ( !quit )
 	{
@@ -215,6 +216,14 @@ int main( int, char** )
 
 						case SDLK_v:
 							viewVRam = !viewVRam;
+							break;
+
+						case SDLK_k:
+							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
+							break;
+
+						case SDLK_c:
+							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
 							break;
 					}
 					break;

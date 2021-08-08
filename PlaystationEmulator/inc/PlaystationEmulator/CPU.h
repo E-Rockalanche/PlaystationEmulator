@@ -20,6 +20,10 @@ class InterruptControl;
 class MipsR3000Cpu
 {
 public:
+
+	bool EnableKernelLogging = false;
+	bool EnableCpuLogging = false;
+
 	static constexpr uint32_t ResetVector = 0xbfc00000;
 	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
 	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
@@ -57,18 +61,23 @@ private:
 	class Registers
 	{
 	public:
-		static constexpr uint32_t Zero = 0;
-		static constexpr uint32_t Assembler = 1;
-		// 2-3 value returned by subroutine
-		// 4-7 first 4 arguments of subroutine
-		// 8-15, 24-25 subroutine temporaries
-		// 16-23 subroutine register variables (preserved)
-		static constexpr uint32_t Trap0 = 26;
-		static constexpr uint32_t Trap1 = 27;
-		static constexpr uint32_t GlobalPointer = 28;
-		static constexpr uint32_t StackPointer = 29;
-		static constexpr uint32_t FramePointer = 30;
-		static constexpr uint32_t ReturnAddress = 31;
+		enum : uint32_t
+		{
+			Zero,
+			AssemblerTemp,
+			Retval0, Retval1,
+			Arg0, Arg1, Arg2, Arg3,
+			Temp0, Temp1, Temp2, Temp3, Temp4, Temp5, Temp6, Temp7,
+			Static0, Static1, Static2, Static3, Static4, Static5, Static6, Static7,
+			Temp8, Temp9,
+			Kernel0, Kernel1,
+			GlobalPointer,
+			StackPointer,
+			FramePointer,
+			ReturnAddress,
+
+			Static8 = FramePointer,
+		};
 
 		uint32_t operator[]( uint32_t index ) const noexcept
 		{
@@ -201,6 +210,10 @@ private:
 		m_registers.Flush();
 		*/
 	}
+
+	void InterceptBios( uint32_t pc );
+
+	const uint8_t* ToRealAddress( uint32_t address ) const noexcept;
 
 	Instruction FetchInstruction( uint32_t address ) noexcept;
 
@@ -469,6 +482,8 @@ private:
 	uint32_t m_lo = 0;
 
 	InstructionCache m_instructionCache;
+
+	std::string m_consoleOutput; // flushes on newline character
 };
 
 inline void MipsR3000Cpu::CheckProgramCounterAlignment() noexcept

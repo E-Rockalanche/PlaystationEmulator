@@ -240,7 +240,8 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	}
 	else if ( Within( address, SpuStart, SpuSize ) )
 	{
-		// TODO
+		if constexpr ( Read )
+			value = 0;
 	}
 	else if ( Within( address, CacheControlStart, CacheControlSize ) )
 	{

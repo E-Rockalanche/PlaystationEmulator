@@ -48,13 +48,7 @@ void MipsR3000Cpu::Tick() noexcept
 		RaiseException( Cop0::ExceptionCode::Interrupt );
 	}
 
-	// TEMP CODE
-	// hook std_out_putchar(char)
-	if ( ( m_currentPC & 0x1fffffff ) == 0xb0 && m_registers[ 9 ] == 0x3d )
-	{
-		char c = static_cast<char>( m_registers[ 4 ] );
-		std::putchar( c );
-	}
+	InterceptBios( m_currentPC );
 
 	Instruction instruction = FetchInstruction( m_currentPC );
 
@@ -64,6 +58,99 @@ void MipsR3000Cpu::Tick() noexcept
 
 	// on average: 1 cycle to execute instruction, 1 cycle for memory load
 	m_cycleScheduler.AddCycles( 1 ); // TODO: more accurate CPU timing
+}
+
+
+void MipsR3000Cpu::InterceptBios( uint32_t pc )
+{
+	pc &= 0x1fffffff;
+
+	const auto call = m_registers[ 9 ];
+	if ( EnableKernelLogging )
+	{
+		switch ( pc )
+		{
+			case 0xa0:	LogKernalCallA( call );	break;
+			case 0xb0:	LogKernalCallB( call );	break;
+			case 0xc0:	LogKernalCallC( call );	break;
+		}
+	}
+
+	auto LogCharacter = [&]( char c )
+	{
+		m_consoleOutput += c;
+		if ( c == '\n' )
+		{
+			std::printf( m_consoleOutput.c_str() );
+			m_consoleOutput.clear();
+		}
+	};
+
+	auto FileWrite = [&]
+	{
+		// const auto fd = m_registers[ Registers::Arg0 ];
+		const char* str = (const char*)ToRealAddress( m_registers[ Registers::Arg1 ] );
+		const auto length = m_registers[ Registers::Arg2 ];
+		for ( uint32_t i = 0; i < length; ++i )
+			LogCharacter( str[ i ] );
+	};
+
+	auto FilePutC = [&]
+	{
+		const auto c = static_cast<char>( m_registers[ Registers::Arg0 ] );
+		// const auto fd = m_registers[ Registers::Arg1 ];
+		LogCharacter( c );
+	};
+
+	auto PutChar = [&]
+	{
+		LogCharacter( static_cast<char>( m_registers[ Registers::Arg0 ] ) );
+	};
+
+	auto PutS = [&]
+	{
+		const char* str = (const char*)ToRealAddress( m_registers[ Registers::Arg0 ] );
+		while ( *str != '\0' )
+			LogCharacter( *str++ );
+
+		LogCharacter( '\n' );
+	};
+
+	if ( pc == 0xa0 )
+	{
+		switch ( call )
+		{
+			case 0x03:	FileWrite();	break;
+			case 0x09:	FilePutC();		break;
+			case 0x3c:	PutChar();		break;
+			case 0x3e:	PutS();			break;
+		}
+	}
+	else if ( pc == 0xb0 )
+	{
+		switch ( call )
+		{
+			case 0x35:	FileWrite();	break;
+			case 0x3b:	FilePutC();		break;
+			case 0x3d:	PutChar();		break;
+			case 0x3f:	PutS();			break;
+		}
+	}
+}
+
+const uint8_t* MipsR3000Cpu::ToRealAddress( uint32_t address ) const noexcept
+{
+	// convert to physical address
+	address &= 0x1fffffff;
+
+	if ( address < MemoryMap::RamMirrorSize )
+		return m_ram.Data() + ( address %  MemoryMap::RamSize );
+	else if ( MemoryMap::BiosStart <= address && address < MemoryMap::BiosStart + MemoryMap::BiosSize )
+		return m_bios.Data() + ( address - MemoryMap::BiosStart );
+	else if ( MemoryMap::ScratchpadStart <= address && address < MemoryMap::ScratchpadStart + MemoryMap::ScratchpadSize )
+		return m_scratchpad.Data() + ( address - MemoryMap::ScratchpadStart );
+	else
+		return nullptr;
 }
 
 Instruction MipsR3000Cpu::FetchInstruction( uint32_t address ) noexcept
@@ -94,6 +181,12 @@ Instruction MipsR3000Cpu::FetchInstruction( uint32_t address ) noexcept
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 {
+	if ( EnableCpuLogging )
+	{
+		std::printf( "pc(%04X): ", m_currentPC );
+		PrintDisassembly( instr );
+	}
+
 	if ( instr.value == 0 )
 		return; // NOP
 
@@ -871,6 +964,7 @@ void MipsR3000Cpu::StoreWordRight( Instruction instr ) noexcept
 
 void MipsR3000Cpu::SystemCall( Instruction ) noexcept
 {
+	LogSystemCall( m_registers[ Registers::Arg0 ] );
 	RaiseException( Cop0::ExceptionCode::Syscall );
 }
 

@@ -38,7 +38,7 @@ public:
 
 	union Mode
 	{
-		static constexpr uint16_t WriteMask = 0x013f;
+		static constexpr uint16_t WriteMask = 0b0000000100111111;
 
 		Mode() : value{ 0 } {}
 
@@ -76,11 +76,11 @@ public:
 			Reset = 1 << 6,
 			RXInterruptMode = 0x3 << 8,
 			TXInterruptMode = 1 << 10,
-			RXInterruptEnable =  1 << 11,
+			RXInterruptEnable = 1 << 11,
 			ACKInterruptEnable = 1 << 12,
 			DesiredSlotNumber = 1 << 13,
 
-			WriteMask = 0b11111100101111
+			WriteMask = 0b0011111101111111
 		};
 	};
 
