@@ -33,6 +33,8 @@ public:
 			AckInputLevel = 1 << 7,
 			InterruptRequest = 1 << 9,
 			BaudrateTimerMask = 0x1fffffu << 11,
+
+			ResetValue = TxReadyFlag1 | TxReadyFlag2
 		};
 	};
 
@@ -86,7 +88,7 @@ public:
 
 	void Reset()
 	{
-		m_status = 0;
+		m_status = Status::ResetValue;
 		m_baudrateTimer = 0;
 
 		m_mode.value = 0;
@@ -102,11 +104,12 @@ public:
 
 	// 32bit registers
 
-	uint32_t ReadData() const noexcept
+	uint32_t ReadData() noexcept
 	{
 		// A data byte can be read when JOY_STAT.1=1. Data should be read only via 8bit memory access
 		// (the 16bit/32bit "preview" feature is rather unusable, and usually there shouldn't be more than 1 byte in the FIFO anyways).
 		const uint32_t data = *reinterpret_cast<const uint32_t*>( m_rxBuffer.Data() );
+		m_rxBuffer.Pop();
 		dbLog( "ControllerPorts::Read() -- data [%X]", data );
 		return data;
 	}
@@ -118,14 +121,15 @@ public:
 		return status;
 	}
 
-	void WriteData( [[maybe_unused]] uint32_t value ) noexcept
+	void WriteData( uint32_t value ) noexcept
 	{
 		// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
 		// the written value is sent to the controller or memory card, and, simultaneously,
 		// a byte is received (and stored in RX FIFO if JOY_CTRL.1 or JOY_CTRL.2 is set).
 		dbLog( "ControllerPorts::Write() -- data [%X]", value );
-		// m_txBuffer.Push( static_cast<uint8_t>( value ) );
-		// TODO: start transfer to controller/memory card
+		m_txBuffer.Push( static_cast<uint8_t>( value ) );
+
+		CheckTransfer();
 	}
 
 	// 16bit registers
@@ -164,7 +168,7 @@ public:
 			// soft reset
 			dbLog( "\tsoft reset" );
 			m_control = 0;
-			m_status = 0;
+			m_status = Status::ResetValue;
 			m_mode.value = 0;
 		}
 
@@ -173,6 +177,8 @@ public:
 			dbLog( "\tacknowledge" );
 			stdx::reset_bits( m_status, Status::RxParityError | Status::InterruptRequest );
 		}
+
+		CheckTransfer();
 	}
 
 	void WriteBaudrateReloadValue( uint16_t value ) noexcept
@@ -205,6 +211,16 @@ private:
 	uint16_t GetRXInterruptMode() const noexcept
 	{
 		return ( m_control << 8 ) & 0x3;
+	}
+
+	void CheckTransfer()
+	{
+		if ( ( m_control & Control::TXEnable ) && ( m_status & Status::TxReadyFlag2 ) && !m_txBuffer.Empty() )
+		{
+			dbLog( "ControllerPorts::CheckTransfer()" );
+			m_rxBuffer.Push( 0 );
+			m_txBuffer.Reset();
+		}
 	}
 
 private:
