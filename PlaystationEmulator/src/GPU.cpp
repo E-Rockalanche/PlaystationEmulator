@@ -165,6 +165,8 @@ void Gpu::ClearCommandBuffer() noexcept
 void Gpu::InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept
 {
 	dbExpects( m_commandBuffer.Empty() );
+	dbExpects( paramaterCount > 0 );
+	dbExpects( function );
 	m_commandBuffer.Push( command );
 	m_remainingParamaters = paramaterCount;
 	m_commandFunction = function;
@@ -860,6 +862,8 @@ void Gpu::RenderRectangle() noexcept
 		std::fill_n( row + pos.x, width, color555 );
 	}
 	m_vramDirty = true;
+
+	ClearCommandBuffer();
 }
 
 void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept

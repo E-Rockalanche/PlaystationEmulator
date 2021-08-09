@@ -292,6 +292,11 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 			case 5:	value = static_cast<T>( m_controllerPorts.ReadControl() );				break;
 			case 6:	value = 0;																break;
 			case 7:	value = static_cast<T>( m_controllerPorts.ReadBaudrateReloadValue() );	break;
+
+			default:
+				dbBreak();
+				value = static_cast<T>( -1 );
+				break;
 		}
 	}
 	else
@@ -309,6 +314,10 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 			case 5:	m_controllerPorts.WriteControl( ShiftValueForRegister<uint16_t>( value, offset ) );				break;
 			case 6:																									break;
 			case 7:	m_controllerPorts.WriteBaudrateReloadValue( ShiftValueForRegister<uint16_t>( value, offset ) );	break;
+
+			default:
+				dbBreak();
+				break;
 		}
 	}
 }

@@ -8,17 +8,19 @@
 namespace PSX
 {
 
-template <typename T, size_t MaxSize>
+template <typename T, size_t BufferSize>
 class FifoBuffer
 {
 public:
+	using size_type = uint32_t;
+
 	void Reset() noexcept
 	{
 		m_size = 0;
 		m_index = 0;
 	}
 
-	size_t Size() const noexcept
+	size_type Size() const noexcept
 	{
 		return m_size - m_index;
 	}
@@ -30,7 +32,7 @@ public:
 
 	bool Full() const noexcept
 	{
-		return Size() == MaxSize;
+		return Size() == BufferSize;
 	}
 
 	void Push( T value ) noexcept
@@ -46,11 +48,13 @@ public:
 
 	T Pop() noexcept
 	{
+		dbExpects( !Empty() );
 		return m_buffer[ m_index++ ];
 	}
 
 	T Peek() const noexcept
 	{
+		dbExpects( !Empty() );
 		return m_buffer[ m_index ];
 	}
 
@@ -70,10 +74,17 @@ public:
 		m_buffer.fill( value );
 	}
 
+	size_type Capacity() const noexcept
+	{
+		return BufferSize - m_size;
+	}
+
+	static constexpr size_type MaxSize() noexcept { return BufferSize; }
+
 private:
-	size_t m_size = 0;
-	size_t m_index = 0;
-	std::array<T, MaxSize> m_buffer{};
+	size_type m_size = 0;
+	size_type m_index = 0;
+	std::array<T, BufferSize> m_buffer{};
 };
 
 }
