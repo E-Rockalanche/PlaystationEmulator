@@ -192,14 +192,14 @@ bool Renderer::Initialize( SDL_Window* window )
 	SetTextureWindow( 0, 0, 0, 0 );
 
 	// texture only used to view VRAM easily
-	m_vramColorTables = Render::Texture2D::Create( GL_RGB8, VRamWidth16, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, nullptr );
+	m_vramColorTables = Render::Texture2D::Create( GL_RGB8, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, nullptr );
 	m_vramColorTables.SetParamater( GL_TEXTURE_MIN_FILTER, GL_NEAREST );
 	m_vramColorTables.SetParamater( GL_TEXTURE_MAG_FILTER, GL_NEAREST );
 	m_vramColorTables.SetParamater( GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
 	m_vramColorTables.SetParamater( GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
 
 	// texture to sample in shader
-	m_vramTextures = Render::Texture2D::Create( GL_R16UI, VRamWidth16, VRamHeight, GL_RED_INTEGER, GL_UNSIGNED_SHORT, nullptr );
+	m_vramTextures = Render::Texture2D::Create( GL_R16UI, VRamWidth, VRamHeight, GL_RED_INTEGER, GL_UNSIGNED_SHORT, nullptr );
 	m_vramTextures.SetParamater( GL_TEXTURE_MIN_FILTER, GL_NEAREST );
 	m_vramTextures.SetParamater( GL_TEXTURE_MAG_FILTER, GL_NEAREST );
 	m_vramTextures.SetParamater( GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
@@ -212,9 +212,9 @@ void Renderer::UploadVRam( const uint16_t* vram )
 {
 	DrawBatch(); // draw pending polygons before updating vram with new textures/clut
 
-	m_vramColorTables.SubImage( 0, 0, VRamWidth16, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
+	m_vramColorTables.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
 
-	m_vramTextures.SubImage( 0, 0, VRamWidth16, VRamHeight, GL_RED_INTEGER, GL_UNSIGNED_SHORT, vram );
+	m_vramTextures.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RED_INTEGER, GL_UNSIGNED_SHORT, vram );
 }
 
 void Renderer::SetOrigin( int32_t x, int32_t y )

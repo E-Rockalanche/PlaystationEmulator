@@ -78,10 +78,9 @@ struct Vertex
 class Renderer
 {
 public:
-	static constexpr size_t VRamWidth16 = 1024; // shorts
-	static constexpr size_t VRamWidth8 = 2048; // bytes
+	static constexpr size_t VRamWidth = 1024; // shorts
 	static constexpr size_t VRamHeight = 512;
-	static constexpr size_t VRamSize = VRamWidth8 * VRamHeight; // bytes
+	static constexpr size_t VRamSize = VRamWidth * VRamHeight * 2; // bytes
 
 	bool Initialize( SDL_Window* window );
 
@@ -102,8 +101,8 @@ public:
 			m_vramViewer = std::make_unique<VRamViewer>();
 
 		// render VRAM
-		SDL_SetWindowSize( m_window, VRamWidth16, VRamHeight );
-		glViewport( 0, 0, VRamWidth16, VRamHeight );
+		SDL_SetWindowSize( m_window, VRamWidth, VRamHeight );
+		glViewport( 0, 0, VRamWidth, VRamHeight );
 		m_vramViewer->Bind();
 		m_vramColorTables.Bind();
 		glDrawArrays( GL_TRIANGLES, 0, 6 );
