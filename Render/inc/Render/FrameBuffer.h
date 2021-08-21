@@ -8,7 +8,7 @@
 namespace Render
 {
 
-enum class AttachmentType
+enum class AttachmentType : GLenum
 {
 	Color = GL_COLOR_ATTACHMENT0,
 	Depth = GL_DEPTH_ATTACHMENT,
@@ -16,7 +16,7 @@ enum class AttachmentType
 	DepthStencil = GL_DEPTH_STENCIL_ATTACHMENT
 };
 
-enum class FrameBufferStatus
+enum class FrameBufferStatus : GLenum
 {
 	Complete = GL_FRAMEBUFFER_COMPLETE,
 	Undefined = GL_FRAMEBUFFER_UNDEFINED,
@@ -48,32 +48,31 @@ public:
 
 	FrameBuffer& operator=( const FrameBuffer& ) = delete;
 
-	FrameBuffer& operator=( FrameBuffer&& other ) noexcept
+	FrameBuffer& operator=( FrameBuffer&& other )
 	{
+		Reset();
 		m_frameBuffer = other.m_frameBuffer;
 		other.m_frameBuffer = 0;
 		return *this;
 	}
 
-	static FrameBuffer Create( GLsizei width, GLsizei height )
+	static FrameBuffer Create()
 	{
 		GLuint frameBuffer = 0;
 		glGenFramebuffers( 1, &frameBuffer );
-		return FrameBuffer( frameBuffer, width, height );
+		return FrameBuffer( frameBuffer );
 	}
 
 	// returns true if complete
 	FrameBufferStatus AttachTexture( AttachmentType type, Texture2D& texture, GLint mipmapLevel = 0 )
 	{
-		dbExpects( texture.GetWidth() == m_width );
-		dbExpects( texture.GetHeight() == m_height );
-
 		Bind();
-		glFramebufferTexture2D( GL_FRAMEBUFFER, static_cast<GLenum>( type ), GL_TEXTURE_2D, texture.GetRawHandle(), mipmapLevel );
+		glFramebufferTexture2D( GL_FRAMEBUFFER, static_cast<GLenum>( type ), GL_TEXTURE_2D, texture.m_texture, mipmapLevel );
+		dbCheckRenderErrors();
 		return static_cast<FrameBufferStatus>( glCheckFramebufferStatus( GL_FRAMEBUFFER ) );
 	}
 
-	bool Complete() noexcept
+	bool IsComplete() const
 	{
 		Bind();
 		return glCheckFramebufferStatus( GL_FRAMEBUFFER ) == GL_FRAMEBUFFER_COMPLETE;
@@ -86,34 +85,42 @@ public:
 
 	void Reset()
 	{
-		glDeleteFramebuffers( 1, &m_frameBuffer );
-		m_frameBuffer = 0;
-		m_width = 0;
-		m_height = 0;
+		if ( m_frameBuffer != 0 )
+		{
+			if ( s_bound == m_frameBuffer )
+				Bind( 0 );
+
+			glDeleteFramebuffers( 1, &m_frameBuffer );
+			m_frameBuffer = 0;
+		}
 	}
 
-	void Bind()
+	void Bind() const
 	{
 		dbExpects( m_frameBuffer != 0 );
-		glBindFramebuffer( GL_FRAMEBUFFER, m_frameBuffer );
+		if ( s_bound != m_frameBuffer )
+			Bind( m_frameBuffer );
 	}
 
 	static void Unbind()
 	{
-		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+		if ( s_bound != 0 )
+			Bind( 0 );
 	}
 
 private:
-	FrameBuffer( GLuint frameBuffer, GLsizei width, GLsizei height ) noexcept
-		: m_frameBuffer{ frameBuffer }
-		, m_width{ width }
-		, m_height{ height }
-	{}
+	FrameBuffer( GLuint frameBuffer ) noexcept : m_frameBuffer{ frameBuffer } {}
+
+	static void Bind( GLuint frameBuffer )
+	{
+		glBindFramebuffer( GL_FRAMEBUFFER, frameBuffer );
+		s_bound = frameBuffer;
+	}
 
 private:
 	GLuint m_frameBuffer = 0;
-	GLsizei m_width = 0;
-	GLsizei m_height = 0;
+
+	static inline GLuint s_bound = 0;
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include <Render/VertexArrayObject.h>
 #include <Render/Buffer.h>
+#include <Render/FrameBuffer.h>
 #include <Render/Shader.h>
 #include <Render/Texture.h>
 
@@ -95,6 +96,9 @@ public:
 
 	void DrawBatch();
 
+	void DisplayFrame();
+
+	/*
 	void RenderVRamView()
 	{
 		if ( !m_vramViewer )
@@ -115,21 +119,30 @@ public:
 		m_vramTextures.Bind();
 		dbCheckRenderErrors();
 	}
+	*/
+
+private:
+	void RestoreRenderState();
+	void ResetRenderState();
 
 private:
 	SDL_Window* m_window = nullptr;
+
+	// VRAM texture used as render target
+	Render::Texture2D m_vramDrawTexture;
+	Render::FrameBuffer m_vramFrameBuffer;
 
 	Render::VertexArrayObject m_vao;
 	Render::ArrayBuffer m_vertexBuffer;
 	Render::Shader m_shader;
 
-	Render::Texture2D m_vramColorTables; // vram encoded as RGBA5551 to use as CLUT
+	// Render::Texture2D m_vramColorTables; // vram encoded as RGBA5551 to use as CLUT
 	Render::Texture2D m_vramTextures; // vram encoded as R8 to use as texture CLUT indices
 
-	Render::UniformLocation m_originLoc = -1;
-	Render::UniformLocation m_displaySizeLoc = -1;
-	Render::UniformLocation m_texWindowMask = -1;
-	Render::UniformLocation m_texWindowOffset = -1;
+	GLint m_originLoc = -1;
+	GLint m_displaySizeLoc = -1;
+	GLint m_texWindowMask = -1;
+	GLint m_texWindowOffset = -1;
 
 	struct Uniform
 	{
@@ -149,6 +162,7 @@ private:
 
 	std::vector<Vertex> m_vertices;
 
+	/*
 	struct VRamViewer
 	{
 		VRamViewer()
@@ -215,6 +229,7 @@ private:
 	};
 
 	std::unique_ptr<VRamViewer> m_vramViewer;
+	*/
 };
 
 }

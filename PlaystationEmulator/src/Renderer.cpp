@@ -10,7 +10,7 @@ namespace PSX
 namespace
 {
 
-const char* VertexShader = R"glsl(
+const char* const VertexShader = R"glsl(
 #version 330 core
 
 in vec2 v_pos;
@@ -49,7 +49,7 @@ void main()
 }
 )glsl";
 
-const char* FragmentShader = R"glsl(
+const char* const FragmentShader = R"glsl(
 #version 330 core
 
 in vec4 BlendColor;
@@ -144,6 +144,38 @@ void main()
 }
 )glsl";
 
+const char* const SimpleVertexShader = R"glsl(
+#version 330 core
+
+in vec2 v_pos;
+in vec2 v_texCoord;
+
+out vec2 TexCoord;
+
+void main()
+{
+	TexCoord = v_texCoord;
+	gl_position = vec4( v_pos.xy, 0.0, 1.0 );
+}
+
+)glsl";
+
+const char* const SimpleFragmentShader = R"glsl(
+#version 330 core
+
+in vec2 TexCoord;
+
+out vec4 FragColor;
+
+uniform sampler2D tex;
+
+void main()
+{
+	FragColor = texture( tex, TexCoord );
+}
+
+)glsl";
+
 constexpr size_t VertexBufferSize = 1024;
 
 }
@@ -159,7 +191,7 @@ bool Renderer::Initialize( SDL_Window* window )
 
 	// create vertex buffer
 	m_vertexBuffer = Render::ArrayBuffer::Create();
-	m_vertexBuffer.SetData( Render::BufferUsage::StreamDraw, VertexBufferSize * sizeof( Vertex ) );
+	m_vertexBuffer.SetData<Vertex>( Render::BufferUsage::StreamDraw, VertexBufferSize );
 	m_vertices.reserve( VertexBufferSize );
 
 	// create shader
@@ -170,15 +202,16 @@ bool Renderer::Initialize( SDL_Window* window )
 		return false;
 	}
 
-	m_shader.Use();
+	m_shader.Bind();
 
 	// set shader attribute locations in VAO
 	constexpr auto Stride = sizeof( Vertex );
-	m_shader.SetVertexAttribPointer( "v_pos", 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
-	m_shader.SetVertexAttribPointer( "v_color", 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
-	m_shader.SetVertexAttribPointer( "v_texCoord", 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
-	m_shader.SetVertexAttribPointerInt( "v_clut", 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
-	m_shader.SetVertexAttribPointerInt( "v_drawMode", 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::drawMode ) );
+
+	m_vao.AddFloatAttribute( m_shader.GetAttributeLocation( "v_pos" ), 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
+	m_vao.AddFloatAttribute( m_shader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
+	m_vao.AddFloatAttribute( m_shader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
+	m_vao.AddIntAttribute( m_shader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
+	m_vao.AddIntAttribute( m_shader.GetAttributeLocation( "v_drawMode" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::drawMode ) );
 	
 	// get shader uniform locations
 	m_originLoc = m_shader.GetUniformLocation( "origin" );
@@ -186,24 +219,26 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_texWindowMask = m_shader.GetUniformLocation( "texWindowMask" );
 	m_texWindowOffset = m_shader.GetUniformLocation( "texWindowOffset" );
 
+	// m_vramColorTables = Render::Texture2D::Create( GL_RGB8, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, nullptr );
+	m_vramTextures = Render::Texture2D::Create( Render::InternalFormat::R16UI, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort );
+
+	/*
+	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGB, VRamWidth, VRamHeight, Render::PixelFormat::RGB, Render::PixelType::UByte );
+	m_vramFrameBuffer = Render::FrameBuffer::Create( VRamWidth, VRamHeight );
+	m_vramFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
+	dbAssert( m_vramFrameBuffer.IsComplete() );
+	*/
+
 	// set shader uniforms
 	SetOrigin( 0, 0 );
 	SetDisplaySize( 640, 480 );
 	SetTextureWindow( 0, 0, 0, 0 );
 
-	// texture only used to view VRAM easily
-	m_vramColorTables = Render::Texture2D::Create( GL_RGB8, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, nullptr );
-	m_vramColorTables.SetParamater( GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-	m_vramColorTables.SetParamater( GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-	m_vramColorTables.SetParamater( GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-	m_vramColorTables.SetParamater( GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+	// bind textures
+	// m_vramFrameBuffer.Bind();
+	m_vramTextures.Bind();
 
-	// texture to sample in shader
-	m_vramTextures = Render::Texture2D::Create( GL_R16UI, VRamWidth, VRamHeight, GL_RED_INTEGER, GL_UNSIGNED_SHORT, nullptr );
-	m_vramTextures.SetParamater( GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-	m_vramTextures.SetParamater( GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-	m_vramTextures.SetParamater( GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-	m_vramTextures.SetParamater( GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+	// glViewport( 0, 0, VRamWidth, VRamHeight );
 
 	return true;
 }
@@ -212,9 +247,9 @@ void Renderer::UploadVRam( const uint16_t* vram )
 {
 	DrawBatch(); // draw pending polygons before updating vram with new textures/clut
 
-	m_vramColorTables.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
+	// m_vramColorTables.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
 
-	m_vramTextures.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RED_INTEGER, GL_UNSIGNED_SHORT, vram );
+	m_vramTextures.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort, vram );
 }
 
 void Renderer::SetOrigin( int32_t x, int32_t y )
@@ -288,15 +323,39 @@ void Renderer::DrawBatch()
 	
 	m_vao.Bind();
 	m_vertexBuffer.Bind();
-	m_shader.Use();
+	m_shader.Bind();
 
 	m_vramTextures.Bind();
 
-	m_vertexBuffer.SubData( 0, m_vertices.size() * sizeof( Vertex ), m_vertices.data() );
+	m_vertexBuffer.SubData<Vertex>( m_vertices.size(), m_vertices.data() );
 	glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
 	dbCheckRenderErrors();
 
 	m_vertices.clear();
+}
+
+void Renderer::RestoreRenderState()
+{
+	m_vramFrameBuffer.Bind();
+	glViewport( 0, 0, VRamWidth, VRamHeight );
+
+	glDisable( GL_CULL_FACE );
+	glEnable( GL_SCISSOR_TEST );
+	
+	m_vao.Bind();
+
+
+}
+
+void Renderer::ResetRenderState()
+{
+
+}
+
+void Renderer::DisplayFrame()
+{
+	m_vramFrameBuffer.Unbind();
+	m_vramDrawTexture.Bind();
 }
 
 }

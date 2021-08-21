@@ -238,8 +238,10 @@ int main( int, char** )
 
 		renderer.DrawBatch();
 
+		/*
 		if( viewVRam )
 			renderer.RenderVRamView();
+			*/
 
 		SDL_GL_SwapWindow( window );
 

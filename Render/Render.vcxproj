@@ -144,6 +144,7 @@
     <ClCompile Include="Glad\src\glad.c" />
     <ClCompile Include="src\Error.cpp" />
     <ClCompile Include="src\Shader.cpp" />
+    <ClCompile Include="src\VertexArrayObject.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Glad\include\glad\glad.h" />

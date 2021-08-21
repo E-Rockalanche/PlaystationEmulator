@@ -8,6 +8,18 @@ namespace
 constexpr GLsizei ShaderLogSize = 512;
 }
 
+void Shader::Reset()
+{
+	if ( m_program != 0 )
+	{
+		if ( m_program == s_bound )
+			Bind( 0 );
+
+		glDeleteProgram( m_program );
+		m_program = 0;
+	}
+}
+
 GLuint Shader::Compile( const char* source, ShaderType type )
 {
 	auto shader = glCreateShader( static_cast<GLuint>( type ) );
@@ -33,7 +45,7 @@ Shader Shader::Link( GLuint vertexShader, GLuint fragmentShader )
 {
 	if ( vertexShader == 0 || fragmentShader == 0 )
 	{
-		std::cout << "Shader::Link() -- Invalid arguments" << std::endl;
+		dbLogError( "Shader::Link() -- Invalid arguments" );
 		return Shader();
 	}
 

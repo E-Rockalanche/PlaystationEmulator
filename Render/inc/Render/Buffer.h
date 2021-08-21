@@ -36,28 +36,16 @@ class Buffer
 public:
 	Buffer() = default;
 
-	static Buffer Create()
-	{
-		Buffer buffer;
-		glGenBuffers( 1, &buffer.m_buffer );
-		dbCheckRenderErrors();
-		return buffer;
-	}
-
-	static Buffer Create( BufferUsage usage, GLsizei size, const void* data = nullptr )
-	{
-		Buffer buffer = Create();
-		buffer.SetData( size, data, usage );
-		dbCheckRenderErrors();
-		return buffer;
-	}
+	Buffer( const Buffer& ) = delete;
 
 	Buffer( Buffer&& other ) noexcept : m_buffer{ other.m_buffer }
 	{
 		other.m_buffer = 0;
 	}
 
-	Buffer& operator=( Buffer&& other ) noexcept
+	Buffer* operator=( const Buffer& ) = delete;
+
+	Buffer& operator=( Buffer&& other )
 	{
 		Reset();
 		m_buffer = other.m_buffer;
@@ -70,14 +58,33 @@ public:
 		Reset();
 	}
 
-	Buffer( const Buffer& ) = delete;
-	Buffer* operator=( const Buffer& ) = delete;
+	static Buffer Create()
+	{
+		Buffer buffer;
+		glGenBuffers( 1, &buffer.m_buffer );
+		dbCheckRenderErrors();
+		return buffer;
+	}
+	
+	template <typename T>
+	static Buffer Create( BufferUsage usage, GLsizei size, const T* data = nullptr )
+	{
+		Buffer buffer = Create();
+		buffer.SetData( size * sizeof( T ), data, usage );
+		dbCheckRenderErrors();
+		return buffer;
+	}
 
 	void Reset()
 	{
-		glDeleteBuffers( 1, &m_buffer );
-		dbCheckRenderErrors();
-		m_buffer = 0;
+		if ( m_buffer != 0 )
+		{
+			if ( m_buffer == s_bound )
+				Bind( 0 );
+
+			glDeleteBuffers( 1, &m_buffer );
+			m_buffer = 0;
+		}
 	}
 
 	bool Valid() const noexcept
@@ -85,38 +92,47 @@ public:
 		return m_buffer != 0;
 	}
 
-	void Bind()
+	void Bind() const
 	{
 		dbExpects( m_buffer != 0 );
-		glBindBuffer( static_cast<GLuint>( Type ), m_buffer );
+		if ( m_buffer != s_bound )
+			Bind( m_buffer );
 	}
 
 	static void Unbind()
 	{
-		glBindBuffer( static_cast<GLuint>( Type ), 0 );
+		if ( s_bound != 0 )
+			Bind( 0 );
 	}
 
-	void SetData( BufferUsage usage, GLsizei size, const void* data = nullptr )
+	// reallocates buffer to new size
+	template <typename T>
+	void SetData( BufferUsage usage, GLsizei size, const T* data = nullptr )
 	{
 		Bind();
-		glBufferData( static_cast<GLuint>( Type ), size, data, static_cast<GLuint>( usage ) );
+		glBufferData( static_cast<GLuint>( Type ), size * sizeof( T ), data, static_cast<GLuint>( usage ) );
 		dbCheckRenderErrors();
 	}
 
-	void SubData( GLintptr offset, GLsizei size, const void* data )
+	template <typename T>
+	void SubData( GLsizei size, const T* data, size_t offset = 0 )
 	{
 		Bind();
-		glBufferSubData( static_cast<GLuint>( Type ), offset, size, data );
+		glBufferSubData( static_cast<GLuint>( Type ), offset * sizeof( T ), size * sizeof( T ), data );
 		dbCheckRenderErrors();
 	}
 
-	GLuint GetRawHandle() noexcept
+private:
+	static void Bind( GLuint buffer )
 	{
-		return m_buffer;
+		glBindBuffer( static_cast<GLenum>( Type ), buffer );
+		s_bound = buffer;
 	}
 
 private:
 	GLuint m_buffer = 0;
+
+	static inline GLuint s_bound = 0;
 };
 
 using ArrayBuffer = Buffer<BufferType::Array>;
