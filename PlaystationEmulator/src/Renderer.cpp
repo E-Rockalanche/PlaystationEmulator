@@ -191,8 +191,8 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_noAttributeVAO = Render::VertexArrayObject::Create();
 
 	// create VAO to attach attributes and shader to
-	m_vao = Render::VertexArrayObject::Create();
-	m_vao.Bind();
+	m_vramDrawVAO = Render::VertexArrayObject::Create();
+	m_vramDrawVAO.Bind();
 
 	// create vertex buffer
 	m_vertexBuffer = Render::ArrayBuffer::Create();
@@ -203,27 +203,27 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_fullscreenShader = Render::Shader::Compile( FullscreenVertexShader, FullscreenFragmentShader );
 	dbAssert( m_fullscreenShader.Valid() );
 
-	m_shader = Render::Shader::Compile( VertexShader, FragmentShader );
-	dbAssert( m_shader.Valid() );
+	m_clutShader = Render::Shader::Compile( VertexShader, FragmentShader );
+	dbAssert( m_clutShader.Valid() );
 
 	// set shader attribute locations in VAO
 	constexpr auto Stride = sizeof( Vertex );
 
-	m_shader.Bind();
-	m_vao.AddFloatAttribute( m_shader.GetAttributeLocation( "v_pos" ), 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
-	m_vao.AddFloatAttribute( m_shader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
-	m_vao.AddFloatAttribute( m_shader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
-	m_vao.AddIntAttribute( m_shader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
-	m_vao.AddIntAttribute( m_shader.GetAttributeLocation( "v_drawMode" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::drawMode ) );
+	m_clutShader.Bind();
+	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_pos" ), 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
+	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
+	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
+	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
+	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_drawMode" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::drawMode ) );
 	
 	// get shader uniform locations
-	m_originLoc = m_shader.GetUniformLocation( "origin" );
-	m_displaySizeLoc = m_shader.GetUniformLocation( "displaySize" );
-	m_texWindowMask = m_shader.GetUniformLocation( "texWindowMask" );
-	m_texWindowOffset = m_shader.GetUniformLocation( "texWindowOffset" );
+	m_originLoc = m_clutShader.GetUniformLocation( "origin" );
+	m_displaySizeLoc = m_clutShader.GetUniformLocation( "displaySize" );
+	m_texWindowMask = m_clutShader.GetUniformLocation( "texWindowMask" );
+	m_texWindowOffset = m_clutShader.GetUniformLocation( "texWindowOffset" );
 
 	// m_vramColorTables = Render::Texture2D::Create( GL_RGB8, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, nullptr );
-	m_vramTextures = Render::Texture2D::Create( Render::InternalFormat::R16UI, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort );
+	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::R16UI, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort );
 
 	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGB, VRamWidth, VRamHeight, Render::PixelFormat::RGB, Render::PixelType::UByte );
 	m_vramFrameBuffer = Render::FrameBuffer::Create();
@@ -248,7 +248,7 @@ void Renderer::UploadVRam( const uint16_t* vram )
 
 	// m_vramColorTables.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
 
-	m_vramTextures.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort, vram );
+	m_vramReadTexture.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort, vram );
 }
 
 void Renderer::SetOrigin( int32_t x, int32_t y )
@@ -345,10 +345,10 @@ void Renderer::DrawBatch()
 
 void Renderer::RestoreRenderState()
 {
-	m_vao.Bind();
+	m_vramDrawVAO.Bind();
 	m_vramFrameBuffer.Bind();
-	m_vramTextures.Bind();
-	m_shader.Bind();
+	m_vramReadTexture.Bind();
+	m_clutShader.Bind();
 	dbCheckRenderErrors();
 
 	glDisable( GL_CULL_FACE );

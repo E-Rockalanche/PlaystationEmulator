@@ -114,10 +114,10 @@ public:
 		dbCheckRenderErrors();
 
 		// reset context
-		m_vao.Bind();
-		m_shader.Use();
+		m_vramDrawVAO.Bind();
+		m_clutShader.Use();
 		m_vertexBuffer.Bind();
-		m_vramTextures.Bind();
+		m_vramReadTexture.Bind();
 		dbCheckRenderErrors();
 	}
 	*/
@@ -133,12 +133,12 @@ private:
 	Render::Texture2D m_vramDrawTexture;
 	Render::FrameBuffer m_vramFrameBuffer;
 
-	Render::VertexArrayObject m_vao;
+	Render::VertexArrayObject m_vramDrawVAO;
 	Render::ArrayBuffer m_vertexBuffer;
-	Render::Shader m_shader;
+	Render::Shader m_clutShader;
 
 	// Render::Texture2D m_vramColorTables; // vram encoded as RGBA5551 to use as CLUT
-	Render::Texture2D m_vramTextures; // vram encoded as R8 to use as texture CLUT indices
+	Render::Texture2D m_vramReadTexture; // vram encoded as R8 to use as texture CLUT indices
 
 	Render::VertexArrayObject m_noAttributeVAO;
 	Render::Shader m_fullscreenShader;
@@ -176,8 +176,8 @@ private:
 	{
 		VRamViewer()
 		{
-			m_vao = Render::VertexArrayObject::Create();
-			m_vao.Bind();
+			m_vramDrawVAO = Render::VertexArrayObject::Create();
+			m_vramDrawVAO.Bind();
 
 			static const float s_vertices[]
 			{
@@ -215,26 +215,26 @@ private:
 				}
 			)glsl";
 
-			m_shader = Render::Shader::Compile( s_vertexShader, s_fragmentShader );
-			dbAssert( m_shader.Valid() );
-			m_shader.SetVertexAttribPointer( "v_pos", 2, Render::Type::Float, false, sizeof( float ) * 4, 0 );
-			m_shader.SetVertexAttribPointer( "v_texCoord", 2, Render::Type::Float, false, sizeof( float ) * 4, sizeof( float ) * 2 );
-			m_shader.Use();
+			m_clutShader = Render::Shader::Compile( s_vertexShader, s_fragmentShader );
+			dbAssert( m_clutShader.Valid() );
+			m_clutShader.SetVertexAttribPointer( "v_pos", 2, Render::Type::Float, false, sizeof( float ) * 4, 0 );
+			m_clutShader.SetVertexAttribPointer( "v_texCoord", 2, Render::Type::Float, false, sizeof( float ) * 4, sizeof( float ) * 2 );
+			m_clutShader.Use();
 
 			dbCheckRenderErrors();
 		}
 
 		void Bind()
 		{
-			m_vao.Bind();
-			m_shader.Use();
+			m_vramDrawVAO.Bind();
+			m_clutShader.Use();
 			m_vertexBuffer.Bind();
 			dbCheckRenderErrors();
 		}
 
-		Render::VertexArrayObject m_vao;
+		Render::VertexArrayObject m_vramDrawVAO;
 		Render::ArrayBuffer m_vertexBuffer;
-		Render::Shader m_shader;
+		Render::Shader m_clutShader;
 	};
 
 	std::unique_ptr<VRamViewer> m_vramViewer;
