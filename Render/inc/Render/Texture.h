@@ -113,7 +113,6 @@ enum class InternalFormat : GLenum
 	// TODO
 };
 
-
 enum class PixelFormat : GLenum
 {
 	Red = GL_RED,

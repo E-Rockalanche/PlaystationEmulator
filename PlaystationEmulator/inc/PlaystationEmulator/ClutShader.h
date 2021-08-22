@@ -55,17 +55,26 @@ out vec4 FragColor;
 
 uniform ivec2 texWindowMask;
 uniform ivec2 texWindowOffset;
-uniform usampler2D vram;
+uniform sampler2D vram;
 
-// pos counted in halfwords steps
-int SampleVRam( ivec2 pos )
+int FloatTo5bit( float value )
 {
-	return int( texelFetch( vram, pos, 0 ).r );
+	return int( round( value * 31 ) );
 }
 
-int SampleClut( int index )
+int SampleVRam( ivec2 pos )
 {
-	return SampleVRam( ClutBase + ivec2( index, 0 ) );
+	vec4 c = texelFetch( vram, pos, 0 );
+	int red = FloatTo5bit( c.r );
+	int green = FloatTo5bit( c.g );
+	int blue = FloatTo5bit( c.b );
+	int maskBit = int( round( c.a ) );
+	return ( maskBit << 15 ) | ( blue << 10 ) | ( green << 5 ) | red;
+}
+
+vec4 SampleClut( int index )
+{
+	return texelFetch( vram, ClutBase + ivec2( index, 0 ), 0 );
 }
 
 // texCoord counted in 4bit steps
@@ -82,20 +91,6 @@ int SampleIndex8( ivec2 texCoord )
 	int sample = SampleVRam( TexPageBase + ivec2( texCoord.x / 2, texCoord.y ) );
 	int shiftAmount = ( texCoord.x & 0x1 ) * 8;
 	return ( sample >> shiftAmount ) & 0xff;
-}
-
-float Convert5BitToFloat( int component )
-{
-	return float( component & 0x1f ) / 31.0;
-}
-
-vec4 ConvertABGR1555( int abgr )
-{
-	return vec4(
-		Convert5BitToFloat( abgr ),
-		Convert5BitToFloat( abgr >> 5 ),
-		Convert5BitToFloat( abgr >> 10 ),
-		1.0 ); // meaning of alpha bit depends on the transparency mode
 }
 
 void main()
@@ -115,25 +110,25 @@ void main()
 
 	int colorMode = ( DrawMode >> 7 ) & 0x3;
 
-	int texel = 0;
-
 	if ( colorMode == 0 )
 	{
-		texel = SampleClut( SampleIndex4( texCoord ) ); // get 4bit index
+		FragColor = SampleClut( SampleIndex4( texCoord ) ); // get 4bit index
 	}
 	else if ( colorMode == 1 )
 	{
-		texel = SampleClut( SampleIndex8( texCoord ) ); // get 8bit index
+		FragColor = SampleClut( SampleIndex8( texCoord ) ); // get 8bit index
 	}
 	else
 	{
-		texel = SampleVRam( TexPageBase + texCoord ); // get 16bit color directly
+		FragColor = texelFetch( vram, TexPageBase + texCoord, 0 ); // get 16bit color directly
 	}
 
-	if ( texel == 0 )
-		FragColor = vec4( 0.0 ); // all 0 is fully transparent
-	else
-		FragColor = ConvertABGR1555( texel ) * BlendColor * 2.0;
+	// only all 0 is fully transparent
+	if ( FragColor != vec4( 0.0 ) )
+	{
+		FragColor *= BlendColor * 2.0;
+		FragColor.a = 1.0; // TODO: blend modes
+	}
 }
 )glsl";
 

@@ -131,14 +131,18 @@ private:
 
 	// VRAM texture used as render target
 	Render::Texture2D m_vramDrawTexture;
-	Render::FrameBuffer m_vramFrameBuffer;
+	Render::FrameBuffer m_vramDrawFrameBuffer;
+
+	// VRAM texture used for reading
+	Render::Texture2D m_vramReadTexture;
+	Render::FrameBuffer m_vramReadFrameBuffer;
 
 	Render::VertexArrayObject m_vramDrawVAO;
 	Render::ArrayBuffer m_vertexBuffer;
 	Render::Shader m_clutShader;
 
 	// Render::Texture2D m_vramColorTables; // vram encoded as RGBA5551 to use as CLUT
-	Render::Texture2D m_vramReadTexture; // vram encoded as R8 to use as texture CLUT indices
+	// Render::Texture2D m_vramReadTexture; // vram encoded as R16 to use as texture CLUT indices
 
 	Render::VertexArrayObject m_noAttributeVAO;
 	Render::Shader m_fullscreenShader;

@@ -58,13 +58,21 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "texWindowOffset" );
 
 	// m_vramColorTables = Render::Texture2D::Create( GL_RGB8, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, nullptr );
-	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::R16UI, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort );
+	// m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::R16UI, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort );
 
-	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGB, VRamWidth, VRamHeight, Render::PixelFormat::RGB, Render::PixelType::UByte );
-	m_vramFrameBuffer = Render::FrameBuffer::Create();
-	m_vramFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
-	dbAssert( m_vramFrameBuffer.IsComplete() );
-	m_vramFrameBuffer.Unbind();
+	// VRAM draw texture
+	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
+	m_vramDrawFrameBuffer = Render::FrameBuffer::Create();
+	m_vramDrawFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
+	dbAssert( m_vramDrawFrameBuffer.IsComplete() );
+	m_vramDrawFrameBuffer.Unbind();
+
+	// VRAM read texture
+	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
+	m_vramReadFrameBuffer = Render::FrameBuffer::Create();
+	m_vramReadFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
+	dbAssert( m_vramReadFrameBuffer.IsComplete() );
+	m_vramReadFrameBuffer.Unbind();
 
 	// set shader uniforms
 	SetOrigin( 0, 0 );
@@ -82,8 +90,9 @@ void Renderer::UploadVRam( const uint16_t* vram )
 	DrawBatch(); // draw pending polygons before updating vram with new textures/clut
 
 	// m_vramColorTables.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
+	// m_vramReadTexture.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort, vram );
 
-	m_vramReadTexture.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort, vram );
+	m_vramReadTexture.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, vram );
 }
 
 void Renderer::SetOrigin( int32_t x, int32_t y )
@@ -181,7 +190,7 @@ void Renderer::DrawBatch()
 void Renderer::RestoreRenderState()
 {
 	m_vramDrawVAO.Bind();
-	m_vramFrameBuffer.Bind();
+	m_vramDrawFrameBuffer.Bind();
 	m_vramReadTexture.Bind();
 	m_clutShader.Bind();
 	dbCheckRenderErrors();
@@ -202,7 +211,7 @@ void Renderer::RestoreRenderState()
 void Renderer::DisplayFrame()
 {
 	m_noAttributeVAO.Bind();
-	m_vramFrameBuffer.Unbind();
+	m_vramDrawFrameBuffer.Unbind();
 	m_vramDrawTexture.Bind();
 	m_fullscreenShader.Bind();
 	dbCheckRenderErrors();
