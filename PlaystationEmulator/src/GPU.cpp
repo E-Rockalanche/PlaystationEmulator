@@ -245,6 +245,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 			dbLog( "Gpu::GP0_Command() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
 
+			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
+
 			// TODO: does this affect blanking?
 			break;
 		}
@@ -255,6 +257,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_drawAreaBottom = ( value >> 10 ) & 0x1ff;
 
 			dbLog( "Gpu::GP0_Command() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
+
+			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
 			// TODO: does this affect blanking?
 			break;

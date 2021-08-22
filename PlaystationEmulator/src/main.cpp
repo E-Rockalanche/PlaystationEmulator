@@ -141,7 +141,7 @@ int main( int, char** )
 
 	PSX::Renderer renderer;
 	if ( !renderer.Initialize( window ) )
-		return -1;
+		return 1;
 	
 	auto bios = std::make_unique<PSX::Bios>();
 	bios->Fill( 0xfe );
@@ -230,9 +230,6 @@ int main( int, char** )
 			}
 		}
 
-		// glClearColor( 1, 0, 1, 1 );
-		// glClear( GL_COLOR_BUFFER_BIT );
-
 		while ( !gpu.GetDisplayFrame() )
 			cpu->Tick();
 
@@ -243,9 +240,7 @@ int main( int, char** )
 			renderer.RenderVRamView();
 			*/
 
-		SDL_GL_SwapWindow( window );
-
-		dbCheckRenderErrors();
+		renderer.DisplayFrame();
 
 		const uint32_t elapsed = SDL_GetTicks() - frameStart;
 

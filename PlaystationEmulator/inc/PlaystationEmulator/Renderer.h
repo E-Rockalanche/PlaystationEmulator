@@ -88,6 +88,7 @@ public:
 	void SetOrigin( int32_t x, int32_t y );
 	void SetDisplaySize( uint32_t w, uint32_t h );
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
+	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 
 	void UploadVRam( const uint16_t* vram );
 
@@ -139,18 +140,26 @@ private:
 	// Render::Texture2D m_vramColorTables; // vram encoded as RGBA5551 to use as CLUT
 	Render::Texture2D m_vramTextures; // vram encoded as R8 to use as texture CLUT indices
 
+	Render::VertexArrayObject m_noAttributeVAO;
+	Render::Shader m_fullscreenShader;
+
 	GLint m_originLoc = -1;
 	GLint m_displaySizeLoc = -1;
 	GLint m_texWindowMask = -1;
 	GLint m_texWindowOffset = -1;
 
+	uint32_t m_displayWidth = 640;
+	uint32_t m_displayHeight = 480;
+
+	GLint m_drawAreaLeft = 0;
+	GLint m_drawAreaTop = 0;
+	GLint m_drawAreaRight = 0;
+	GLint m_drawAreaBottom = 0;
+
 	struct Uniform
 	{
 		int32_t originX = 0;
 		int32_t originY = 0;
-
-		uint32_t displayWidth = 640;
-		uint32_t displayHeight = 480;
 
 		uint32_t texWindowMaskX = 0;
 		uint32_t texWindowMaskY = 0;
