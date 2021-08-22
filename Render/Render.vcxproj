@@ -143,6 +143,7 @@
   <ItemGroup>
     <ClCompile Include="Glad\src\glad.c" />
     <ClCompile Include="src\Error.cpp" />
+    <ClCompile Include="src\FrameBuffer.cpp" />
     <ClCompile Include="src\Shader.cpp" />
     <ClCompile Include="src\VertexArrayObject.cpp" />
   </ItemGroup>

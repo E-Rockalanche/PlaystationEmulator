@@ -90,83 +90,29 @@ public:
 		return m_frameBuffer != 0;
 	}
 
-	void Reset()
-	{
-		if ( m_frameBuffer != 0 )
-		{
-			Unbind( m_frameBuffer );
-			glDeleteFramebuffers( 1, &m_frameBuffer );
-			m_frameBuffer = 0;
-		}
-	}
+	void Reset();
 
 	void Bind( FrameBufferBinding binding = FrameBufferBinding::ReadAndDraw ) const
 	{
 		dbExpects( m_frameBuffer != 0 );
-		Bind( binding, m_frameBuffer );
+		BindImp( binding, m_frameBuffer );
 	}
 
-	void Unbind()
+	void Unbind() const
 	{
-		Unbind( m_frameBuffer );
+		UnbindImp( m_frameBuffer );
 	}
 
 	static void Unbind( FrameBufferBinding binding )
 	{
-		Bind( binding, 0 );
+		BindImp( binding, 0 );
 	}
 
 private:
 	FrameBuffer( GLuint frameBuffer ) noexcept : m_frameBuffer{ frameBuffer } {}
 
-	static void Bind( FrameBufferBinding binding, GLuint frameBuffer )
-	{
-		switch ( binding )
-		{
-			case FrameBufferBinding::Read:
-				if ( s_boundRead != frameBuffer )
-				{
-					glBindFramebuffer( GL_READ_FRAMEBUFFER, frameBuffer );
-					s_boundRead = frameBuffer;
-				}
-				break;
-
-			case FrameBufferBinding::Draw:
-				if ( s_boundDraw != frameBuffer )
-				{
-					glBindFramebuffer( GL_DRAW_FRAMEBUFFER, frameBuffer );
-					s_boundDraw = frameBuffer;
-				}
-				break;
-
-			case FrameBufferBinding::ReadAndDraw:
-				if ( s_boundDraw != frameBuffer || s_boundRead != frameBuffer )
-				{
-					glBindFramebuffer( GL_FRAMEBUFFER, frameBuffer );
-					s_boundDraw = frameBuffer;
-					s_boundRead = frameBuffer;
-				}
-				break;
-
-			default:
-				dbBreak();
-		}
-	}
-
-	static void Unbind( GLuint frameBuffer )
-	{
-		if ( frameBuffer == s_boundRead )
-		{
-			glBindFramebuffer( GL_READ_FRAMEBUFFER, 0 );
-			s_boundRead = 0;
-		}
-
-		if ( frameBuffer == s_boundDraw )
-		{
-			glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );
-			s_boundDraw = 0;
-		}
-	}
+	static void BindImp( FrameBufferBinding binding, GLuint frameBuffer );
+	static void UnbindImp( GLuint frameBuffer );
 
 private:
 	GLuint m_frameBuffer = 0;
