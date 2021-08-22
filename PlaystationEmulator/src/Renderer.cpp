@@ -54,6 +54,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	// get shader uniform locations
 	m_originLoc = m_clutShader.GetUniformLocation( "origin" );
 	m_displaySizeLoc = m_clutShader.GetUniformLocation( "displaySize" );
+
 	m_texWindowMask = m_clutShader.GetUniformLocation( "texWindowMask" );
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "texWindowOffset" );
 
@@ -85,14 +86,17 @@ bool Renderer::Initialize( SDL_Window* window )
 	return true;
 }
 
-void Renderer::UploadVRam( const uint16_t* vram )
+void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels )
 {
-	DrawBatch(); // draw pending polygons before updating vram with new textures/clut
+	dbExpects( left + width <= VRamWidth );
+	dbExpects( top + height <= VRamHeight );
 
-	// m_vramColorTables.SubImage( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
-	// m_vramReadTexture.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::Red_Int, Render::PixelType::UShort, vram );
+	DrawBatch();
 
-	m_vramReadTexture.SubImage( 0, 0, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, vram );
+	m_vramDrawTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
+	m_vramReadTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
+
+	RestoreRenderState();
 }
 
 void Renderer::SetOrigin( int32_t x, int32_t y )
@@ -151,7 +155,7 @@ void Renderer::SetDrawArea( GLint left, GLint top, GLint right, GLint bottom )
 
 		const auto width = std::max( right - left + 1, 0 );
 		const auto height = std::max( bottom - top + 1, 0 );
-		glScissor( left, VRamHeight - top - height, width, height );
+		glScissor( left, top, width, height );
 		dbCheckRenderErrors();
 
 		m_drawAreaLeft = left;
@@ -196,7 +200,12 @@ void Renderer::RestoreRenderState()
 	dbCheckRenderErrors();
 
 	glDisable( GL_CULL_FACE );
+
 	glEnable( GL_SCISSOR_TEST );
+
+	glEnable( GL_BLEND );
+	glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+
 	dbCheckRenderErrors();
 
 	// restore uniforms
@@ -217,6 +226,7 @@ void Renderer::DisplayFrame()
 	dbCheckRenderErrors();
 
 	glDisable( GL_SCISSOR_TEST );
+	glDisable( GL_BLEND );
 
 	glViewport( 0, 0, m_displayWidth, m_displayHeight );
 

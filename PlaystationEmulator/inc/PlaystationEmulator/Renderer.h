@@ -90,7 +90,7 @@ public:
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 
-	void UploadVRam( const uint16_t* vram );
+	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
 
 	void PushTriangle( const Vertex vertices[ 3 ] );
 	void PushQuad( const Vertex vertices[ 4 ] );

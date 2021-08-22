@@ -95,7 +95,7 @@ Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer
 	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
 	m_cycleScheduler.Register(
-		[this]( uint32_t cycles ) {UpdateTimers( cycles ); },
+		[this]( uint32_t cycles ) { UpdateTimers( cycles ); },
 		[this] { return GetCpuCyclesUntilEvent(); } );
 }
 
@@ -146,8 +146,7 @@ void Gpu::Reset()
 
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0x801f } );
-	m_renderer.UploadVRam( m_vram.get() );
-	m_vramDirty = false;
+	m_renderer.UpdateVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
 
 	m_vramCopyState = std::nullopt;
 
@@ -183,12 +182,29 @@ void Gpu::SetupVRamCopy() noexcept
 	std::tie( m_vramCopyState->width, m_vramCopyState->height ) = DecodePosition( m_commandBuffer.Pop() );
 }
 
+void Gpu::FinishVRamTransfer() noexcept
+{
+	dbExpects( m_vramCopyState.has_value() );
+	dbExpects( m_vramCopyState->pixelBuffer );
+
+	if ( m_vramCopyState->IsFinished() )
+	{
+		// copy pixels to textures
+		m_renderer.UpdateVRam( m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height, m_vramCopyState->pixelBuffer.get() );
+	}
+	else
+	{
+		dbBreakMessage( "CPU to VRAM pixel transfer did not finish" );
+		// TODO: partial transfer
+	}
+}
+
 void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
 {
 	dbLog( "Gpu::SetDrawOffset() -- %i, %i", x, y );
 	m_drawOffsetX = x;
 	m_drawOffsetY = y;
-	m_renderer.SetOrigin( x - m_drawAreaLeft, y - m_drawAreaTop );
+	m_renderer.SetOrigin( x, y );
 }
 
 uint32_t Gpu::GetHorizontalResolution() const noexcept
@@ -432,15 +448,15 @@ void Gpu::GP0_Image( uint32_t param ) noexcept
 		m_vramCopyState->Increment();
 	};
 
-	copyPixel( param & 0xffff );
+	m_vramCopyState->PushPixel( static_cast<uint16_t>( param ) );
 
 	if ( !m_vramCopyState->IsFinished() )
-		copyPixel( param >> 16 );
-
-	m_vramDirty = true;
+		m_vramCopyState->PushPixel( static_cast<uint16_t>( param >> 16 ) );
 
 	if ( m_vramCopyState->IsFinished() )
 	{
+		FinishVRamTransfer();
+
 		m_vramCopyState = std::nullopt;
 		ClearCommandBuffer();
 	}
@@ -489,6 +505,11 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		case 0x00: // soft reset GPU
 		{
 			dbLog( "Gpu::WriteGP1() -- soft reset" );
+
+			if ( m_gp0Mode == &Gpu::GP0_Image )
+				FinishVRamTransfer();
+
+			m_vramCopyState = std::nullopt;
 
 			m_status.texturePageBaseX = 0;
 			m_status.texturePageBaseY = 0;
@@ -699,6 +720,8 @@ void Gpu::CopyRectangleToVram() noexcept
 	// affected by mask settings
 	SetupVRamCopy();
 	dbLog( "Gpu::CopyRectangleToVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
+	
+	m_vramCopyState->InitializePixelBuffer();
 	SetGP0Mode( &Gpu::GP0_Image );
 }
 
@@ -715,8 +738,6 @@ void Gpu::CopyRectangleFromVram() noexcept
 
 void Gpu::RenderPolygon() noexcept
 {
-	FlushVRam();
-
 	Vertex vertices[ 4 ];
 
 	const uint32_t command = m_commandBuffer.Pop();
@@ -837,8 +858,6 @@ void Gpu::RenderRectangle() noexcept
 
 	if ( command & RenderCommand::TextureMapping )
 	{
-		FlushVRam(); // DEBUG
-
 		const uint32_t value = m_commandBuffer.Pop();
 
 		const TexCoord topLeft{ value };
@@ -857,15 +876,6 @@ void Gpu::RenderRectangle() noexcept
 	}
 
 	m_renderer.PushQuad( vertices );
-
-	// DEBUG
-	const uint16_t color555 = ( color.r >> 3 ) | ( ( color.g >> 3 ) << 5 ) | ( ( color.b >> 3 ) << 10 );
-	for ( uint32_t y = 0; y < height; ++y )
-	{
-		auto* row = m_vram.get() + ( y + pos.y ) * VRamWidth;
-		std::fill_n( row + pos.x, width, color555 );
-	}
-	m_vramDirty = true;
 
 	ClearCommandBuffer();
 }
@@ -928,9 +938,6 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 
 		if ( IsInterlaced() )
 			m_status.drawingEvenOdd ^= 1;
-
-		// DEBUG
-		FlushVRam();
 	}
 	m_vblank = vblank;
 }
@@ -990,7 +997,7 @@ void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uin
 		std::fill_n( rowPixels + x, width, value );
 	}
 
-	m_vramDirty = true;
+	// TODO: fill vram in renderer
 }
 
 void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height )
@@ -1028,16 +1035,7 @@ void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY
 		}
 	}
 
-	m_vramDirty = true;
-}
-
-void Gpu::FlushVRam()
-{
-	if ( m_vramDirty )
-	{
-		m_renderer.UploadVRam( m_vram.get() );
-		m_vramDirty = false;
-	}
+	// TODO: copy in renderer
 }
 
 } // namespace PSX

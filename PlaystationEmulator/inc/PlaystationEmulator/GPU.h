@@ -210,6 +210,7 @@ private:
 	void InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept;
 
 	void SetupVRamCopy() noexcept;
+	void FinishVRamTransfer() noexcept;
 
 	void SetDrawOffset( int16_t x, int16_t y ) noexcept;
 
@@ -274,8 +275,6 @@ private:
 	// affected by mask settings
 	void CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height );
 
-	void FlushVRam();
-
 private:
 	Timers& m_timers;
 	InterruptControl& m_interruptControl;
@@ -334,7 +333,6 @@ private:
 	bool m_displayFrame = false;
 
 	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512
-	bool m_vramDirty = false;
 
 	struct VRamCopyState
 	{
@@ -344,6 +342,10 @@ private:
 		uint32_t height = 0;
 		uint32_t x = 0;
 		uint32_t y = 0;
+
+		// CPU -> VRAM only
+		std::unique_ptr<uint16_t[]> pixelBuffer;
+		bool oddWidth = false;
 
 		bool IsFinished() const noexcept { return x == 0 && y == height; }
 
@@ -359,10 +361,28 @@ private:
 				++y;
 			}
 		}
+
+		void InitializePixelBuffer()
+		{
+			// buffer width must be aligned to 32bit boundary
+			oddWidth = ( width % 2 != 0 );
+			const auto size = ( width + oddWidth ) * height;
+			pixelBuffer.reset( new uint16_t[ size ] );
+		}
+
+		void PushPixel( uint16_t pixel ) noexcept
+		{
+			dbExpects( pixelBuffer );
+			dbExpects( !IsFinished() );
+
+			const auto index = y * ( width + oddWidth ) + x;
+			pixelBuffer[ index ] = pixel;
+
+			Increment();
+		}
 	};
 
 	std::optional<VRamCopyState> m_vramCopyState;
-
 };
 
 }

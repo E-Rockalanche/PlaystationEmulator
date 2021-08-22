@@ -25,7 +25,7 @@ void main()
 {
 	// calculate normalized screen coordinate
 	float x = ( 2.0 * ( v_pos.x + origin.x ) / displaySize.x ) - 1.0;
-	float y = 1.0 - ( 2.0 * ( v_pos.y + origin.y ) / displaySize.y );
+	float y = ( 2.0 * ( v_pos.y + origin.y ) / displaySize.y ) - 1.0;
 	gl_Position = vec4( x, y, 0.0, 1.0 );
 
 	// calculate texture page offset
