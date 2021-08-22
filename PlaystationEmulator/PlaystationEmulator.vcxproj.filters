@@ -7,6 +7,9 @@
     <Filter Include="src">
       <UniqueIdentifier>{eb09ef32-0125-4a25-b4f3-2f36c7c27ef7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="inc\shaders">
+      <UniqueIdentifier>{36cc0cca-18f3-4c23-881c-953ca04658f0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationEmulator\CPU.h">
@@ -68,6 +71,12 @@
     </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\DualSerialPort.h">
       <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\ClutShader.h">
+      <Filter>inc\shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\FullscreenShader.h">
+      <Filter>inc\shaders</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

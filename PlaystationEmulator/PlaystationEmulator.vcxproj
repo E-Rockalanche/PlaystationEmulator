@@ -164,6 +164,7 @@
   <ItemGroup>
     <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
     <ClInclude Include="inc\PlaystationEmulator\CDRomDrive.h" />
+    <ClInclude Include="inc\PlaystationEmulator\ClutShader.h" />
     <ClInclude Include="inc\PlaystationEmulator\CycleScheduler.h" />
     <ClInclude Include="inc\PlaystationEmulator\DualSerialPort.h" />
     <ClInclude Include="inc\PlaystationEmulator\FifoBuffer.h" />
@@ -171,6 +172,7 @@
     <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\DMA.h" />
     <ClInclude Include="inc\PlaystationEmulator\File.h" />
+    <ClInclude Include="inc\PlaystationEmulator\FullscreenShader.h" />
     <ClInclude Include="inc\PlaystationEmulator\GeometryTransformationEngine.h" />
     <ClInclude Include="inc\PlaystationEmulator\GPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />

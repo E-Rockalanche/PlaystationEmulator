@@ -6,6 +6,7 @@
 #include "glad/glad.h"
 
 #include <type_traits>
+#include <utility>
 
 namespace Render
 {
@@ -167,10 +168,9 @@ public:
 
 	Texture( const Texture& ) = delete;
 
-	Texture( Texture&& other ) : m_texture{ other.m_texture }
-	{
-		other.m_texture = 0;
-	}
+	Texture( Texture&& other )
+		: m_texture{ std::exchange( other.m_texture, 0 ) }
+	{}
 
 	~Texture()
 	{
@@ -182,8 +182,7 @@ public:
 	Texture& operator=( Texture&& other )
 	{
 		Reset();
-		m_texture = other.m_texture;
-		other.m_texture = 0;
+		m_texture = std::exchange( other.m_texture, 0 );
 		return *this;
 	}
 
@@ -259,6 +258,23 @@ class Texture2D : public Detail::Texture<TextureType::Texture2D>
 	friend class FrameBuffer;
 
 public:
+
+	Texture2D() noexcept = default;
+
+	Texture2D( Texture2D&& other )
+		: Parent( std::move( other ) )
+		, m_width{ std::exchange( other.m_width, 0 ) }
+		, m_height{ std::exchange( other.m_height, 0 ) }
+	{}
+
+	Texture2D& operator=( Texture2D&& other )
+	{
+		Parent::operator=( std::move( other ) );
+		m_width = std::exchange( other.m_width, 0 );
+		m_height = std::exchange( other.m_height, 0 );
+		return *this;
+	}
+
 	static Texture2D Create( InternalFormat internalColorFormat, GLsizei width, GLsizei height, PixelFormat pixelFormat, PixelType pixelType, const void* pixels = nullptr, GLint mipmapLevel = 0 )
 	{
 		dbExpects( width > 0 );
@@ -267,6 +283,8 @@ public:
 		Texture2D texture;
 		glGenTextures( 1, &texture.m_texture );
 		texture.UpdateImage( internalColorFormat, width, height, pixelFormat, pixelType, pixels, mipmapLevel );
+		texture.m_width = width;
+		texture.m_height = height;
 		texture.SetLinearFilering( false );
 		texture.SetTextureWrap( false );
 		return texture;

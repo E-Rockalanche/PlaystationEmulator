@@ -29,6 +29,13 @@ enum class FrameBufferStatus : GLenum
 	IncompleteLayerTargets = GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS
 };
 
+enum class FrameBufferBinding : GLenum
+{
+	Read = GL_READ_FRAMEBUFFER,
+	Draw = GL_DRAW_FRAMEBUFFER,
+	ReadAndDraw = GL_FRAMEBUFFER
+};
+
 class FrameBuffer
 {
 public:
@@ -87,40 +94,85 @@ public:
 	{
 		if ( m_frameBuffer != 0 )
 		{
-			if ( s_bound == m_frameBuffer )
-				Bind( 0 );
-
+			Unbind( m_frameBuffer );
 			glDeleteFramebuffers( 1, &m_frameBuffer );
 			m_frameBuffer = 0;
 		}
 	}
 
-	void Bind() const
+	void Bind( FrameBufferBinding binding = FrameBufferBinding::ReadAndDraw ) const
 	{
 		dbExpects( m_frameBuffer != 0 );
-		if ( s_bound != m_frameBuffer )
-			Bind( m_frameBuffer );
+		Bind( binding, m_frameBuffer );
 	}
 
-	static void Unbind()
+	void Unbind()
 	{
-		if ( s_bound != 0 )
-			Bind( 0 );
+		Unbind( m_frameBuffer );
+	}
+
+	static void Unbind( FrameBufferBinding binding )
+	{
+		Bind( binding, 0 );
 	}
 
 private:
 	FrameBuffer( GLuint frameBuffer ) noexcept : m_frameBuffer{ frameBuffer } {}
 
-	static void Bind( GLuint frameBuffer )
+	static void Bind( FrameBufferBinding binding, GLuint frameBuffer )
 	{
-		glBindFramebuffer( GL_FRAMEBUFFER, frameBuffer );
-		s_bound = frameBuffer;
+		switch ( binding )
+		{
+			case FrameBufferBinding::Read:
+				if ( s_boundRead != frameBuffer )
+				{
+					glBindFramebuffer( GL_READ_FRAMEBUFFER, frameBuffer );
+					s_boundRead = frameBuffer;
+				}
+				break;
+
+			case FrameBufferBinding::Draw:
+				if ( s_boundDraw != frameBuffer )
+				{
+					glBindFramebuffer( GL_DRAW_FRAMEBUFFER, frameBuffer );
+					s_boundDraw = frameBuffer;
+				}
+				break;
+
+			case FrameBufferBinding::ReadAndDraw:
+				if ( s_boundDraw != frameBuffer || s_boundRead != frameBuffer )
+				{
+					glBindFramebuffer( GL_FRAMEBUFFER, frameBuffer );
+					s_boundDraw = frameBuffer;
+					s_boundRead = frameBuffer;
+				}
+				break;
+
+			default:
+				dbBreak();
+		}
+	}
+
+	static void Unbind( GLuint frameBuffer )
+	{
+		if ( frameBuffer == s_boundRead )
+		{
+			glBindFramebuffer( GL_READ_FRAMEBUFFER, 0 );
+			s_boundRead = 0;
+		}
+
+		if ( frameBuffer == s_boundDraw )
+		{
+			glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );
+			s_boundDraw = 0;
+		}
 	}
 
 private:
 	GLuint m_frameBuffer = 0;
 
-	static inline GLuint s_bound = 0;
+	static inline GLuint s_boundRead = 0;
+	static inline GLuint s_boundDraw = 0;
 };
 
 }
