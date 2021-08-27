@@ -18,14 +18,14 @@ flat out ivec2 TexPageBase;
 flat out ivec2 ClutBase;
 flat out int DrawMode;
 
-uniform vec2 origin;
-uniform vec2 displaySize;
+uniform vec2 u_origin;
+uniform vec2 u_displaySize;
 
 void main()
 {
 	// calculate normalized screen coordinate
-	float x = ( 2.0 * ( v_pos.x + origin.x ) / displaySize.x ) - 1.0;
-	float y = ( 2.0 * ( v_pos.y + origin.y ) / displaySize.y ) - 1.0;
+	float x = ( 2.0 * ( v_pos.x + u_origin.x ) / u_displaySize.x ) - 1.0;
+	float y = ( 2.0 * ( v_pos.y + u_origin.y ) / u_displaySize.y ) - 1.0;
 	gl_Position = vec4( x, y, 0.0, 1.0 );
 
 	// calculate texture page offset
@@ -53,9 +53,9 @@ flat in int DrawMode;
 
 out vec4 FragColor;
 
-uniform ivec2 texWindowMask;
-uniform ivec2 texWindowOffset;
-uniform sampler2D vram;
+uniform ivec2 u_texWindowMask;
+uniform ivec2 u_texWindowOffset;
+uniform sampler2D u_vram;
 
 int FloatTo5bit( float value )
 {
@@ -64,7 +64,7 @@ int FloatTo5bit( float value )
 
 int SampleVRam( ivec2 pos )
 {
-	vec4 c = texelFetch( vram, pos, 0 );
+	vec4 c = texelFetch( u_vram, pos, 0 );
 	int red = FloatTo5bit( c.r );
 	int green = FloatTo5bit( c.g );
 	int blue = FloatTo5bit( c.b );
@@ -74,7 +74,7 @@ int SampleVRam( ivec2 pos )
 
 vec4 SampleClut( int index )
 {
-	return texelFetch( vram, ClutBase + ivec2( index, 0 ), 0 );
+	return texelFetch( u_vram, ClutBase + ivec2( index, 0 ), 0 );
 }
 
 // texCoord counted in 4bit steps
@@ -105,8 +105,8 @@ void main()
 	// texCord counted in color depth mode
 	ivec2 texCoord = ivec2( int( round( TexCoord.x ) ), int( round( TexCoord.y ) ) );
 
-	// texCoord.x = ( ( texCoord.x & ~( texWindowMask.x * 8 ) ) | ( ( texWindowOffset.x & texWindowMask.x ) * 8 ) ) & 0xff;
-	// texCoord.y = ( ( texCoord.y & ~( texWindowMask.y * 8 ) ) | ( ( texWindowOffset.y & texWindowMask.y ) * 8 ) ) & 0xff;
+	texCoord.x = ( texCoord.x & ~( u_texWindowMask.x * 8 ) ) | ( ( u_texWindowOffset.x & u_texWindowMask.x ) * 8 );
+	texCoord.y = ( texCoord.y & ~( u_texWindowMask.y * 8 ) ) | ( ( u_texWindowOffset.y & u_texWindowMask.y ) * 8 );
 
 	int colorMode = ( DrawMode >> 7 ) & 0x3;
 
@@ -120,7 +120,7 @@ void main()
 	}
 	else
 	{
-		FragColor = texelFetch( vram, TexPageBase + texCoord, 0 ); // get 16bit color directly
+		FragColor = texelFetch( u_vram, TexPageBase + texCoord, 0 ); // get 16bit color directly
 	}
 
 	// only all 0 is fully transparent

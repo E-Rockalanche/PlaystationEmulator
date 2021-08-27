@@ -175,6 +175,7 @@
     <ClInclude Include="inc\PlaystationEmulator\FullscreenShader.h" />
     <ClInclude Include="inc\PlaystationEmulator\GeometryTransformationEngine.h" />
     <ClInclude Include="inc\PlaystationEmulator\GPU.h" />
+    <ClInclude Include="inc\PlaystationEmulator\GpuDefs.h" />
     <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />
     <ClInclude Include="inc\PlaystationEmulator\InterruptControl.h" />
     <ClInclude Include="inc\PlaystationEmulator\Memory.h" />

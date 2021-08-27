@@ -1,6 +1,9 @@
 #pragma once
 
 #include "FifoBuffer.h"
+#include "GpuDefs.h"
+
+#include <Math/Rectangle.h>
 
 #include <stdx/assert.h>
 
@@ -38,9 +41,6 @@ constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
 class Gpu
 {
 public:
-
-	static constexpr uint32_t VRamWidth = 1024;
-	static constexpr uint32_t VRamHeight = 512;
 
 	union Status
 	{

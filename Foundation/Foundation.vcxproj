@@ -144,6 +144,7 @@
     <ClInclude Include="inc\Math\Color.h" />
     <ClInclude Include="inc\Math\FixedPoint.h" />
     <ClInclude Include="inc\Math\Matrix.h" />
+    <ClInclude Include="inc\Math\Rectangle.h" />
     <ClInclude Include="inc\Math\Vector.h" />
     <ClInclude Include="inc\stdx\assert.h" />
     <ClInclude Include="inc\stdx\bit.h" />

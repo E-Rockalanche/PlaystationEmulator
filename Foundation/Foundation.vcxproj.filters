@@ -39,6 +39,9 @@
     <ClInclude Include="inc\stdx\cast.h">
       <Filter>inc\stdx</Filter>
     </ClInclude>
+    <ClInclude Include="inc\Math\Rectangle.h">
+      <Filter>inc\Math</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp">

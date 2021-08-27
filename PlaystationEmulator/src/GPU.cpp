@@ -145,7 +145,7 @@ void Gpu::Reset()
 	m_displayFrame = false;
 
 	// clear VRAM
-	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0x801f } );
+	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } ); // , uint16_t{ 0x801f } );
 	m_renderer.UpdateVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
 
 	m_vramCopyState = std::nullopt;
@@ -190,7 +190,10 @@ void Gpu::FinishVRamTransfer() noexcept
 	if ( m_vramCopyState->IsFinished() )
 	{
 		// copy pixels to textures
-		m_renderer.UpdateVRam( m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height, m_vramCopyState->pixelBuffer.get() );
+		m_renderer.UpdateVRam(
+			m_vramCopyState->left, m_vramCopyState->top,
+			m_vramCopyState->width, m_vramCopyState->height,
+			m_vramCopyState->pixelBuffer.get() );
 	}
 	else
 	{
@@ -734,6 +737,9 @@ void Gpu::CopyRectangleFromVram() noexcept
 	m_status.readyToReceiveDmaBlock = false;
 	m_status.readyToSendVRamToCpu = true;
 	ClearCommandBuffer(); // TODO: clear buffer here after image copy?
+
+	// read vram from frame buffer
+	m_renderer.ReadVRam( m_vram.get() );
 }
 
 void Gpu::RenderPolygon() noexcept
@@ -991,13 +997,7 @@ void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uin
 	width = std::min( width, VRamWidth - x );
 	height = std::min( height, VRamHeight - y );
 
-	for ( uint32_t row = 0; row < height; ++row )
-	{
-		uint16_t* rowPixels = m_vram.get() + ( y + row ) * VRamWidth;
-		std::fill_n( rowPixels + x, width, value );
-	}
-
-	// TODO: fill vram in renderer
+	m_renderer.FillVRam( x, y, width, height, value );
 }
 
 void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height )
@@ -1005,37 +1005,13 @@ void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY
 	if ( srcX >= VRamWidth || srcY >= VRamHeight || destX >= VRamWidth || destY >= VRamHeight )
 		return;
 
+	/*
 	const auto checkMask = m_status.GetCheckMask();
 	const auto setMask = m_status.GetSetMask();
+	*/
 
-	width = std::min( { width, VRamWidth - srcX, VRamWidth - destX } );
-	height = std::min( { height, VRamHeight - srcY, VRamHeight - destY } );
-
-	for ( uint32_t row = 0; row < height; ++row )
-	{
-		const uint16_t* srcRowPixels = m_vram.get() + ( srcY + row ) * VRamWidth;
-		uint16_t* destRowPixels = m_vram.get() + ( destY + row ) * VRamWidth;
-
-		auto doCopy = [&]( uint32_t x )
-		{
-			auto& destPixel = destRowPixels[ destX + x ];
-			if ( ( destPixel & checkMask ) == 0 )
-				destPixel = srcRowPixels[ srcX + x ] | setMask;
-		};
-
-		if ( destX <= srcX )
-		{
-			for ( uint32_t x = 0; x < width; ++x )
-				doCopy( x );
-		}
-		else
-		{
-			for ( uint32_t x = width; x-- > 0; )
-				doCopy( x );
-		}
-	}
-
-	// TODO: copy in renderer
+	// TODO, check mask bits
+	m_renderer.CopyVRam( srcX, srcY, width, height, destX, destY, width, height );
 }
 
 } // namespace PSX

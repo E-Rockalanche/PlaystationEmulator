@@ -78,6 +78,9 @@
     <ClInclude Include="inc\PlaystationEmulator\FullscreenShader.h">
       <Filter>inc\shaders</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\GpuDefs.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">

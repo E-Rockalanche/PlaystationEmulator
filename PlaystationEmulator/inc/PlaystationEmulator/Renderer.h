@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GpuDefs.h"
+
 #include <Render/VertexArrayObject.h>
 #include <Render/Buffer.h>
 #include <Render/FrameBuffer.h>
@@ -7,6 +9,8 @@
 #include <Render/Texture.h>
 
 #include <Render/Error.h> // temp
+
+#include <Math/Rectangle.h>
 
 #include <stdx/assert.h>
 
@@ -18,70 +22,11 @@
 namespace PSX
 {
 
-struct Position
-{
-	constexpr Position() = default;
-
-	constexpr Position( int16_t x_, int16_t y_ ) : x{ x_ }, y{ y_ } {}
-
-	explicit constexpr Position( uint32_t gpuParam )
-		: x{ static_cast<int16_t>( gpuParam ) }
-		, y{ static_cast<int16_t>( gpuParam >> 16 ) }
-	{}
-
-	int16_t x = 0;
-	int16_t y = 0;
-};
-
-struct Color
-{
-	constexpr Color() = default;
-
-	constexpr Color( uint8_t r_, uint8_t g_, uint8_t b_ ) : r{ r_ }, g{ g_ }, b{ b_ } {}
-
-	explicit constexpr Color( uint32_t gpuParam )
-		: r{ static_cast<uint8_t>( gpuParam ) }
-		, g{ static_cast<uint8_t>( gpuParam >> 8 ) }
-		, b{ static_cast<uint8_t>( gpuParam >> 16 ) }
-	{}
-
-	uint8_t r = 0;
-	uint8_t g = 0;
-	uint8_t b = 0;
-};
-
-struct TexCoord
-{
-	constexpr TexCoord() = default;
-
-	constexpr TexCoord( uint16_t u_, uint16_t v_ ) : u{ u_ }, v{ v_ } {}
-
-	// tex coords are only 8bit in gpu param
-	explicit constexpr TexCoord( uint32_t gpuParam )
-		: u{ static_cast<uint16_t>( gpuParam & 0xff ) }
-		, v{ static_cast<uint16_t>( ( gpuParam >> 8 ) & 0xff ) }
-	{}
-
-	// tex coords need to be larger than 8bit for rectangles
-	uint16_t u = 0;
-	uint16_t v = 0;
-};
-
-struct Vertex
-{
-	Position position;
-	Color color;
-	TexCoord texCoord;
-	uint16_t clut = 0;
-	uint16_t drawMode = ( 1 << 11 ); // disable texture
-};
-
 class Renderer
 {
 public:
-	static constexpr size_t VRamWidth = 1024; // shorts
-	static constexpr size_t VRamHeight = 512;
-	static constexpr size_t VRamSize = VRamWidth * VRamHeight * 2; // bytes
+
+	using Rect = Math::Rectangle<int>;
 
 	bool Initialize( SDL_Window* window );
 
@@ -90,7 +35,15 @@ public:
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 
+	// update vram with pixel buffer
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
+
+	// read entire vram from frame buffer
+	void ReadVRam( uint16_t* vram );
+
+	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint16_t color );
+
+	void CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight, GLint destX, GLint destY, GLint destWidth, GLint destHeight );
 
 	void PushTriangle( const Vertex vertices[ 3 ] );
 	void PushQuad( const Vertex vertices[ 4 ] );
@@ -123,8 +76,22 @@ public:
 	*/
 
 private:
+	// update read texture with dirty area of draw texture
+	void UpdateReadTexture();
+
 	void RestoreRenderState();
-	void ResetRenderState();
+
+	void ResetDirtyArea() noexcept
+	{
+		m_dirtyArea.left = VRamWidth;
+		m_dirtyArea.top = VRamHeight;
+		m_dirtyArea.right = 0;
+		m_dirtyArea.bottom = 0;
+	}
+
+	void CheckDrawMode( uint16_t drawMode, uint16_t clut );
+
+	void UpdateScissorRect();
 
 private:
 	SDL_Window* m_window = nullptr;
@@ -165,6 +132,9 @@ private:
 		int32_t originX = 0;
 		int32_t originY = 0;
 
+		int32_t texturePageX = 0;
+		int32_t texturePageY = 0;
+
 		uint32_t texWindowMaskX = 0;
 		uint32_t texWindowMaskY = 0;
 		uint32_t texWindowOffsetX = 0;
@@ -174,6 +144,10 @@ private:
 	Uniform m_uniform;
 
 	std::vector<Vertex> m_vertices;
+
+	Rect m_dirtyArea;
+	uint16_t m_lastDrawMode = 0;
+	uint16_t m_lastClut = 0;
 
 	/*
 	struct VRamViewer
