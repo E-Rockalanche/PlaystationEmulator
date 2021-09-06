@@ -7,6 +7,8 @@ namespace PSX
 
 void CycleScheduler::AddCycles( uint32_t cycles ) noexcept
 {
+	dbExpects( !m_inUpdate ); // update callback should not add cycles
+
 	m_cycles += cycles;
 	while ( m_cycles >= m_cyclesUntilEvent )
 	{
@@ -22,6 +24,8 @@ void CycleScheduler::AddCycles( uint32_t cycles ) noexcept
 
 void CycleScheduler::UpdateEarly() noexcept
 {
+	dbExpects( !m_inUpdate ); // update callback should not call the cycle scheduler
+
 	if ( m_cycles > 0 )
 	{
 		UpdateSubscriberCycles( m_cycles );

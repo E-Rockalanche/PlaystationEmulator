@@ -96,7 +96,7 @@ public:
 
 	uint32_t ReadData() noexcept;
 
-	uint32_t ReadStatus() const noexcept;
+	uint32_t ReadStatus() noexcept;
 
 	void WriteData( uint32_t value ) noexcept;
 
@@ -195,6 +195,9 @@ private:
 		return ( m_state == State::Idle ) ? std::numeric_limits<uint32_t>::max() : m_cyclesUntilEvent;
 	}
 
+	// TEMP until the cycles shceduler is improved
+	void UpdateCyclesIfTransferring();
+
 private:
 	InterruptControl& m_interruptControl;
 	CycleScheduler& m_cycleScheduler;
@@ -209,6 +212,7 @@ private:
 	uint32_t m_cyclesUntilEvent = 0;
 
 	uint8_t m_txBuffer = 0;
+	uint8_t m_tranferringValue = 0;
 	bool m_txBufferFull = false;
 
 	uint8_t m_rxBuffer = 0;

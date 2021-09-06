@@ -177,7 +177,7 @@ int main( int, char** )
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 	cdRomDrive->Reset();
 
-	PSX::ControllerPorts controllerPorts;
+	PSX::ControllerPorts controllerPorts{ interruptControl, cycleScheduler };
 	controllerPorts.Reset();
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };

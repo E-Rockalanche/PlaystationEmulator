@@ -11,7 +11,7 @@ ControllerPorts::ControllerPorts( InterruptControl& interruptControl, CycleSched
 	: m_interruptControl{ interruptControl }
 	, m_cycleScheduler{ cycleScheduler }
 {
-	cycleScheduler.Register( [this]( uint32_t cycles ) { UpdateCycles( cycles ); }, [this] { return GetCyclesUntilEvent(); } );
+	m_cycleScheduler.Register( [this]( uint32_t cycles ) { UpdateCycles( cycles ); }, [this] { return GetCyclesUntilEvent(); } );
 }
 
 void ControllerPorts::Reset()
@@ -36,13 +36,16 @@ void ControllerPorts::Reset()
 	m_rxBufferFull = false;
 
 	for ( auto* controller : m_controllers )
-		controller->Reset();
+		if ( controller )
+			controller->Reset();
 }
 
 uint32_t ControllerPorts::ReadData() noexcept
 {
 	// A data byte can be read when JOY_STAT.1=1. Data should be read only via 8bit memory access
 	// (the 16bit/32bit "preview" feature is rather unusable, and usually there shouldn't be more than 1 byte in the FIFO anyways).
+
+	UpdateCyclesIfTransferring();
 
 	const uint8_t data = m_rxBufferFull ? m_rxBuffer : 0xff;
 	m_rxBufferFull = false;
@@ -51,20 +54,29 @@ uint32_t ControllerPorts::ReadData() noexcept
 	return data | ( data << 8 ) | ( data << 16 ) | ( data << 24 );
 }
 
-uint32_t ControllerPorts::ReadStatus() const noexcept
+uint32_t ControllerPorts::ReadStatus() noexcept
 {
+	UpdateCyclesIfTransferring();
+
 	const uint32_t status = m_status |
 		( m_baudrateTimer << 11 ) |
 		( m_rxBufferFull << 1 ) |
 		( (uint32_t)!m_txBufferFull ) |
 		( (uint32_t)IsFinishedTransfer() << 2 );
 
-	dbLog( "ControllerPorts::Read() -- status [%X]", status );
+	// no logging since status is read a LOT
+	// dbLog( "ControllerPorts::Read() -- status [%X]", status );
+
+	// just reset the ack level since we don't emulate the timing for it
+	stdx::reset_bits<uint32_t>( m_status, Status::AckInputLevel );
+
 	return status;
 }
 
 void ControllerPorts::WriteData( uint32_t value ) noexcept
 {
+	UpdateCyclesIfTransferring();
+
 	// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
 	// the written value is sent to the controller or memory card, and, simultaneously,
 	// a byte is received (and stored in RX FIFO if JOY_CTRL.1 or JOY_CTRL.2 is set).
@@ -81,6 +93,8 @@ void ControllerPorts::WriteData( uint32_t value ) noexcept
 
 void ControllerPorts::WriteControl( uint16_t value ) noexcept
 {
+	UpdateCyclesIfTransferring();
+
 	dbLog( "ControllerPorts::Write() -- control [%X]", value );
 	m_control = value & Control::WriteMask;
 
@@ -123,9 +137,11 @@ void ControllerPorts::TryTransfer() noexcept
 		if ( m_rxBufferFull )
 			dbBreakMessage( "ControllerPorts::CheckTransfer() -- RX buffer is full" );
 
-		// schedule transfer
-		m_cyclesUntilEvent = GetTransferCycles();
+		m_tranferringValue = m_txBuffer;
+		m_txBufferFull = false;
 		m_state = State::Transferring;
+		m_cyclesUntilEvent = GetTransferCycles();
+		m_cycleScheduler.ScheduleUpdate( m_cyclesUntilEvent );
 	}
 }
 
@@ -133,7 +149,10 @@ void ControllerPorts::DoTransfer()
 {
 	dbExpects( m_state == State::Transferring );
 
-	m_rxBuffer = 0xff; // default to high-Z
+	// the hardware automatically enables receive when /JOYn is low
+	m_control |= Control::RXEnable;
+
+	uint8_t received = 0xff;
 	bool ack = false;
 
 	if ( stdx::any_of<uint16_t>( m_control, Control::JoyNOutput ) )
@@ -143,7 +162,7 @@ void ControllerPorts::DoTransfer()
 		auto* controller = m_controllers[ stdx::any_of<uint16_t>( m_control, Control::DesiredSlotNumber ) ];
 		if ( controller )
 		{
-			m_rxBuffer = controller->Communicate( m_txBuffer );
+			received = controller->Communicate( m_tranferringValue );
 			ack = true; // TODO: when does the controller actually ack?
 		}
 	}
@@ -154,8 +173,8 @@ void ControllerPorts::DoTransfer()
 		// TODO: memory cards
 	}
 
+	m_rxBuffer = received;
 	m_rxBufferFull = true;
-	m_txBufferFull = false;
 
 	if ( ack )
 	{
@@ -164,7 +183,7 @@ void ControllerPorts::DoTransfer()
 	}
 	else
 	{
-		m_state = State::Idle;
+		EndTransfer();
 	}
 }
 
@@ -181,6 +200,14 @@ void ControllerPorts::DoAck()
 		m_interruptControl.SetInterrupt( Interrupt::ControllerAndMemoryCard );
 	}
 
+	EndTransfer();
+}
+
+void ControllerPorts::EndTransfer()
+{
+	// the hardware automatically clears RXEN after the transfer
+	stdx::reset_bits<uint16_t>( m_control, Control::RXEnable );
+
 	m_state = State::Idle;
 
 	TryTransfer();
@@ -191,7 +218,8 @@ void ControllerPorts::UpdateCycles( uint32_t cycles )
 	if ( m_state == State::Idle )
 		return;
 
-	dbAssert( cycles <= m_cyclesUntilEvent );
+	dbExpects( cycles >= m_cyclesUntilEvent );
+
 	m_cyclesUntilEvent -= cycles;
 	if ( m_cyclesUntilEvent > 0 )
 		return;
@@ -209,6 +237,12 @@ void ControllerPorts::UpdateCycles( uint32_t cycles )
 			DoAck();
 			break;
 	}
+}
+
+void ControllerPorts::UpdateCyclesIfTransferring()
+{
+	if ( IsTransferring() && m_cycleScheduler.GetCycles() >= m_cyclesUntilEvent )
+		m_cycleScheduler.UpdateEarly();
 }
 
 }

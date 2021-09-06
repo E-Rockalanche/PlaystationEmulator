@@ -34,6 +34,11 @@ public:
 	// update cycles early (typically called before accessing registers that could alter the result)
 	void UpdateEarly() noexcept;
 
+	void ScheduleUpdate( uint32_t cyclesFromNow ) noexcept
+	{
+		m_cyclesUntilEvent = ( std::min )( m_cyclesUntilEvent, m_cycles + cyclesFromNow );
+	}
+
 	uint32_t GetCycles() const noexcept { return m_cycles; }
 	uint32_t GetCyclesUntilEvent() const noexcept { return m_cyclesUntilEvent; }
 
