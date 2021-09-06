@@ -151,6 +151,8 @@ bool Timer::Update( uint32_t ticks ) noexcept
 		return false;
 	}
 
+	dbAssert( ticks <= GetTicksUntilIrq() );
+
 	const auto oldCounter = m_counter;
 	m_counter += ticks;
 

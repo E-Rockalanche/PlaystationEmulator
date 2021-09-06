@@ -884,7 +884,7 @@ void Gpu::RenderRectangle() noexcept
 
 void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 {
-	// dbLog( "Gpu::UpdateTimers()" );
+	dbExpects( cpuTicks <= m_cachedCyclesUntilNextEvent );
 
 	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuTicks ) );
 	const float dots = gpuTicks * GetDotsPerVideoCycle();
@@ -982,6 +982,9 @@ uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 
 	const auto cpuCycles = static_cast<uint32_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
 	dbAssert( cpuCycles > 0 );
+
+	m_cachedCyclesUntilNextEvent = cpuCycles;
+
 	return cpuCycles;
 }
 

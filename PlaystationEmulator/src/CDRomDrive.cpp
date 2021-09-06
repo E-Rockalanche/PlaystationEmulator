@@ -367,16 +367,16 @@ void CDRomDrive::AddCycles( uint32_t cycles ) noexcept
 		if ( cyclesUntilEvent == InfiniteCycles )
 			return false;
 
-		if ( currentCycles >= cyclesUntilEvent )
+		dbAssert( currentCycles <= cyclesUntilEvent );
+		cyclesUntilEvent -= currentCycles;
+
+		if ( cyclesUntilEvent == 0 )
 		{
 			cyclesUntilEvent = InfiniteCycles;
 			return true;
 		}
-		else
-		{
-			cyclesUntilEvent -= currentCycles;
-			return false;
-		}
+
+		return false;
 	};
 
 	if ( updateCycles( m_cyclesUntilSecondResponse, cycles ) )

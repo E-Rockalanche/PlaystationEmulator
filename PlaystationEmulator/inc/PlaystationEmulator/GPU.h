@@ -329,6 +329,7 @@ private:
 	float m_dotTimerFraction = 0.0f;
 	bool m_hblank = false;
 	bool m_vblank = false;
+	mutable uint32_t m_cachedCyclesUntilNextEvent = 0;
 
 	bool m_displayFrame = false;
 
