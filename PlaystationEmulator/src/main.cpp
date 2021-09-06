@@ -192,15 +192,21 @@ int main( int, char** )
 
 	stdx::flat_unordered_map<SDL_Keycode, PSX::Button> controllerMapping
 	{
+		{ SDLK_RSHIFT, PSX::Button::Select },
+		{ SDLK_RETURN, PSX::Button::Start },
 		{ SDLK_UP, PSX::Button::Up },
+		{ SDLK_RIGHT, PSX::Button::Right },
 		{ SDLK_DOWN, PSX::Button::Down },
 		{ SDLK_LEFT, PSX::Button::Left },
-		{ SDLK_RIGHT, PSX::Button::Right }
+		{ SDLK_v, PSX::Button::Triangle },
+		{ SDLK_c, PSX::Button::Circle },
+		{ SDLK_x, PSX::Button::X },
+		{ SDLK_z, PSX::Button::Square },
 	};
 
 	cycleScheduler.ScheduleNextUpdate();
 
-	bool viewVRam = false;
+	// bool viewVRam = false;
 	bool quit = false;
 	while ( !quit )
 	{
@@ -218,6 +224,7 @@ int main( int, char** )
 				case SDL_KEYDOWN:
 				{
 					const auto key = event.key.keysym.sym;
+					/*
 					switch ( key )
 					{
 						case SDLK_t:
@@ -237,6 +244,7 @@ int main( int, char** )
 							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
 							break;
 					}
+					*/
 
 					auto it = controllerMapping.find( key );
 					if ( it != controllerMapping.end() )

@@ -9,7 +9,8 @@ uint32_t Timer::Read( uint32_t index ) noexcept
 	switch ( index )
 	{
 		case 0:
-			dbLog( "Timer%u::Read() -- counter [%X]", m_index, m_counter );
+			// Timer2 counter is read a LOT
+			// dbLog( "Timer%u::Read() -- counter [%X]", m_index, m_counter );
 			return m_counter;
 
 		case 1:

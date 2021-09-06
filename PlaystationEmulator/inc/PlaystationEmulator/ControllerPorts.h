@@ -196,7 +196,7 @@ private:
 	}
 
 	// TEMP until the cycles shceduler is improved
-	void UpdateCyclesIfTransferring();
+	void UpdateCyclesBeforeRead() const noexcept;
 
 private:
 	InterruptControl& m_interruptControl;

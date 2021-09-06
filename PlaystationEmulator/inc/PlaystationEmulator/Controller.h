@@ -57,12 +57,12 @@ public:
 
 	void Press( Button button )
 	{
-		stdx::set_bits( m_buttons, static_cast<uint16_t>( button ) );
+		stdx::reset_bits( m_buttons, static_cast<uint16_t>( button ) );
 	}
 
 	void Release( Button button )
 	{
-		stdx::reset_bits( m_buttons, static_cast<uint16_t>( button ) );
+		stdx::set_bits( m_buttons, static_cast<uint16_t>( button ) );
 	}
 
 	void Reset()
@@ -73,7 +73,7 @@ public:
 private:
 
 	uint32_t m_sequence = 0;
-	uint16_t m_buttons = 0;
+	uint16_t m_buttons = 0xffffu;
 };
 
 }

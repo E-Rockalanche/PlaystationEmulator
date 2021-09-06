@@ -45,7 +45,7 @@ uint32_t ControllerPorts::ReadData() noexcept
 	// A data byte can be read when JOY_STAT.1=1. Data should be read only via 8bit memory access
 	// (the 16bit/32bit "preview" feature is rather unusable, and usually there shouldn't be more than 1 byte in the FIFO anyways).
 
-	UpdateCyclesIfTransferring();
+	UpdateCyclesBeforeRead();
 
 	const uint8_t data = m_rxBufferFull ? m_rxBuffer : 0xff;
 	m_rxBufferFull = false;
@@ -56,7 +56,7 @@ uint32_t ControllerPorts::ReadData() noexcept
 
 uint32_t ControllerPorts::ReadStatus() noexcept
 {
-	UpdateCyclesIfTransferring();
+	UpdateCyclesBeforeRead();
 
 	const uint32_t status = m_status |
 		( m_baudrateTimer << 11 ) |
@@ -75,7 +75,7 @@ uint32_t ControllerPorts::ReadStatus() noexcept
 
 void ControllerPorts::WriteData( uint32_t value ) noexcept
 {
-	UpdateCyclesIfTransferring();
+	m_cycleScheduler.UpdateEarly();
 
 	// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
 	// the written value is sent to the controller or memory card, and, simultaneously,
@@ -89,11 +89,13 @@ void ControllerPorts::WriteData( uint32_t value ) noexcept
 	m_txBufferFull = true;
 
 	TryTransfer();
+
+	m_cycleScheduler.ScheduleNextUpdate();
 }
 
 void ControllerPorts::WriteControl( uint16_t value ) noexcept
 {
-	UpdateCyclesIfTransferring();
+	m_cycleScheduler.UpdateEarly();
 
 	dbLog( "ControllerPorts::Write() -- control [%X]", value );
 	m_control = value & Control::WriteMask;
@@ -114,6 +116,8 @@ void ControllerPorts::WriteControl( uint16_t value ) noexcept
 	}
 
 	TryTransfer();
+
+	m_cycleScheduler.ScheduleNextUpdate();
 }
 
 void ControllerPorts::ReloadBaudrateTimer() noexcept
@@ -141,12 +145,12 @@ void ControllerPorts::TryTransfer() noexcept
 		m_txBufferFull = false;
 		m_state = State::Transferring;
 		m_cyclesUntilEvent = GetTransferCycles();
-		m_cycleScheduler.ScheduleUpdate( m_cyclesUntilEvent );
 	}
 }
 
 void ControllerPorts::DoTransfer()
 {
+	dbExpects( m_cycleScheduler.IsUpdating() );
 	dbExpects( m_state == State::Transferring );
 
 	// the hardware automatically enables receive when /JOYn is low
@@ -189,6 +193,7 @@ void ControllerPorts::DoTransfer()
 
 void ControllerPorts::DoAck()
 {
+	dbExpects( m_cycleScheduler.IsUpdating() );
 	dbExpects( m_state == State::PendingAck );
 
 	// ack is low
@@ -218,7 +223,7 @@ void ControllerPorts::UpdateCycles( uint32_t cycles )
 	if ( m_state == State::Idle )
 		return;
 
-	dbExpects( cycles >= m_cyclesUntilEvent );
+	dbExpects( cycles <= m_cyclesUntilEvent );
 
 	m_cyclesUntilEvent -= cycles;
 	if ( m_cyclesUntilEvent > 0 )
@@ -239,10 +244,13 @@ void ControllerPorts::UpdateCycles( uint32_t cycles )
 	}
 }
 
-void ControllerPorts::UpdateCyclesIfTransferring()
+void ControllerPorts::UpdateCyclesBeforeRead() const noexcept
 {
 	if ( IsTransferring() && m_cycleScheduler.GetCycles() >= m_cyclesUntilEvent )
+	{
 		m_cycleScheduler.UpdateEarly();
+		m_cycleScheduler.ScheduleNextUpdate();
+	}
 }
 
 }
