@@ -10,8 +10,11 @@ void CycleScheduler::AddCycles( uint32_t cycles ) noexcept
 	m_cycles += cycles;
 	while ( m_cycles >= m_cyclesUntilEvent )
 	{
-		UpdateSubscriberCycles( m_cyclesUntilEvent );
-		m_cycles -= m_cyclesUntilEvent;
+		if ( m_cyclesUntilEvent > 0 )
+		{
+			UpdateSubscriberCycles( m_cyclesUntilEvent );
+			m_cycles -= m_cyclesUntilEvent;
+		}
 
 		ScheduleNextSubscriberUpdate();
 	}

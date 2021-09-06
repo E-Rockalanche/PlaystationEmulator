@@ -81,6 +81,9 @@
     <ClInclude Include="inc\PlaystationEmulator\GpuDefs.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\Controller.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">
@@ -120,6 +123,12 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\MemoryControl.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Controller.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ControllerPorts.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

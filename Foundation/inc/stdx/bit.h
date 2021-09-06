@@ -34,13 +34,13 @@ inline constexpr void set_bit( T& value, size_t bit, bool set = true ) noexcept
 }
 
 template <typename T, STDX_requires( std::is_integral_v<T> )
-	inline constexpr void reset_bit( T& value, size_t bit ) noexcept
+inline constexpr void reset_bit( T& value, size_t bit ) noexcept
 {
 	value &= ~( 1 << bit );
 }
 
 template <typename T, STDX_requires( std::is_integral_v<T> )
-	inline constexpr void set_bits( T& value, T flags, bool set = true ) noexcept
+inline constexpr void set_bits( T& value, T flags, bool set = true ) noexcept
 {
 	if ( set )
 		value |= flags;

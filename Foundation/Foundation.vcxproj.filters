@@ -42,6 +42,9 @@
     <ClInclude Include="inc\Math\Rectangle.h">
       <Filter>inc\Math</Filter>
     </ClInclude>
+    <ClInclude Include="inc\stdx\flat_unordered_map.h">
+      <Filter>inc\stdx</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp">

@@ -8,6 +8,7 @@
 #include "InterruptControl.h"
 #include "MemoryControl.h"
 #include "MemoryMap.h"
+#include "Controller.h"
 #include "ControllerPorts.h"
 #include "RAM.h"
 #include "Renderer.h"
@@ -17,6 +18,8 @@
 
 #include <SDL.h>
 #include <glad/glad.h>
+
+#include <stdx/flat_unordered_map.h>
 
 #include <cmath>
 #include <fstream>
@@ -175,20 +178,29 @@ int main( int, char** )
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 	cdRomDrive->Reset();
 
-	PSX::ControllerPorts peripheralPorts;
-	peripheralPorts.Reset();
+	PSX::ControllerPorts controllerPorts;
+	controllerPorts.Reset();
 
-	// PSX::DualSerialPort dualSerialPort;
-
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, peripheralPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
-	cpu->Reset();
 
+	// controller mapping
+	PSX::Controller controller;
+	controllerPorts.SetController( 0, &controller );
+
+	stdx::flat_unordered_map<SDL_Keycode, PSX::Button> controllerMapping
+	{
+		{ SDLK_UP, PSX::Button::Up },
+		{ SDLK_DOWN, PSX::Button::Down },
+		{ SDLK_LEFT, PSX::Button::Left },
+		{ SDLK_RIGHT, PSX::Button::Right }
+	};
+
+	cpu->Reset();
 	cycleScheduler.ScheduleNextSubscriberUpdate();
 
 	bool viewVRam = false;
-
 	bool quit = false;
 	while ( !quit )
 	{
@@ -204,7 +216,9 @@ int main( int, char** )
 					break;
 
 				case SDL_KEYDOWN:
-					switch ( event.key.keysym.sym )
+				{
+					const auto key = event.key.keysym.sym;
+					switch ( key )
 					{
 						case SDLK_t:
 							// load test EXE
@@ -223,7 +237,22 @@ int main( int, char** )
 							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
 							break;
 					}
+
+					auto it = controllerMapping.find( key );
+					if ( it != controllerMapping.end() )
+						controller.Press( it->second );
+
 					break;
+				}
+
+				case SDL_KEYUP:
+				{
+					const auto key = event.key.keysym.sym;
+					auto it = controllerMapping.find( key );
+					if ( it != controllerMapping.end() )
+						controller.Release( it->second );
+					break;
+				}
 			}
 		}
 

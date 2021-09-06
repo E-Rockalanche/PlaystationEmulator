@@ -9,6 +9,10 @@
 namespace PSX
 {
 
+class Controller;
+class CycleScheduler;
+class InterruptControl;
+
 class ControllerPorts
 {
 public:
@@ -30,7 +34,7 @@ public:
 			RxFifoNotEmpty = 1 << 1, // tied to rx buffer
 			TxReadyFlag2 = 1 << 2,
 			RxParityError = 1 << 3,
-			AckInputLevel = 1 << 7,
+			AckInputLevel = 1 << 7, // 0=high, 1=low
 			InterruptRequest = 1 << 9,
 			BaudrateTimerMask = 0x1fffffu << 11
 		};
@@ -75,7 +79,7 @@ public:
 			Acknowledge = 1 << 4,
 			Reset = 1 << 6,
 			RXInterruptMode = 0x3 << 8,
-			TXInterruptMode = 1 << 10,
+			TXInterruptEnable = 1 << 10,
 			RXInterruptEnable = 1 << 11,
 			ACKInterruptEnable = 1 << 12,
 			DesiredSlotNumber = 1 << 13,
@@ -84,66 +88,17 @@ public:
 		};
 	};
 
-	void Reset()
-	{
-		m_status = 0;
-		m_baudrateTimer = 0;
+	ControllerPorts( InterruptControl& interruptControl, CycleScheduler& cycleScheduler );
 
-		m_mode.value = 0;
-		m_mode.baudrateReloadFactor = 1;
-		// TODO: mode defaults to 8bit and no parity?
-
-		m_control = 0;
-		m_baudrateReloadValue = 0x0088;
-
-		m_txBuffer = 0;
-		m_txBufferFull = false;
-
-		m_rxBuffer = 0;
-		m_rxBufferFull = false;
-	}
+	void Reset();
 
 	// 32bit registers
 
-	uint32_t ReadData() noexcept
-	{
-		// A data byte can be read when JOY_STAT.1=1. Data should be read only via 8bit memory access
-		// (the 16bit/32bit "preview" feature is rather unusable, and usually there shouldn't be more than 1 byte in the FIFO anyways).
+	uint32_t ReadData() noexcept;
 
-		const uint8_t data = m_rxBufferFull ? m_rxBuffer : 0xff;
-		m_rxBufferFull = false;
+	uint32_t ReadStatus() const noexcept;
 
-		dbLog( "ControllerPorts::Read() -- data [%X]", data );
-		return data | ( data << 8 ) | ( data << 16 ) | ( data << 24 );
-	}
-
-	uint32_t ReadStatus() const noexcept
-	{
-		const uint32_t status = m_status |
-			( m_baudrateTimer << 11 ) |
-			( m_rxBufferFull << 1 ) |
-			( (uint32_t)!m_txBufferFull ) |
-			( ( !m_txBufferFull && !m_transfering ) << 2 );
-
-		dbLog( "ControllerPorts::Read() -- status [%X]", status );
-		return status;
-	}
-
-	void WriteData( uint32_t value ) noexcept
-	{
-		// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
-		// the written value is sent to the controller or memory card, and, simultaneously,
-		// a byte is received (and stored in RX FIFO if JOY_CTRL.1 or JOY_CTRL.2 is set).
-		dbLog( "ControllerPorts::Write() -- data [%X]", value );
-
-		if ( m_txBufferFull )
-			dbLogWarning( "ControllerPorts::WriteData() -- TX buffer is full" );
-
-		m_txBuffer = static_cast<uint8_t>( value );
-		m_txBufferFull = true;
-
-		CheckTransfer();
-	}
+	void WriteData( uint32_t value ) noexcept;
 
 	// 16bit registers
 
@@ -171,28 +126,7 @@ public:
 		m_mode.value = static_cast<uint16_t>( value ) & Mode::WriteMask;
 	}
 
-	void WriteControl( uint16_t value ) noexcept
-	{
-		dbLog( "ControllerPorts::Write() -- control [%X]", value );
-		m_control = value & Control::WriteMask;
-
-		if ( value & Control::Reset )
-		{
-			// soft reset
-			dbLog( "\tsoft reset" );
-			m_control = 0;
-			m_status = 0;
-			m_mode.value = 0;
-		}
-
-		if ( value & Control::Acknowledge )
-		{
-			dbLog( "\tacknowledge" );
-			stdx::reset_bits( m_status, Status::RxParityError | Status::InterruptRequest );
-		}
-
-		CheckTransfer();
-	}
+	void WriteControl( uint16_t value ) noexcept;
 
 	void WriteBaudrateReloadValue( uint16_t value ) noexcept
 	{
@@ -209,48 +143,70 @@ public:
 		ReloadBaudrateTimer();
 	}
 
-private:
-	void ReloadBaudrateTimer() noexcept
+	void SetController( size_t slot, Controller* controller )
 	{
-		uint16_t factor;
-		switch ( m_mode.baudrateReloadFactor )
-		{
-			case 2:	factor = 16;	break;
-			case 3:	factor = 64;	break;
-			default: factor = 1;	break;
-		}
-		m_baudrateTimer = ( m_baudrateReloadValue * factor ) / 2; // max value will be 21 bits
+		m_controllers[ slot ] = controller;
 	}
+
+private:
+	enum class State
+	{
+		Idle,
+		Transferring,
+		PendingAck
+	};
+
+	// values copied from duckstation
+	static constexpr uint32_t ControllerAckCycles = 450;
+	static constexpr uint32_t MemoryCardAckCycles = 170;
+
+	void ReloadBaudrateTimer() noexcept;
 
 	uint16_t GetRXInterruptMode() const noexcept
 	{
 		return ( m_control << 8 ) & 0x3;
 	}
 
-	void CheckTransfer()
+	bool IsFinishedTransfer() const noexcept
 	{
-		if ( ( m_control & Control::TXEnable ) && m_txBufferFull && !m_transfering )
-		{
-			dbLog( "ControllerPorts::CheckTransfer()" );
+		return !m_txBufferFull && ( m_state == State::Idle );
+	}
 
-			if ( m_rxBufferFull )
-				dbLogWarning( "ControllerPorts::CheckTransfer() -- RX buffer is full" );
+	bool IsTransferring() const noexcept
+	{
+		return m_state != State::Idle;
+	}
 
-			m_rxBuffer = 0xff; // nothing plugged in
-			m_rxBufferFull = true;
+	void TryTransfer() noexcept;
 
-			m_txBufferFull = false;
+	uint32_t GetTransferCycles() const noexcept
+	{
+		return m_baudrateReloadValue * 8; // baudrate * 8 bits/byte
+	}
 
-			m_transfering = false; // TODO: timing
-		}
+	void DoTransfer();
+	void DoAck();
+	void EndTransfer();
+
+	void UpdateCycles( uint32_t cycles );
+
+	uint32_t GetCyclesUntilEvent() const noexcept
+	{
+		return ( m_state == State::Idle ) ? std::numeric_limits<uint32_t>::max() : m_cyclesUntilEvent;
 	}
 
 private:
+	InterruptControl& m_interruptControl;
+	CycleScheduler& m_cycleScheduler;
+
 	uint32_t m_status = 0;
 	uint32_t m_baudrateTimer = 0;
 	Mode m_mode{};
 	uint16_t m_control = 0;
 	uint16_t m_baudrateReloadValue = 0;
+
+	State m_state = State::Idle;
+	uint32_t m_cyclesUntilEvent = 0;
 
 	uint8_t m_txBuffer = 0;
 	bool m_txBufferFull = false;
@@ -258,7 +214,7 @@ private:
 	uint8_t m_rxBuffer = 0;
 	bool m_rxBufferFull = false;
 
-	bool m_transfering = false;
+	std::array<Controller*, 2> m_controllers{};
 };
 
 }
