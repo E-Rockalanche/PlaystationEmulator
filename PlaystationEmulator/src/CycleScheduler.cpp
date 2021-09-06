@@ -7,34 +7,38 @@ namespace PSX
 
 void CycleScheduler::AddCycles( uint32_t cycles ) noexcept
 {
+	dbExpects( !m_inUpdate ); // unsafe to add cycles while updating
+
 	m_cycles += cycles;
 	while ( m_cycles >= m_cyclesUntilEvent )
 	{
-		UpdateSubscriberCycles( m_cyclesUntilEvent );
-		m_cycles -= m_cyclesUntilEvent;
+		if ( m_cyclesUntilEvent > 0 )
+		{
+			UpdateCycles( m_cyclesUntilEvent );
+			m_cycles -= m_cyclesUntilEvent;
+		}
 
-		ScheduleNextSubscriberUpdate();
+		ScheduleNextUpdate();
 	}
 }
 
-void CycleScheduler::UpdateSubscriberCycles( uint32_t cycles ) noexcept
+void CycleScheduler::UpdateCycles( uint32_t cycles ) noexcept
 {
-	dbExpects( !m_inUpdate ); // update callback should not call the cycle scheduler
+	dbExpects( !m_inUpdate ); // cannot recursively call UpdateCycles()
+	dbExpects( cycles > 0 );
+	dbExpects( cycles <= m_cyclesUntilEvent );
 
-	if ( cycles > 0 )
-	{
-		m_inUpdate = true;
+	m_inUpdate = true;
 
-		for ( auto& subscription : m_subscriptions )
-			subscription.update( cycles );
+	for ( auto& subscription : m_subscriptions )
+		subscription.update( cycles );
 
-		m_inUpdate = false;
-	}
+	m_inUpdate = false;
 }
 
-void CycleScheduler::ScheduleNextSubscriberUpdate() noexcept
+void CycleScheduler::ScheduleNextUpdate() noexcept
 {
-	dbExpects( !m_inUpdate ); // update callback should not call the cycle scheduler
+	dbExpects( !m_inUpdate ); // unsafe to schedule update while updating
 
 	m_cyclesUntilEvent = std::numeric_limits<uint32_t>::max();
 	for ( const auto& subscription : m_subscriptions )

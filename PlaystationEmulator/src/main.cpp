@@ -185,7 +185,7 @@ int main( int, char** )
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
 	cpu->Reset();
 
-	cycleScheduler.ScheduleNextSubscriberUpdate();
+	cycleScheduler.ScheduleNextUpdate();
 
 	bool viewVRam = false;
 

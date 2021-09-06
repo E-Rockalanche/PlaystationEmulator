@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdx/assert.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -19,11 +21,13 @@ public:
 
 	void Register( UpdateFunction update, GetCyclesFunction getCycles )
 	{
+		dbExpects( !m_inUpdate ); // unsafe to register new callbacks while updating
 		m_subscriptions.push_back( { std::move( update ), std::move( getCycles ) } );
 	}
 
 	void Reset() noexcept
 	{
+		dbExpects( !m_inUpdate ); // unsafe to reset while updating
 		m_cycles = 0;
 		m_cyclesUntilEvent = 0;
 	}
@@ -32,20 +36,31 @@ public:
 	void AddCycles( uint32_t cycles ) noexcept;
 
 	// update cycles early (typically called before accessing registers that could alter the result)
-	void UpdateSubscriberCycles() noexcept
+	void UpdateEarly() noexcept
 	{
-		UpdateSubscriberCycles( m_cycles );
+		UpdateCycles( m_cycles );
 		m_cycles = 0;
 	}
 
 	// calculates cycles until next event
-	void ScheduleNextSubscriberUpdate() noexcept;
+	void ScheduleNextUpdate() noexcept;
 
-	uint32_t GetCycles() const noexcept { return m_cycles; }
-	uint32_t GetCyclesUntilEvent() const noexcept { return m_cyclesUntilEvent; }
+	uint32_t GetCycles() const noexcept
+	{
+		dbExpects( !m_inUpdate ); // unsafe to get cycles while updating
+		return m_cycles;
+	}
+
+	uint32_t GetCyclesUntilEvent() const noexcept
+	{
+		dbExpects( !m_inUpdate ); // unsafe to get cycles while updating
+		return m_cyclesUntilEvent;
+	}
+
+	bool IsUpdating() const noexcept { return m_inUpdate; }
 
 private:
-	void UpdateSubscriberCycles( uint32_t cycles ) noexcept;
+	void UpdateCycles( uint32_t cycles ) noexcept;
 
 private:
 	struct Subscription

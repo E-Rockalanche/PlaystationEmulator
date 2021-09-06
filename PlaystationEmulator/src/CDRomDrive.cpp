@@ -404,25 +404,24 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 	dbExpects( m_pendingCommand == Command::Invalid );
 	dbExpects( m_cyclesUntilCommand == InfiniteCycles );
 
-	m_cycleScheduler.UpdateSubscriberCycles();
+	m_cycleScheduler.UpdateEarly();
 
 	m_pendingCommand = command;
 	m_commandTransferBusy = true;
 	m_cyclesUntilCommand = (command == Command::Init) ? 0x0013cce : 0x000c4e1; // init command takes longer to respond
 
-	m_cycleScheduler.ScheduleNextSubscriberUpdate();
+	m_cycleScheduler.ScheduleNextUpdate();
 }
 
 void CDRomDrive::QueueSecondResponse( Command command, int32_t ticks = 0x0004a00 ) noexcept // default ticks value is placeholder
 {
+	dbExpects( m_cycleScheduler.IsUpdating() ); // this should only get called in a cycle update callback
 	dbExpects( ticks > 0 );
 	dbExpects( m_pendingSecondResponseCommand == Command::Invalid );
 	dbExpects( m_cyclesUntilSecondResponse == InfiniteCycles );
 
 	m_pendingSecondResponseCommand = command;
 	m_cyclesUntilSecondResponse = ticks;
-
-	// we should be in a CycleScheduler update callback
 }
 
 void CDRomDrive::CheckInterrupt() noexcept
