@@ -164,7 +164,6 @@ int main( int, char** )
 	interruptControl.Reset();
 
 	PSX::CycleScheduler cycleScheduler;
-	cycleScheduler.Reset();
 
 	PSX::Timers timers{ interruptControl, cycleScheduler };
 	timers.Reset();
@@ -184,6 +183,7 @@ int main( int, char** )
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
+	cpu->Reset();
 
 	// controller mapping
 	PSX::Controller controller;
@@ -197,8 +197,7 @@ int main( int, char** )
 		{ SDLK_RIGHT, PSX::Button::Right }
 	};
 
-	cpu->Reset();
-	cycleScheduler.ScheduleNextSubscriberUpdate();
+	cycleScheduler.Reset();
 
 	bool viewVRam = false;
 	bool quit = false;

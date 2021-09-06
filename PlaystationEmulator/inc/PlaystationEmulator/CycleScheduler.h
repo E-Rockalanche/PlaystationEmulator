@@ -32,19 +32,16 @@ public:
 	void AddCycles( uint32_t cycles ) noexcept;
 
 	// update cycles early (typically called before accessing registers that could alter the result)
-	void UpdateSubscriberCycles() noexcept
-	{
-		UpdateSubscriberCycles( m_cycles );
-		m_cycles = 0;
-	}
-
-	// calculates cycles until next event
-	void ScheduleNextSubscriberUpdate() noexcept;
+	void UpdateEarly() noexcept;
 
 	uint32_t GetCycles() const noexcept { return m_cycles; }
 	uint32_t GetCyclesUntilEvent() const noexcept { return m_cyclesUntilEvent; }
 
 private:
+
+	// calculates cycles until next event
+	void ScheduleNextSubscriberUpdate() noexcept;
+
 	void UpdateSubscriberCycles( uint32_t cycles ) noexcept;
 
 private:
