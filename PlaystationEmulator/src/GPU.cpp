@@ -617,8 +617,9 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			// update cycles and renderer if the new status is different
 			if ( newStatus.value != m_status.value )
 			{
-				m_cycleScheduler.UpdateEarly();
+				m_cycleScheduler.UpdateSubscriberCycles();
 				m_status.value = newStatus.value;
+				m_cycleScheduler.ScheduleNextSubscriberUpdate();
 				m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 			}
 			break;
@@ -673,7 +674,10 @@ uint32_t Gpu::GpuStatus() noexcept
 	// update timers if it could affect the even/odd bit
 	const auto dotAfterCycles = m_currentDot + m_cycleScheduler.GetCycles() * GetDotsPerVideoCycle();
 	if ( dotAfterCycles >= GetDotsPerScanline() )
-		m_cycleScheduler.UpdateEarly();
+	{
+		m_cycleScheduler.UpdateSubscriberCycles();
+		m_cycleScheduler.ScheduleNextSubscriberUpdate();
+	}
 
 	// no logging since GpuStatus is called very often
 	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );

@@ -161,6 +161,7 @@ int main( int, char** )
 	interruptControl.Reset();
 
 	PSX::CycleScheduler cycleScheduler;
+	cycleScheduler.Reset();
 
 	PSX::Timers timers{ interruptControl, cycleScheduler };
 	timers.Reset();
@@ -184,7 +185,7 @@ int main( int, char** )
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
 	cpu->Reset();
 
-	cycleScheduler.Reset();
+	cycleScheduler.ScheduleNextSubscriberUpdate();
 
 	bool viewVRam = false;
 

@@ -404,11 +404,13 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 	dbExpects( m_pendingCommand == Command::Invalid );
 	dbExpects( m_cyclesUntilCommand == InfiniteCycles );
 
-	m_cycleScheduler.UpdateEarly();
+	m_cycleScheduler.UpdateSubscriberCycles();
 
 	m_pendingCommand = command;
 	m_commandTransferBusy = true;
 	m_cyclesUntilCommand = (command == Command::Init) ? 0x0013cce : 0x000c4e1; // init command takes longer to respond
+
+	m_cycleScheduler.ScheduleNextSubscriberUpdate();
 }
 
 void CDRomDrive::QueueSecondResponse( Command command, int32_t ticks = 0x0004a00 ) noexcept // default ticks value is placeholder
