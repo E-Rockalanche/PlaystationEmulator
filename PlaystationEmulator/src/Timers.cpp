@@ -249,10 +249,8 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 
 	if ( registerIndex < 3 )
 	{
-		m_cycleScheduler.UpdateSubscriberCycles();
-		const auto value = m_timers[ timerIndex ].Read( registerIndex );
-		m_cycleScheduler.ScheduleNextSubscriberUpdate();
-		return value;
+		m_cycleScheduler.UpdateEarly();
+		return m_timers[ timerIndex ].Read( registerIndex );
 	}
 	else
 	{
@@ -271,9 +269,8 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 
 	if ( registerIndex < 3 )
 	{
-		m_cycleScheduler.UpdateSubscriberCycles();
+		m_cycleScheduler.UpdateEarly();
 		m_timers[ timerIndex ].Write( registerIndex, static_cast<uint16_t>( value ) );
-		m_cycleScheduler.ScheduleNextSubscriberUpdate();
 	}
 	else
 	{
