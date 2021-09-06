@@ -151,6 +151,8 @@ bool Timer::Update( uint32_t ticks ) noexcept
 		return false;
 	}
 
+	dbAssert( ticks <= GetTicksUntilIrq() );
+
 	const auto oldCounter = m_counter;
 	m_counter += ticks;
 
@@ -250,7 +252,9 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 	if ( registerIndex < 3 )
 	{
 		m_cycleScheduler.UpdateEarly();
-		return m_timers[ timerIndex ].Read( registerIndex );
+		const auto value = m_timers[ timerIndex ].Read( registerIndex );
+		m_cycleScheduler.ScheduleNextUpdate();
+		return value;
 	}
 	else
 	{
@@ -271,6 +275,7 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	{
 		m_cycleScheduler.UpdateEarly();
 		m_timers[ timerIndex ].Write( registerIndex, static_cast<uint16_t>( value ) );
+		m_cycleScheduler.ScheduleNextUpdate();
 	}
 	else
 	{

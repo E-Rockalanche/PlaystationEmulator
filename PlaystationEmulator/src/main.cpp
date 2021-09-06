@@ -164,6 +164,7 @@ int main( int, char** )
 	interruptControl.Reset();
 
 	PSX::CycleScheduler cycleScheduler;
+	cycleScheduler.Reset();
 
 	PSX::Timers timers{ interruptControl, cycleScheduler };
 	timers.Reset();
@@ -197,7 +198,7 @@ int main( int, char** )
 		{ SDLK_RIGHT, PSX::Button::Right }
 	};
 
-	cycleScheduler.Reset();
+	cycleScheduler.ScheduleNextUpdate();
 
 	bool viewVRam = false;
 	bool quit = false;

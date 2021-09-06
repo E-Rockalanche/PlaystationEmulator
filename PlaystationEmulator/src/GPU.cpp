@@ -619,6 +619,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			{
 				m_cycleScheduler.UpdateEarly();
 				m_status.value = newStatus.value;
+				m_cycleScheduler.ScheduleNextUpdate();
 				m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 			}
 			break;
@@ -673,7 +674,10 @@ uint32_t Gpu::GpuStatus() noexcept
 	// update timers if it could affect the even/odd bit
 	const auto dotAfterCycles = m_currentDot + m_cycleScheduler.GetCycles() * GetDotsPerVideoCycle();
 	if ( dotAfterCycles >= GetDotsPerScanline() )
+	{
 		m_cycleScheduler.UpdateEarly();
+		m_cycleScheduler.ScheduleNextUpdate();
+	}
 
 	// no logging since GpuStatus is called very often
 	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
@@ -884,7 +888,7 @@ void Gpu::RenderRectangle() noexcept
 
 void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 {
-	// dbLog( "Gpu::UpdateTimers()" );
+	dbExpects( cpuTicks <= m_cachedCyclesUntilNextEvent );
 
 	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuTicks ) );
 	const float dots = gpuTicks * GetDotsPerVideoCycle();
@@ -982,6 +986,9 @@ uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 
 	const auto cpuCycles = static_cast<uint32_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
 	dbAssert( cpuCycles > 0 );
+
+	m_cachedCyclesUntilNextEvent = cpuCycles;
+
 	return cpuCycles;
 }
 

@@ -367,16 +367,16 @@ void CDRomDrive::AddCycles( uint32_t cycles ) noexcept
 		if ( cyclesUntilEvent == InfiniteCycles )
 			return false;
 
-		if ( currentCycles >= cyclesUntilEvent )
+		dbAssert( currentCycles <= cyclesUntilEvent );
+		cyclesUntilEvent -= currentCycles;
+
+		if ( cyclesUntilEvent == 0 )
 		{
 			cyclesUntilEvent = InfiniteCycles;
 			return true;
 		}
-		else
-		{
-			cyclesUntilEvent -= currentCycles;
-			return false;
-		}
+
+		return false;
 	};
 
 	if ( updateCycles( m_cyclesUntilSecondResponse, cycles ) )
@@ -409,18 +409,19 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 	m_pendingCommand = command;
 	m_commandTransferBusy = true;
 	m_cyclesUntilCommand = (command == Command::Init) ? 0x0013cce : 0x000c4e1; // init command takes longer to respond
+
+	m_cycleScheduler.ScheduleNextUpdate();
 }
 
 void CDRomDrive::QueueSecondResponse( Command command, int32_t ticks = 0x0004a00 ) noexcept // default ticks value is placeholder
 {
+	dbExpects( m_cycleScheduler.IsUpdating() ); // this should only get called in a cycle update callback
 	dbExpects( ticks > 0 );
 	dbExpects( m_pendingSecondResponseCommand == Command::Invalid );
 	dbExpects( m_cyclesUntilSecondResponse == InfiniteCycles );
 
 	m_pendingSecondResponseCommand = command;
 	m_cyclesUntilSecondResponse = ticks;
-
-	// we should be in a CycleScheduler update callback
 }
 
 void CDRomDrive::CheckInterrupt() noexcept
