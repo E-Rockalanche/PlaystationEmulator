@@ -53,6 +53,7 @@ flat in int DrawMode;
 
 out vec4 FragColor;
 
+uniform float u_alpha;
 uniform ivec2 u_texWindowMask;
 uniform ivec2 u_texWindowOffset;
 uniform sampler2D u_vram;
@@ -93,14 +94,9 @@ int SampleIndex8( ivec2 texCoord )
 	return ( sample >> shiftAmount ) & 0xff;
 }
 
-void main()
+vec4 LookupTexel()
 {
-	if ( bool( DrawMode & ( 1 << 11 ) ) )
-	{
-		// texture disabled
-		FragColor = BlendColor;
-		return;
-	}
+	vec4 color;
 
 	// texCord counted in color depth mode
 	ivec2 texCoord = ivec2( int( round( TexCoord.x ) ), int( round( TexCoord.y ) ) );
@@ -112,23 +108,46 @@ void main()
 
 	if ( colorMode == 0 )
 	{
-		FragColor = SampleClut( SampleIndex4( texCoord ) ); // get 4bit index
+		color = SampleClut( SampleIndex4( texCoord ) ); // get 4bit index
 	}
 	else if ( colorMode == 1 )
 	{
-		FragColor = SampleClut( SampleIndex8( texCoord ) ); // get 8bit index
+		color = SampleClut( SampleIndex8( texCoord ) ); // get 8bit index
 	}
 	else
 	{
-		FragColor = texelFetch( u_vram, TexPageBase + texCoord, 0 ); // get 16bit color directly
+		color = texelFetch( u_vram, TexPageBase + texCoord, 0 ); // get 16bit color directly
 	}
 
-	// only all 0 is fully transparent
-	if ( FragColor != vec4( 0.0 ) )
+	return color;
+}
+
+void main()
+{
+	vec4 color;
+
+	if ( bool( DrawMode & ( 1 << 11 ) ) )
 	{
-		FragColor *= BlendColor * 2.0;
-		FragColor.a = 1.0; // TODO: blend modes
+		// texture disabled
+		color = BlendColor;
 	}
+	else
+	{
+		// texture enabled
+		color = LookupTexel() * BlendColor * 2.0;
+	}
+
+	if ( color == vec4( 0.0 ) )
+		discard; // all zeroes is transparent
+
+	// select alpha based on semi transparency flag. Unfortunately this doesn't ignore the blend func & equation
+	float alpha;
+	if ( color.a == 1.0 )
+		alpha = u_alpha;
+	else
+		alpha = 1.0;
+
+	FragColor = vec4( color.rgb, alpha );
 }
 )glsl";
 

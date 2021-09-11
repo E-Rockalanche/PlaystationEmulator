@@ -58,7 +58,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	// get shader uniform locations
 	m_originLoc = m_clutShader.GetUniformLocation( "u_origin" );
 	m_displaySizeLoc = m_clutShader.GetUniformLocation( "u_displaySize" );
-
+	m_alphaLoc = m_clutShader.GetUniformLocation( "u_alpha" );
 	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 
@@ -151,6 +151,28 @@ void Renderer::SetDrawArea( GLint left, GLint top, GLint right, GLint bottom )
 	}
 }
 
+void Renderer::SetSemiTransparency( SemiTransparency semiTransparency )
+{
+	if ( m_semiTransparency != semiTransparency )
+	{
+		if ( m_semiTransparencyEnabled )
+			DrawBatch();
+
+		m_semiTransparency = semiTransparency;
+		UpdateBlendMode();
+	}
+}
+
+void Renderer::SetSemiTransparencyEnabled( bool enabled )
+{
+	if ( m_semiTransparencyEnabled != enabled )
+	{
+		DrawBatch();
+		m_semiTransparencyEnabled = enabled;
+		UpdateBlendMode();
+	}
+}
+
 void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels )
 {
 	dbExpects( left + width <= VRamWidth );
@@ -224,6 +246,9 @@ void Renderer::CheckDrawMode( uint16_t drawMode, uint16_t clut )
 	if ( m_lastDrawMode == drawMode && m_lastClut == clut )
 		return; // cached values are the same
 
+	m_lastDrawMode = drawMode;
+	m_lastClut = clut;
+
 	if ( stdx::any_of<uint16_t>( drawMode, 1 << 11 ) )
 		return; // textures are disabled
 
@@ -249,10 +274,51 @@ void Renderer::UpdateScissorRect()
 	dbCheckRenderErrors();
 }
 
-void Renderer::PushTriangle( const Vertex vertices[ 3 ] )
+void Renderer::UpdateBlendMode()
+{
+	if ( m_semiTransparencyEnabled )
+	{
+		glEnable( GL_BLEND );
+		switch ( m_semiTransparency )
+		{
+			case SemiTransparency::Blend:
+				glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+				glBlendEquation( GL_FUNC_ADD );
+				glUniform1f( m_alphaLoc, 0.5f );
+				break;
+
+			case SemiTransparency::Add:
+				glBlendFunc( GL_ONE, GL_ONE );
+				glBlendEquation( GL_FUNC_ADD );
+				glUniform1f( m_alphaLoc, 1.0f );
+				break;
+
+			case SemiTransparency::ReverseSubtract:
+				glBlendFunc( GL_ONE, GL_ONE );
+				glBlendEquation( GL_FUNC_REVERSE_SUBTRACT );
+				glUniform1f( m_alphaLoc, 1.0f );
+				break;
+
+			case SemiTransparency::AddQuarter:
+				glBlendFunc( GL_SRC_ALPHA, GL_ONE );
+				glBlendEquation( GL_FUNC_ADD );
+				glUniform1f( m_alphaLoc, 0.25f );
+				break;
+		}
+	}
+	else
+	{
+		glDisable( GL_BLEND );
+		glUniform1f( m_alphaLoc, 1.0f );
+	}
+}
+
+void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 {
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
+
+	SetSemiTransparencyEnabled( semiTransparent );
 
 	// updates read texture if sampling from dirty area
 	CheckDrawMode( vertices[ 0 ].drawMode, vertices[ 0 ].clut );
@@ -269,10 +335,10 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ] )
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
 }
 
-void Renderer::PushQuad( const Vertex vertices[ 4 ] )
+void Renderer::PushQuad( const Vertex vertices[ 4 ], bool semiTransparent )
 {
-	PushTriangle( vertices );
-	PushTriangle( vertices + 1 );
+	PushTriangle( vertices, semiTransparent );
+	PushTriangle( vertices + 1, semiTransparent );
 }
 
 void Renderer::DrawBatch()
@@ -280,24 +346,11 @@ void Renderer::DrawBatch()
 	if ( m_vertices.empty() )
 		return;
 
-	/*
-	// grow dirty area to include polygons
-	for ( auto& v : m_vertices )
-	{
-		const auto x = std::clamp<int>( v.position.x, m_drawAreaLeft, m_drawAreaRight );
-		const auto y = std::clamp<int>( v.position.y, m_drawAreaTop, m_drawAreaBottom );
-		m_dirtyArea.Grow( x, y );
-	}
-	*/
-
 	m_vertexBuffer.SubData( m_vertices.size(), m_vertices.data() );
 	glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
 	dbCheckRenderErrors();
 
 	m_vertices.clear();
-
-	// TEMP
-	// UpdateReadTexture();
 }
 
 void Renderer::UpdateReadTexture()
@@ -331,8 +384,7 @@ void Renderer::RestoreRenderState()
 
 	glEnable( GL_SCISSOR_TEST );
 
-	glEnable( GL_BLEND );
-	glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	UpdateBlendMode();
 
 	dbCheckRenderErrors();
 

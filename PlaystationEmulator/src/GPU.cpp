@@ -112,6 +112,8 @@ void Gpu::Reset()
 	m_status.readyToReceiveCommand = true;
 	m_status.readyToReceiveDmaBlock = true;
 
+	m_renderer.SetSemiTransparency( SemiTransparency::Blend );
+
 	m_texturedRectFlipX = false;
 	m_texturedRectFlipY = false;
 
@@ -523,7 +525,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_status.textureDisable = false;
 			m_status.interruptRequest = false;
 			m_status.displayDisable = true;
-			m_status.dmaDirection = DmaDirection::Off;
+			m_status.dmaDirection = static_cast<uint32_t>( DmaDirection::Off );
 			m_status.setMaskOnDraw = false;
 			m_status.checkMaskOnDraw = false;
 
@@ -806,9 +808,11 @@ void Gpu::RenderPolygon() noexcept
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
 
-	m_renderer.PushTriangle( vertices );
+	const bool semiTransparent = command & RenderCommand::SemiTransparency;
+
+	m_renderer.PushTriangle( vertices, semiTransparent );
 	if ( quad )
-		m_renderer.PushTriangle( vertices + 1 );
+		m_renderer.PushTriangle( vertices + 1, semiTransparent );
 
 	ClearCommandBuffer();
 }
@@ -881,7 +885,9 @@ void Gpu::RenderRectangle() noexcept
 		}
 	}
 
-	m_renderer.PushQuad( vertices );
+	const bool semiTransparent = command & RenderCommand::SemiTransparency;
+
+	m_renderer.PushQuad( vertices, semiTransparent );
 
 	ClearCommandBuffer();
 }

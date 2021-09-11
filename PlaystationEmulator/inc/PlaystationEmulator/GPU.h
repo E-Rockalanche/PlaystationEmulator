@@ -48,7 +48,6 @@ public:
 
 		struct
 		{
-			// draw mode
 			uint32_t texturePageBaseX : 4; // N*64
 			uint32_t texturePageBaseY : 1; // N*256
 			uint32_t semiTransparency : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
@@ -61,7 +60,6 @@ public:
 			uint32_t reverseFlag : 1;
 			uint32_t textureDisable : 1;
 
-			// 
 			uint32_t horizontalResolution2 : 1; // 0=256/320/512/640, 1=368
 			uint32_t horizontalResolution1 : 2; // 0=256, 1=320, 2=512, 3=640
 			uint32_t verticalResolution : 1; // 0=240, 1=480, when VerticalInterlace=1
@@ -87,73 +85,10 @@ public:
 		{
 			return static_cast<uint16_t>( ( value & 0x3ff ) | ( textureDisable << 11 ) );
 		}
+
+		SemiTransparency GetSemiTransparency() const noexcept { return static_cast<SemiTransparency>( semiTransparency ); }
 	};
 	static_assert( sizeof( Status ) == 4 );
-
-	enum class SemiTransparency : uint8_t
-	{
-		Blend,
-		Add,
-		Sub,
-		AddQuarter
-	};
-
-	enum class TexturePageColors : uint8_t
-	{
-		B4,
-		B8,
-		B15
-	};
-
-	enum class DrawPixelMode : uint8_t
-	{
-		Always,
-		NotToMaskedAreas
-	};
-
-	enum class InterlaceField : uint8_t
-	{
-		Top,
-		Bottom
-	};
-
-	enum class HorizontalResolution : uint8_t
-	{
-		P256 = 0,
-		P368 = 1, // always if bit 0 is set
-		P320 = 2,
-		P512 = 4,
-		P640 = 6
-	};
-
-	enum class VideoMode
-	{
-		NTSC,
-		PAL
-	};
-
-	enum class VerticalResolution : uint8_t
-	{
-		P240,
-		P480
-	};
-
-	enum class DisplayAreaColorDepth : uint8_t
-	{
-		B15,
-		B24
-	};
-
-	struct DmaDirection
-	{
-		enum : uint8_t
-		{
-			Off,
-			Fifo,
-			CpuToGP0,
-			GpuReadToCpu
-		};
-	};
 
 	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, CycleScheduler& cycleScheduler );
 

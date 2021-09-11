@@ -20,6 +20,68 @@ constexpr uint32_t ClutHeight = 1;
 constexpr uint32_t ClutBaseXMult = 16;
 constexpr uint32_t ClutBaseYMult = 1;
 
+enum class SemiTransparency
+{
+	Blend, // B/2 + F/2
+	Add, // B + F
+	ReverseSubtract, // B - F
+	AddQuarter // B + F/4
+};
+
+enum class TexturePageColors : uint8_t
+{
+	B4,
+	B8,
+	B15
+};
+
+enum class DrawPixelMode : uint8_t
+{
+	Always,
+	NotToMaskedAreas
+};
+
+enum class InterlaceField : uint8_t
+{
+	Top,
+	Bottom
+};
+
+enum class HorizontalResolution : uint8_t
+{
+	P256 = 0,
+	P368 = 1, // always if bit 0 is set
+	P320 = 2,
+	P512 = 4,
+	P640 = 6
+};
+
+enum class VideoMode
+{
+	NTSC,
+	PAL
+};
+
+enum class VerticalResolution : uint8_t
+{
+	P240,
+	P480
+};
+
+enum class DisplayAreaColorDepth : uint8_t
+{
+	B15,
+	B24
+};
+
+enum class DmaDirection
+{
+	Off,
+	Fifo,
+	CpuToGP0,
+	GpuReadToCpu
+};
+
 struct Position
 {
 	constexpr Position() = default;
