@@ -39,7 +39,7 @@ public:
 		GetLocL = 0x10,
 		GetLocP = 0x11,
 		SetSession = 0x12, // session
-		GetTN = 0x13,
+		GetTrackNumber = 0x13,
 		GetTD = 0x14, // track (BCD)
 		SeekL = 0x15,
 		SeekP = 0x16,
@@ -50,7 +50,6 @@ public:
 		ResetDrive = 0x1c,
 		GetQ = 0x1d, // adr, point
 		ReadTOC = 0x1e,
-		VideoCD = 0x1f, // sub, a, b, c, d, e
 
 		Secret1 = 0x50,
 		Secret2 = 0x51, // "Licensed by"
@@ -156,45 +155,6 @@ private:
 		m_responseBuffer.Push( m_status );
 		m_interruptFlags = response;
 	}
-	
-	// CDROM commands
-	void GetStat() noexcept;
-	void SetLoc() noexcept;
-	void Play() noexcept;
-	void Forward() noexcept;
-	void Backward() noexcept;
-	void ReadN() noexcept;
-	void MotorOn() noexcept;
-	void Stop() noexcept;
-	void Pause() noexcept;
-	void Init() noexcept;
-	void Mute() noexcept;
-	void Demute() noexcept;
-	void SetFilter() noexcept;
-	void SetMode() noexcept;
-	void GetParam() noexcept;
-	void GetLocL() noexcept;
-	void GetLocP() noexcept;
-	void SetSession() noexcept;
-	void GetTN() noexcept;
-	void GetTD() noexcept;
-	void SeekL() noexcept;
-	void SeekP() noexcept;
-	void Test() noexcept;
-	void GetID() noexcept;
-	void ReadS() noexcept;
-	void ResetDrive() noexcept;
-	void GetQ() noexcept;
-	void ReadTOC() noexcept;
-	void VideoCD() noexcept;
-	void Secret1() noexcept;
-	void Secret2() noexcept;
-	void Secret3() noexcept;
-	void Secret4() noexcept;
-	void Secret5() noexcept;
-	void Secret6() noexcept;
-	void Secret7() noexcept;
-	void SecretLock() noexcept;
 
 private:
 	InterruptControl& m_interruptControl;

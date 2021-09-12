@@ -404,43 +404,364 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 
 	switch ( command )
 	{
-		COMMAND_CASE( GetStat );
-		COMMAND_CASE( SetLoc );
-		COMMAND_CASE( Play );
-		COMMAND_CASE( Forward );
-		COMMAND_CASE( Backward );
-		COMMAND_CASE( ReadN );
-		COMMAND_CASE( MotorOn );
-		COMMAND_CASE( Stop );
-		COMMAND_CASE( Pause );
-		COMMAND_CASE( Init );
-		COMMAND_CASE( Mute );
-		COMMAND_CASE( Demute );
-		COMMAND_CASE( SetFilter );
-		COMMAND_CASE( SetMode );
-		COMMAND_CASE( GetParam );
-		COMMAND_CASE( GetLocL );
-		COMMAND_CASE( GetLocP );
-		COMMAND_CASE( SetSession );
-		COMMAND_CASE( GetTN );
-		COMMAND_CASE( GetTD );
-		COMMAND_CASE( SeekL );
-		COMMAND_CASE( SeekP );
-		COMMAND_CASE( Test );
-		COMMAND_CASE( GetID );
-		COMMAND_CASE( ReadS );
-		COMMAND_CASE( ResetDrive );
-		COMMAND_CASE( GetQ );
-		COMMAND_CASE( ReadTOC );
-		COMMAND_CASE( VideoCD );
-		COMMAND_CASE( Secret1 );
-		COMMAND_CASE( Secret2 );
-		COMMAND_CASE( Secret3 );
-		COMMAND_CASE( Secret4 );
-		COMMAND_CASE( Secret5 );
-		COMMAND_CASE( Secret6 );
-		COMMAND_CASE( Secret7 );
-		COMMAND_CASE( SecretLock );
+		// Control commands
+
+		case Command::SetFilter:
+		{
+			// Automatic ADPCM (CD-ROM XA) filter ignores sectors except those which have the same channel and file numbers in their subheader.
+			// This is the mechanism used to select which of multiple songs in a single .XA file to play.
+			m_file = m_parameterBuffer.Pop();
+			m_channel = m_parameterBuffer.Pop();
+			dbLog( "CDRomDrive::SetFilter -- file: %X, channel: %X", m_file, m_channel );
+
+			SendStatusResponse();
+
+			dbBreak(); // TODO
+			break;
+		}
+
+		case Command::SetMode:
+		{
+			m_mode = m_parameterBuffer.Pop();
+			dbLog( "CDRomDrive::SetMode() -- mode: %u", (uint32_t)m_mode );
+
+			SendStatusResponse();
+			break;
+		}
+
+		case Command::Init:
+		{
+			dbLog( "CDRomDrive::Init" ); // TODO: set mode=0x00, activate drive motor, standby, abort all commands
+
+			m_mode = 0;
+
+			// TODO: activate driver motor, standby
+
+			m_pendingCommand = Command::Invalid;
+			m_pendingSecondResponseCommand = Command::Invalid;
+			m_cyclesUntilCommand = InfiniteCycles;
+			m_cyclesUntilSecondResponse = InfiniteCycles;
+
+			SendStatusResponse();
+
+			QueueSecondResponse( Command::Init );
+			break;
+		}
+
+		case Command::ResetDrive:
+		{
+			// Resets the drive controller, reportedly, same as opening and closing the drive door.
+			// The command executes no matter if/how many parameters are used
+			dbLog( "CDRomDrive::ResetDrive" );
+			m_responseBuffer.Push( m_status );
+			m_interruptFlags = InterruptResponse::First;
+			break;
+		}
+
+		case Command::MotorOn:
+		{
+			dbLog( "CDRomDrive::MotorOn" );
+			if ( m_motorOn )
+			{
+				SendErrorResponse( ErrorCode::WrongNumberOfParameters );
+			}
+			else
+			{
+				m_motorOn = true;
+				SendStatusResponse();
+				QueueSecondResponse( Command::MotorOn );
+			}
+			break;
+		}
+
+		case Command::Stop:
+		{
+			// Stops motor with magnetic brakes (stops within a second or so) (unlike power-off where it'd keep spinning for about 10 seconds),
+			// and moves the drive head to the begin of the first track
+			dbLog( "CDRomDrive::Stop" );
+			stdx::reset_bits<uint8_t>( m_status, Status::Read );
+			SendStatusResponse();
+			QueueSecondResponse( Command::Stop );
+			break;
+		}
+
+		case Command::Pause:
+		{
+			// Aborts Reading and Playing, the motor is kept spinning, and the drive head maintains the current location within reasonable error
+			dbLog( "CDRomDrive::Pause()" );
+			SendStatusResponse();
+			QueueSecondResponse( Command::Pause );
+			break;
+		}
+
+		// Seek commands
+
+		case Command::SetLoc:
+		{
+			const auto mm = m_parameterBuffer.Pop();
+			const auto ss = m_parameterBuffer.Pop();
+			const auto sect = m_parameterBuffer.Pop();
+			dbLog( "CDRomDrive::SetLoc -- amm: %X, ass: %X, asect: %X", mm, ss, sect );
+
+			if ( IsValidBCDAndLess( mm, CDRom::MinutesPerDiskBCD ) &&
+				IsValidBCDAndLess( ss, CDRom::SecondsPerMinuteBCD ) &&
+				IsValidBCDAndLess( sect, CDRom::SectorsPerSecondBCD ) )
+			{
+				// valid arguments
+				m_seekLocation = CDRom::Location::FromBCD( mm, ss, sect );
+				SendStatusResponse();
+			}
+			else
+			{
+				SendErrorResponse( ErrorCode::InvalidArgument );
+			}
+			break;
+		}
+
+		case Command::SeekL:
+		case Command::SeekP:
+		{
+			const bool logical = ( command == Command::SeekL );
+			dbLog( "CDRomDrive::Seek%c", logical ? 'L' : 'P' );
+
+			if ( CanReadDisk() )
+			{
+				m_status = Status::Seek;
+				SendStatusResponse();
+				QueueSecondResponse( logical ? Command::SeekL : Command::SeekP );
+			}
+			else
+			{
+				SendErrorResponse( ErrorCode::CannotRespondYet );
+			}
+			break;
+		}
+
+		case Command::SetSession:
+		{
+			dbLog( "CDRomDrive::SetSession" );
+			m_status = Status::Seek;
+			SendStatusResponse();
+			QueueSecondResponse( Command::SetSession );
+			break;
+		}
+
+		// Read Commands
+
+		case Command::ReadN:
+		{
+			// Read with retry. The command responds once with "stat,INT3", and then it's repeatedly sending "stat,INT1 --> datablock",
+			// that is continued even after a successful read has occured; use the Pause command to terminate the repeated INT1 responses.
+			dbLog( "CDRomDrive::ReadN" );
+			m_status = Status::Read;
+			SendStatusResponse();
+			QueueSecondResponse( Command::ReadN );
+			break;
+		}
+
+		case Command::ReadS:
+		{
+			// Read without automatic retry. Not sure what that means... does WHAT on errors?
+			dbLog( "CDRomDrive::ReadS" );
+			m_status = Status::Read;
+			SendStatusResponse();
+			QueueSecondResponse( Command::ReadS );
+			break;
+		}
+
+		case Command::ReadTOC:
+		{
+			dbLog( "CDRomDrive::ReadTOC" );
+			dbBreak(); // not supported in vC0
+			break;
+		}
+
+		// Status commands
+
+		case Command::GetStat:
+		{
+			// Returns stat (like many other commands), and additionally does reset the shell open flag for subsequent commands
+			SendStatusResponse();
+			stdx::reset_bits<uint8_t>( m_status, Status::ShellOpen );
+			break;
+		}
+
+		case Command::GetParam:
+		{
+			dbLog( "CDRomDrive::GetParam" );
+			SendStatusResponse();
+			m_responseBuffer.Push( m_mode );
+			m_responseBuffer.Push( 0 );
+			m_responseBuffer.Push( m_file );
+			m_responseBuffer.Push( m_channel );
+			break;
+		}
+
+		case Command::GetLocL:
+		{
+			// Retrieves 4-byte sector header, plus 4-byte subheader of the current sector.
+			// GetlocL can be send during active Read commands (but, mind that the GetlocL-INT3-response can't be received until any pending Read-INT1's are acknowledged).
+			dbLog( "CDRomDrive::GetLocL" );
+
+			m_responseBuffer.Push( BinaryToBCD( m_seekLocation.minute ) );
+			m_responseBuffer.Push( BinaryToBCD( m_seekLocation.second ) );
+			m_responseBuffer.Push( BinaryToBCD( m_seekLocation.sector ) );
+			m_responseBuffer.Push( m_mode );
+			m_responseBuffer.Push( m_file );
+			m_responseBuffer.Push( m_channel );
+			m_responseBuffer.Push( 0 ); // sm?
+			m_responseBuffer.Push( 0 ); // ci?
+			m_interruptFlags = InterruptResponse::First;
+
+			dbBreak(); // TODO
+			break;
+		}
+
+		case Command::GetLocP:
+		{
+			// Retrieves 8 bytes of position information from Subchannel Q with ADR=1.
+			// Mainly intended for displaying the current audio position during Play. All results are in BCD.
+			dbLog( "CDRomDrive::GetLocP" );
+
+			m_responseBuffer.Push( m_track );
+			m_responseBuffer.Push( m_trackIndex );
+			m_responseBuffer.Push( BinaryToBCD( m_trackLocation.minute ) );
+			m_responseBuffer.Push( BinaryToBCD( m_trackLocation.second ) );
+			m_responseBuffer.Push( BinaryToBCD( m_trackLocation.sector ) );
+			m_responseBuffer.Push( BinaryToBCD( m_seekLocation.minute ) );
+			m_responseBuffer.Push( BinaryToBCD( m_seekLocation.second ) );
+			m_responseBuffer.Push( BinaryToBCD( m_seekLocation.sector ) );
+			m_interruptFlags = InterruptResponse::First;
+			break;
+		}
+
+		case Command::GetTrackNumber:
+		{
+			// Get first track number, and last track number in the TOC of the current Session.
+			// The number of tracks in the current session can be calculated as (last-first+1).
+			// The first track number is usually 01h in the first (or only) session,
+			// and "last track of previous session plus 1" in further sessions.
+			dbLog( "CDRomDrive::GetTrackNumber" );
+
+			SendStatusResponse();
+			m_responseBuffer.Push( m_firstTrack );
+			m_responseBuffer.Push( m_lastTrack );
+			break;
+		}
+
+		case Command::GetTD:
+		{
+			// For a disk with NN tracks, parameter values 01h..NNh return the start of the specified track,
+			// parameter value 00h returns the end of the last track, and parameter values bigger than NNh return error code 10h.
+			// The GetTD values are relative to Index = 1 and are rounded down to second boundaries
+			const auto track = m_parameterBuffer.Pop();
+			dbLog( "CDRomDrive::GetTD -- track: %X", (uint32_t)track );
+
+			SendStatusResponse();
+
+			// TODO: return return start of specified track
+			m_responseBuffer.Push( 0 );
+			m_responseBuffer.Push( 0 );
+			break;
+		}
+
+		case Command::GetQ:
+		{
+			const auto adr = m_parameterBuffer.Pop();
+			const auto point = m_parameterBuffer.Pop();
+			dbLog( "CDRomDrive::GetQ() -- adr: %X, point: %X", (uint32_t)adr, (uint32_t)point );
+
+			dbBreak(); // not supported in vC0
+			break;
+		}
+
+		case Command::GetID:
+		{
+			SendStatusResponse();
+			QueueSecondResponse( Command::GetID, 0x0004a00 );
+			break;
+		}
+
+		// CD audio commands
+
+		case Command::Mute:
+		{
+			dbLog( "CDRomDRive::Mute" );
+			SendStatusResponse();
+			dbBreak(); // TODO
+			break;
+		}
+
+		case Command::Demute:
+		{
+			dbLog( "CDRomDRive::Demute" );
+			SendStatusResponse();
+			dbBreak(); // TODO
+			break;
+		}
+
+		case Command::Play:
+		{
+			dbLog( "CDRomDRive::Play" );
+			SendStatusResponse();
+			dbBreak(); // TODO
+			break;
+		}
+
+		case Command::Forward:
+		{
+			dbLog( "CDRomDRive::Forward" );
+			SendStatusResponse();
+			dbBreak(); // TODO
+			break;
+		}
+
+		case Command::Backward:
+		{
+			dbLog( "CDRomDRive::Backward" );
+			SendStatusResponse();
+			dbBreak(); // TODO
+			break;
+		}
+
+		// Test commands
+
+		case Command::Test:
+		{
+			dbLog( "CDRomDRive::Test" );
+			const auto subFunction = static_cast<TestFunction>( m_parameterBuffer.Pop() );
+
+			switch ( subFunction )
+			{
+				case TestFunction::GetVersion:
+					m_responseBuffer.Push( 0x94 );
+					m_responseBuffer.Push( 0x09 );
+					m_responseBuffer.Push( 0x19 );
+					m_responseBuffer.Push( 0xc0 );
+					m_interruptFlags = InterruptResponse::First;
+					break;
+
+				default: // TODO
+					dbBreak();
+					break;
+			}
+			break;
+		}
+
+		// Secret unlock commands
+
+		case Command::Secret1:
+		case Command::Secret2:
+		case Command::Secret3:
+		case Command::Secret4:
+		case Command::Secret5:
+		case Command::Secret6:
+		case Command::Secret7:
+		case Command::SecretLock:
+		{
+			dbBreak(); // TODO
+			break;
+		}
 
 		default:
 		{
@@ -595,315 +916,5 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 }
 
 // CDROM control commands
-
-// Automatic ADPCM (CD-ROM XA) filter ignores sectors except those which have the same channel and file numbers in their subheader.
-// This is the mechanism used to select which of multiple songs in a single .XA file to play.
-void CDRomDrive::SetFilter() noexcept
-{
-	m_file = m_parameterBuffer.Pop();
-	m_channel = m_parameterBuffer.Pop();
-	dbLog( "CDRomDrive::SetFilter() -- file: %X, channel: %X", (uint32_t)m_file, (uint32_t)m_channel );
-
-	SendStatusResponse();
-
-	dbBreak(); // TODO
-}
-
-void CDRomDrive::SetMode() noexcept
-{
-	m_mode = m_parameterBuffer.Pop();
-	dbLog( "CDRomDrive::SetMode() -- mode: %u", (uint32_t)m_mode );
-
-	SendStatusResponse();
-}
-
-void CDRomDrive::Init() noexcept
-{
-	dbLog( "CDRomDrive::Init()" ); // TODO: set mode=0x00, activate drive motor, standby, abort all commands
-
-	m_mode = 0;
-
-	// TODO: activate driver motor, standby
-
-	m_pendingCommand = Command::Invalid;
-	m_pendingSecondResponseCommand = Command::Invalid;
-	m_cyclesUntilCommand = InfiniteCycles;
-	m_cyclesUntilSecondResponse = InfiniteCycles;
-
-	SendStatusResponse();
-
-	QueueSecondResponse( Command::Init );
-}
-
-// Resets the drive controller, reportedly, same as opening and closing the drive door.
-// The command executes no matter if/how many parameters are used
-void CDRomDrive::ResetDrive() noexcept
-{
-	dbLog( "CDRomDrive::ResetDrive()" );
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-}
-
-void CDRomDrive::MotorOn() noexcept
-{
-	dbLog( "CDRomDrive::MotorOn()" );
-
-	if ( m_motorOn )
-	{
-		SendErrorResponse( ErrorCode::WrongNumberOfParameters );
-	}
-	else
-	{
-		m_motorOn = true;
-		SendStatusResponse();
-		QueueSecondResponse( Command::MotorOn );
-	}
-}
-
-// Stops motor with magnetic brakes (stops within a second or so) (unlike power-off where it'd keep spinning for about 10 seconds),
-// and moves the drive head to the begin of the first track
-void CDRomDrive::Stop() noexcept
-{
-	dbLog( "CDRomDrive::Stop()" );
-
-	stdx::reset_bits<uint8_t>( m_status, Status::Read );
-	SendStatusResponse();
-	QueueSecondResponse( Command::Stop );
-}
-
-// Aborts Reading and Playing, the motor is kept spinning, and the drive head maintains the current location within reasonable error
-void CDRomDrive::Pause() noexcept
-{
-	 // abort reading and playing
-
-	dbLog( "CDRomDrive::Pause()" );
-	SendStatusResponse();
-	QueueSecondResponse( Command::Pause );
-}
-
-// CDROM seek commands
-
-// Sets the seek target - but without yet starting the seek operation
-void CDRomDrive::SetLoc() noexcept
-{
-	const auto mm = m_parameterBuffer.Pop();
-	const auto ss = m_parameterBuffer.Pop();
-	const auto sect = m_parameterBuffer.Pop();
-	dbLog( "CDRomDrive::SetLoc() -- amm: %X, ass: %X, asect: %X", mm, ss, sect );
-
-	if ( IsValidBCDAndLess( mm, CDRom::MinutesPerDiskBCD ) &&
-		IsValidBCDAndLess( ss, CDRom::SecondsPerMinuteBCD ) &&
-		IsValidBCDAndLess( sect, CDRom::SectorsPerSecondBCD ) )
-	{
-		// valid arguments
-		m_seekLocation = CDRom::Location::FromBCD( mm, ss, sect );
-		SendStatusResponse();
-	}
-	else
-	{
-		SendErrorResponse( ErrorCode::InvalidArgument );
-	}
-}
-
-// Seek to Setloc's location in data mode
-void CDRomDrive::SeekL() noexcept
-{
-	dbLog( "CDRomDrive::SeekL()" );
-
-	m_status = Status::Seek;
-	SendStatusResponse();
-	QueueSecondResponse( Command::SeekL );
-}
-
-// Seek to Setloc's location in audio mode
-void CDRomDrive::SeekP() noexcept
-{
-	dbLog( "CDRomDrive::SeekP()" );
-
-	m_status = Status::Seek;
-	SendStatusResponse();
-	QueueSecondResponse( Command::SeekP );
-}
-
-// Seeks to session
-void CDRomDrive::SetSession() noexcept
-{
-	dbLog( "CDRomDrive::SetSession()" );
-
-	m_status = Status::Seek;
-	SendStatusResponse();
-	QueueSecondResponse( Command::SetSession );
-}
-
-// CDROM read commands
-
-// Read with retry. The command responds once with "stat,INT3", and then it's repeatedly sending "stat,INT1 --> datablock",
-// that is continued even after a successful read has occured; use the Pause command to terminate the repeated INT1 responses.
-void CDRomDrive::ReadN() noexcept
-{
-	dbLog( "CDRomDrive::ReadN()" );
-
-	m_status = Status::Read;
-	SendStatusResponse();
-	QueueSecondResponse( Command::ReadN );
-}
-
-// Read without automatic retry. Not sure what that means... does WHAT on errors?
-void CDRomDrive::ReadS() noexcept
-{
-	dbLog( "CDRomDrive::ReadS()" );
-
-	m_status = Status::Read;
-	SendStatusResponse();
-	QueueSecondResponse( Command::ReadS );
-}
-
-void CDRomDrive::ReadTOC() noexcept
-{
-	dbLog( "CDRomDrive::ReadTOC()" );
-
-	dbBreak(); // not supported in vC0
-}
-
-// CDROM status commands
-
-// Returns stat (like many other commands), and additionally does reset the shell open flag for subsequent commands
-void CDRomDrive::GetStat() noexcept
-{
-	dbLog( "CDRomDrive::GetStat()" );
-	SendStatusResponse();
-	stdx::reset_bits<uint8_t>( m_status, Status::ShellOpen );
-}
-
-// Returns stat (see Getstat above), mode (see Setmode), a null byte (always 00h), and file/channel filter values (see Setfilter)
-void CDRomDrive::GetParam() noexcept
-{
-	dbLog( "CDRomDrive::GetParam()" );
-
-	SendStatusResponse();
-	m_responseBuffer.Push( m_mode );
-	m_responseBuffer.Push( 0 );
-	m_responseBuffer.Push( m_file );
-	m_responseBuffer.Push( m_channel );
-}
-
-// Retrieves 4-byte sector header, plus 4-byte subheader of the current sector.
-// GetlocL can be send during active Read commands (but, mind that the GetlocL-INT3-response can't be received until any pending Read-INT1's are acknowledged).
-void CDRomDrive::GetLocL() noexcept
-{
-	dbLog( "CDRomDrive::GetLocL()" );
-
-	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.minute ) );
-	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.second ) );
-	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.sector ) );
-	m_responseBuffer.Push( m_mode );
-	m_responseBuffer.Push( m_file );
-	m_responseBuffer.Push( m_channel );
-	m_responseBuffer.Push( 0 ); // sm?
-	m_responseBuffer.Push( 0 ); // ci?
-	m_interruptFlags = InterruptResponse::First;
-
-	dbBreak(); // TODO
-}
-
-// Retrieves 8 bytes of position information from Subchannel Q with ADR=1.
-// Mainly intended for displaying the current audio position during Play. All results are in BCD.
-void CDRomDrive::GetLocP() noexcept
-{
-	dbLog( "CDRomDrive::GetLocP()" );
-
-	m_responseBuffer.Push( m_track );
-	m_responseBuffer.Push( m_trackIndex );
-	m_responseBuffer.Push( BinaryToBCD( m_trackLocation.minute ) );
-	m_responseBuffer.Push( BinaryToBCD( m_trackLocation.second ) );
-	m_responseBuffer.Push( BinaryToBCD( m_trackLocation.sector ) );
-	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.minute ) );
-	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.second ) );
-	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.sector ) );
-	m_interruptFlags = InterruptResponse::First;
-}
-
-// Get first track number, and last track number in the TOC of the current Session.
-// The number of tracks in the current session can be calculated as (last-first+1).
-// The first track number is usually 01h in the first (or only) session,
-// and "last track of previous session plus 1" in further sessions.
-void CDRomDrive::GetTN() noexcept
-{
-	dbLog( "CDRomDrive::GetTN()" );
-
-	SendStatusResponse();
-	m_responseBuffer.Push( m_firstTrack );
-	m_responseBuffer.Push( m_lastTrack );
-}
-
-// For a disk with NN tracks, parameter values 01h..NNh return the start of the specified track,
-// parameter value 00h returns the end of the last track, and parameter values bigger than NNh return error code 10h.
-// The GetTD values are relative to Index = 1 and are rounded down to second boundaries
-void CDRomDrive::GetTD() noexcept
-{
-	const auto track = m_parameterBuffer.Pop();
-	dbLog( "CDRomDrive::GetTD() -- track: %X", (uint32_t)track );
-
-	SendStatusResponse();
-
-	// TODO: return return start of specified track
-	m_responseBuffer.Push( 0 );
-	m_responseBuffer.Push( 0 );
-}
-
-void CDRomDrive::GetQ() noexcept
-{
-	const auto adr = m_parameterBuffer.Pop();
-	const auto point = m_parameterBuffer.Pop();
-	dbLog( "CDRomDrive::GetQ() -- adr: %X, point: %X", (uint32_t)adr, (uint32_t)point );
-
-	dbBreak(); // not supported in vC0
-}
-
-void CDRomDrive::GetID() noexcept
-{
-	SendStatusResponse();
-	QueueSecondResponse( Command::GetID, 0x0004a00 );
-}
-
-// CDROM audio commands
-
-void CDRomDrive::Mute() noexcept { dbBreak(); }
-void CDRomDrive::Demute() noexcept { dbBreak(); }
-void CDRomDrive::Play() noexcept { dbBreak(); }
-void CDRomDrive::Forward() noexcept { dbBreak(); }
-void CDRomDrive::Backward() noexcept { dbBreak(); }
-
-void CDRomDrive::Test() noexcept
-{
-	const auto subFunction = static_cast<TestFunction>( m_parameterBuffer.Pop() );
-
-	switch ( subFunction )
-	{
-		case TestFunction::GetVersion:
-			m_responseBuffer.Push( 0x94 );
-			m_responseBuffer.Push( 0x09 );
-			m_responseBuffer.Push( 0x19 );
-			m_responseBuffer.Push( 0xc0 );
-			m_interruptFlags = InterruptResponse::First;
-			break;
-
-		default: // TODO
-			dbBreak();
-			break;
-	}
-}
-
-void CDRomDrive::Secret1() noexcept { dbBreak(); }
-void CDRomDrive::Secret2() noexcept { dbBreak(); }
-void CDRomDrive::Secret3() noexcept { dbBreak(); }
-void CDRomDrive::Secret4() noexcept { dbBreak(); }
-void CDRomDrive::Secret5() noexcept { dbBreak(); }
-void CDRomDrive::Secret6() noexcept { dbBreak(); }
-void CDRomDrive::Secret7() noexcept { dbBreak(); }
-void CDRomDrive::SecretLock() noexcept { dbBreak(); }
-
-void CDRomDrive::VideoCD() noexcept { dbBreak(); }
 
 }
