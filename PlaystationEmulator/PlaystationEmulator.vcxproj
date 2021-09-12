@@ -163,6 +163,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
+    <ClInclude Include="inc\PlaystationEmulator\CDRom.h" />
     <ClInclude Include="inc\PlaystationEmulator\CDRomDrive.h" />
     <ClInclude Include="inc\PlaystationEmulator\ClutShader.h" />
     <ClInclude Include="inc\PlaystationEmulator\Controller.h" />

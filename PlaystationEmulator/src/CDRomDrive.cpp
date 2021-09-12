@@ -30,22 +30,6 @@ struct InterruptFlag
 	};
 };
 
-struct InterruptResponse
-{
-	enum : uint8_t
-	{
-		None = 0x00,
-		DataReport = 0x01,
-		Second = 0x02,
-		First = 0x03,
-		DataEnd = 0x04,
-		ErrorCode = 0x05,
-
-		// command start can be or'd with the above responses
-		CommandStart = 0x10
-	};
-};
-
 struct AudioVolumeApply
 {
 	enum : uint8_t
@@ -112,37 +96,7 @@ struct ControllerMode
 	};
 };
 
-struct Status
-{
-	enum : uint8_t
-	{
-		Error = 1u,
-		SpindleMotor = 1u << 1,
-		SeekError = 1u << 2,
-		IdError = 1u << 3,
-		ShellOpen = 1u << 4, // 1=is/was open
-
-		// only one of these bits can be set at a time
-		Read = 1u << 5,
-		Seek = 1u << 6,
-		Play = 1u << 7
-	};
-};
-
-struct ErrorCode
-{
-	enum : uint8_t
-	{
-		InvalidSubFunction = 0x10,
-		WrongNumberOfParameters = 0x20,
-		InvalidCommand = 0x40,
-		CannotRespondYet = 0x80,
-		SeekFailed = 0x04,
-		DriveDoorOpened = 0x08
-	};
-};
-
-}
+} // namespace
 
 CDRomDrive::CDRomDrive( InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
 	: m_interruptControl{ interruptControl }
@@ -174,11 +128,8 @@ void CDRomDrive::Reset()
 
 	m_track = 0;
 	m_trackIndex = 0;
-	m_trackMinutes = 0;
-	m_trackSector = 0;
-	m_diskMinutes = 0;
-	m_diskSeconds = 0;
-	m_diskSector = 0;
+	m_trackLocation = {};
+	m_seekLocation = {};
 
 	m_firstTrack = 0;
 	m_lastTrack = 0;
@@ -494,9 +445,8 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		default:
 		{
 			dbBreakMessage( "CDRomDrive::ExecuteCommand() -- Invalid command" );
-			stdx::set_bits<uint8_t>( m_status, Status::Error );
-			m_responseBuffer.Push( 0x40 );
-			m_interruptFlags = InterruptResponse::ErrorCode;
+			// stdx::set_bits<uint8_t>( m_status, Status::Error ); I don't think the bits actually get set in m_status
+			SendErrorResponse( ErrorCode::InvalidCommand );
 			break;
 		}
 	}
@@ -654,8 +604,7 @@ void CDRomDrive::SetFilter() noexcept
 	m_channel = m_parameterBuffer.Pop();
 	dbLog( "CDRomDrive::SetFilter() -- file: %X, channel: %X", (uint32_t)m_file, (uint32_t)m_channel );
 
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
+	SendStatusResponse();
 
 	dbBreak(); // TODO
 }
@@ -665,8 +614,7 @@ void CDRomDrive::SetMode() noexcept
 	m_mode = m_parameterBuffer.Pop();
 	dbLog( "CDRomDrive::SetMode() -- mode: %u", (uint32_t)m_mode );
 
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
+	SendStatusResponse();
 }
 
 void CDRomDrive::Init() noexcept
@@ -682,8 +630,7 @@ void CDRomDrive::Init() noexcept
 	m_cyclesUntilCommand = InfiniteCycles;
 	m_cyclesUntilSecondResponse = InfiniteCycles;
 
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
+	SendStatusResponse();
 
 	QueueSecondResponse( Command::Init );
 }
@@ -704,17 +651,12 @@ void CDRomDrive::MotorOn() noexcept
 
 	if ( m_motorOn )
 	{
-		m_responseBuffer.Push( m_status );
-		m_responseBuffer.Push( ErrorCode::WrongNumberOfParameters );
-		m_interruptFlags = InterruptResponse::ErrorCode;
+		SendErrorResponse( ErrorCode::WrongNumberOfParameters );
 	}
 	else
 	{
 		m_motorOn = true;
-
-		m_responseBuffer.Push( m_status );
-		m_interruptFlags = InterruptResponse::First;
-
+		SendStatusResponse();
 		QueueSecondResponse( Command::MotorOn );
 	}
 }
@@ -726,9 +668,7 @@ void CDRomDrive::Stop() noexcept
 	dbLog( "CDRomDrive::Stop()" );
 
 	stdx::reset_bits<uint8_t>( m_status, Status::Read );
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::Stop );
 }
 
@@ -738,10 +678,7 @@ void CDRomDrive::Pause() noexcept
 	 // abort reading and playing
 
 	dbLog( "CDRomDrive::Pause()" );
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::Pause );
 }
 
@@ -750,13 +687,23 @@ void CDRomDrive::Pause() noexcept
 // Sets the seek target - but without yet starting the seek operation
 void CDRomDrive::SetLoc() noexcept
 {
-	m_diskMinutes = m_parameterBuffer.Pop();
-	m_diskSeconds = m_parameterBuffer.Pop();
-	m_diskSector = m_parameterBuffer.Pop();
-	dbLog( "CDRomDrive::SetLoc() -- amm: %X, ass: %X, asect: %X", (uint32_t)m_diskMinutes, (uint32_t)m_diskSeconds, (uint32_t)m_diskSector );
+	const auto mm = m_parameterBuffer.Pop();
+	const auto ss = m_parameterBuffer.Pop();
+	const auto sect = m_parameterBuffer.Pop();
+	dbLog( "CDRomDrive::SetLoc() -- amm: %X, ass: %X, asect: %X", mm, ss, sect );
 
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
+	if ( IsValidBCDAndLess( mm, CDRom::MinutesPerDiskBCD ) &&
+		IsValidBCDAndLess( ss, CDRom::SecondsPerMinuteBCD ) &&
+		IsValidBCDAndLess( sect, CDRom::SectorsPerSecondBCD ) )
+	{
+		// valid arguments
+		m_seekLocation = CDRom::Location::FromBCD( mm, ss, sect );
+		SendStatusResponse();
+	}
+	else
+	{
+		SendErrorResponse( ErrorCode::InvalidArgument );
+	}
 }
 
 // Seek to Setloc's location in data mode
@@ -765,10 +712,7 @@ void CDRomDrive::SeekL() noexcept
 	dbLog( "CDRomDrive::SeekL()" );
 
 	m_status = Status::Seek;
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::SeekL );
 }
 
@@ -778,10 +722,7 @@ void CDRomDrive::SeekP() noexcept
 	dbLog( "CDRomDrive::SeekP()" );
 
 	m_status = Status::Seek;
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::SeekP );
 }
 
@@ -791,10 +732,7 @@ void CDRomDrive::SetSession() noexcept
 	dbLog( "CDRomDrive::SetSession()" );
 
 	m_status = Status::Seek;
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::SetSession );
 }
 
@@ -807,10 +745,7 @@ void CDRomDrive::ReadN() noexcept
 	dbLog( "CDRomDrive::ReadN()" );
 
 	m_status = Status::Read;
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::ReadN );
 }
 
@@ -820,10 +755,7 @@ void CDRomDrive::ReadS() noexcept
 	dbLog( "CDRomDrive::ReadS()" );
 
 	m_status = Status::Read;
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::ReadS );
 }
 
@@ -840,10 +772,7 @@ void CDRomDrive::ReadTOC() noexcept
 void CDRomDrive::GetStat() noexcept
 {
 	dbLog( "CDRomDrive::GetStat()" );
-
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	stdx::reset_bits<uint8_t>( m_status, Status::ShellOpen );
 }
 
@@ -852,12 +781,11 @@ void CDRomDrive::GetParam() noexcept
 {
 	dbLog( "CDRomDrive::GetParam()" );
 
-	m_responseBuffer.Push( m_status );
+	SendStatusResponse();
 	m_responseBuffer.Push( m_mode );
 	m_responseBuffer.Push( 0 );
 	m_responseBuffer.Push( m_file );
 	m_responseBuffer.Push( m_channel );
-	m_interruptFlags = InterruptResponse::First;
 }
 
 // Retrieves 4-byte sector header, plus 4-byte subheader of the current sector.
@@ -866,9 +794,9 @@ void CDRomDrive::GetLocL() noexcept
 {
 	dbLog( "CDRomDrive::GetLocL()" );
 
-	m_responseBuffer.Push( m_diskMinutes );
-	m_responseBuffer.Push( m_diskSeconds );
-	m_responseBuffer.Push( m_diskSector );
+	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.minute ) );
+	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.second ) );
+	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.sector ) );
 	m_responseBuffer.Push( m_mode );
 	m_responseBuffer.Push( m_file );
 	m_responseBuffer.Push( m_channel );
@@ -887,12 +815,12 @@ void CDRomDrive::GetLocP() noexcept
 
 	m_responseBuffer.Push( m_track );
 	m_responseBuffer.Push( m_trackIndex );
-	m_responseBuffer.Push( m_trackMinutes );
-	m_responseBuffer.Push( m_trackSeconds );
-	m_responseBuffer.Push( m_trackSector );
-	m_responseBuffer.Push( m_diskMinutes );
-	m_responseBuffer.Push( m_diskSeconds );
-	m_responseBuffer.Push( m_diskSector );
+	m_responseBuffer.Push( BinaryToBCD( m_trackLocation.minute ) );
+	m_responseBuffer.Push( BinaryToBCD( m_trackLocation.second ) );
+	m_responseBuffer.Push( BinaryToBCD( m_trackLocation.sector ) );
+	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.minute ) );
+	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.second ) );
+	m_responseBuffer.Push( BinaryToBCD( m_seekLocation.sector ) );
 	m_interruptFlags = InterruptResponse::First;
 }
 
@@ -904,10 +832,9 @@ void CDRomDrive::GetTN() noexcept
 {
 	dbLog( "CDRomDrive::GetTN()" );
 
-	m_responseBuffer.Push( m_status );
+	SendStatusResponse();
 	m_responseBuffer.Push( m_firstTrack );
 	m_responseBuffer.Push( m_lastTrack );
-	m_interruptFlags = InterruptResponse::First;
 }
 
 // For a disk with NN tracks, parameter values 01h..NNh return the start of the specified track,
@@ -918,12 +845,11 @@ void CDRomDrive::GetTD() noexcept
 	const auto track = m_parameterBuffer.Pop();
 	dbLog( "CDRomDrive::GetTD() -- track: %X", (uint32_t)track );
 
-	m_responseBuffer.Push( m_status );
+	SendStatusResponse();
 
 	// TODO: return return start of specified track
 	m_responseBuffer.Push( 0 );
 	m_responseBuffer.Push( 0 );
-	m_interruptFlags = InterruptResponse::First;
 }
 
 void CDRomDrive::GetQ() noexcept
@@ -937,9 +863,7 @@ void CDRomDrive::GetQ() noexcept
 
 void CDRomDrive::GetID() noexcept
 {
-	m_responseBuffer.Push( m_status );
-	m_interruptFlags = InterruptResponse::First;
-
+	SendStatusResponse();
 	QueueSecondResponse( Command::GetID, 0x0004a00 );
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CDRom.h"
 #include "FifoBuffer.h"
 
 #include <stdx/assert.h>
@@ -18,7 +19,7 @@ class CDRomDrive
 public:
 	enum class Command : uint8_t
 	{
-		Invalid = 0x00, // reprtedly "Sync"
+		Invalid = 0x00, // reportedly "Sync"
 
 		GetStat = 0x01,
 		SetLoc = 0x02, // amm, ass, asect
@@ -81,13 +82,80 @@ public:
 	void AddCycles( uint32_t cycles ) noexcept;
 	uint32_t GetCyclesUntilCommand() const noexcept;
 
+	void SetCDRom( std::unique_ptr<CDRom> cdrom )
+	{
+		m_cdrom = std::move( cdrom );
+	}
+
+	bool CanReadDisk() const noexcept
+	{
+		return m_cdrom != nullptr;
+	}
+
 private:
+
+	struct Status
+	{
+		enum : uint8_t
+		{
+			Error = 1u,
+			SpindleMotor = 1u << 1,
+			SeekError = 1u << 2,
+			IdError = 1u << 3,
+			ShellOpen = 1u << 4, // 1=is/was open
+
+			// only one of these bits can be set at a time
+			Read = 1u << 5,
+			Seek = 1u << 6,
+			Play = 1u << 7
+		};
+	};
+
+	enum class ErrorCode
+	{
+		InvalidArgument = 0x10,
+		WrongNumberOfParameters = 0x20,
+		InvalidCommand = 0x40,
+		CannotRespondYet = 0x80,
+		SeekFailed = 0x04,
+		DriveDoorOpened = 0x08
+	};
+
+	struct InterruptResponse
+	{
+		enum : uint8_t
+		{
+			None = 0x00,
+			DataReport = 0x01,
+			Second = 0x02,
+			First = 0x03,
+			DataEnd = 0x04,
+			ErrorCode = 0x05,
+
+			// command start can be or'd with the above responses
+			CommandStart = 0x10
+		};
+	};
+
 	void SendCommand( Command command ) noexcept;
 	void ExecuteCommand( Command command ) noexcept;
 	void ExecuteSecondResponse( Command command ) noexcept;
 	void QueueSecondResponse( Command command, int32_t ticks ) noexcept;
 	void CheckInterrupt() noexcept;
 	void ShiftQueuedInterrupt() noexcept;
+
+	void SendErrorResponse( ErrorCode errorCode )
+	{
+		m_responseBuffer.Push( m_status | Status::Error );
+		m_responseBuffer.Push( static_cast<uint8_t>( errorCode ) );
+		m_interruptFlags = InterruptResponse::ErrorCode;
+	}
+
+	void SendStatusResponse( uint8_t response = InterruptResponse::First )
+	{
+		m_responseBuffer.Push( m_status );
+		m_interruptFlags = response;
+	}
 	
 	// CDROM commands
 	void GetStat() noexcept;
@@ -132,6 +200,8 @@ private:
 	InterruptControl& m_interruptControl;
 	CycleScheduler& m_cycleScheduler;
 
+	std::unique_ptr<CDRom> m_cdrom;
+
 	uint8_t m_index = 0;
 	uint8_t m_interruptEnable = 0;
 	uint8_t m_interruptFlags = 0;
@@ -153,12 +223,8 @@ private:
 
 	uint8_t m_track = 0;
 	uint8_t m_trackIndex = 0; // or just m_index?
-	uint8_t m_trackMinutes = 0;
-	uint8_t m_trackSeconds = 0;
-	uint8_t m_trackSector = 0;
-	uint8_t m_diskMinutes = 0;
-	uint8_t m_diskSeconds = 0;
-	uint8_t m_diskSector = 0;
+	CDRom::Location m_trackLocation;
+	CDRom::Location m_seekLocation;
 
 	uint8_t m_firstTrack = 0;
 	uint8_t m_lastTrack = 0;
