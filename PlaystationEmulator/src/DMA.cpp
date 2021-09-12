@@ -1,5 +1,6 @@
 #include "DMA.h"
 
+#include "CDRomDrive.h"
 #include "CycleScheduler.h"
 #include "GPU.h"
 #include "InterruptControl.h"
@@ -195,7 +196,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 	if ( toRam )
 	{
-		switch ( channelIndex )
+		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
 			case ChannelIndex::RamOrderTable:
 			{
@@ -210,9 +211,16 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 			case ChannelIndex::Gpu:
 			{
-				// TODO
 				for ( ; wordCount > 0; --wordCount, address += increment )
 					m_ram.Write<uint32_t>( address, m_gpu.GpuRead() );
+
+				break;
+			}
+
+			case ChannelIndex::CdRom:
+			{
+				for ( ; wordCount > 0; --wordCount, address += increment )
+					m_ram.Write<uint32_t>( address, m_cdromDrive.ReadDataFifo<uint32_t>() );
 
 				break;
 			}
@@ -224,7 +232,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	}
 	else
 	{
-		switch ( channelIndex )
+		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
 			case ChannelIndex::Gpu:
 			{
@@ -245,7 +253,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 {
-	dbExpects( channelIndex == ChannelIndex::Gpu ); // must transfer to GPU
+	dbExpects( channelIndex == (uint32_t)ChannelIndex::Gpu ); // must transfer to GPU
 	auto& channel = m_channels[ channelIndex ];
 
 	dbAssert( channel.GetTransferDirection() == Channel::TransferDirection::FromMainRam ); // must transfer from RAM

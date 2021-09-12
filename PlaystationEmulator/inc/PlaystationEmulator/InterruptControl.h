@@ -51,11 +51,11 @@ public:
 		switch ( index )
 		{
 			case 0:
-				dbLog( "InterruptControl::Read -- interrupt status [%X]", m_status );
+				// dbLog( "InterruptControl::Read -- interrupt status [%X]", m_status );
 				return m_status;
 
 			case 1:
-				dbLog( "InterruptControl::Read -- interrupt mask [%X]", m_mask );
+				// dbLog( "InterruptControl::Read -- interrupt mask [%X]", m_mask );
 				return m_mask;
 
 			default:

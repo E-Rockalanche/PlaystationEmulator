@@ -10,6 +10,7 @@
 namespace PSX
 {
 
+class CDRomDrive;
 class CycleScheduler;
 class Gpu;
 class InterruptControl;
@@ -17,18 +18,15 @@ class InterruptControl;
 class Dma
 {
 public:
-	struct ChannelIndex
+	enum class ChannelIndex
 	{
-		enum : uint32_t
-		{
-			MediaDecoderInput,
-			MediaDecoderOutput,
-			Gpu,
-			CdRom,
-			Spu,
-			ExtensionPort,
-			RamOrderTable
-		};
+		MediaDecoderInput,
+		MediaDecoderOutput,
+		Gpu,
+		CdRom,
+		Spu,
+		ExtensionPort,
+		RamOrderTable
 	};
 
 	class Channel
@@ -179,9 +177,10 @@ public:
 	};
 
 public:
-	Dma( Ram& ram, Gpu& gpu, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
+	Dma( Ram& ram, Gpu& gpu, CDRomDrive& cdromDRive, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
 		: m_ram{ ram }
 		, m_gpu{ gpu }
+		, m_cdromDrive{ cdromDRive }
 		, m_interruptControl{ interruptControl }
 		, m_cycleScheduler{ cycleScheduler }
 	{
@@ -235,6 +234,7 @@ private:
 
 	Ram& m_ram;
 	Gpu& m_gpu;
+	CDRomDrive& m_cdromDrive;
 	InterruptControl& m_interruptControl;
 	CycleScheduler& m_cycleScheduler;
 

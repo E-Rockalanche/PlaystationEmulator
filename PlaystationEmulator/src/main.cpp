@@ -172,11 +172,11 @@ int main( int, char** )
 	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
 	gpu.Reset();
 
-	PSX::Dma dma{ *ram, gpu, interruptControl, cycleScheduler };
-	dma.Reset();
-
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 	cdRomDrive->Reset();
+
+	PSX::Dma dma{ *ram, gpu, *cdRomDrive, interruptControl, cycleScheduler };
+	dma.Reset();
 
 	PSX::ControllerPorts controllerPorts{ interruptControl, cycleScheduler };
 	controllerPorts.Reset();
@@ -203,6 +203,11 @@ int main( int, char** )
 		{ SDLK_x, PSX::Button::X },
 		{ SDLK_z, PSX::Button::Square },
 	};
+
+	auto cdrom = std::make_unique<PSX::CDRom>();
+	cdrom->Open( "CrashBandicoot.bin" );
+
+	cdRomDrive->SetCDRom( std::move( cdrom ) );
 
 	cycleScheduler.ScheduleNextUpdate();
 

@@ -70,9 +70,12 @@ public:
 	template <typename T>
 	T ReadDataFifo() noexcept
 	{
-		// TODO
-		dbBreakMessage( "CDRomDrive::ReadDataFifo()" );
-		return 0;
+		T value = 0;
+
+		for ( int i = 0; i < sizeof( T ); ++i )
+			value |= static_cast<T>( m_dataBuffer.Pop() ) << ( i * 8 );
+
+		return value;
 	}
 
 	uint8_t Read( uint32_t index ) noexcept;
@@ -110,6 +113,21 @@ private:
 		};
 	};
 
+	struct ControllerMode
+	{
+		enum : uint8_t
+		{
+			CDDA = 1u << 0, // 1=Allow to Read CD-DA Sectors; ignore missing EDC
+			AutoPause = 1 << 1, // 1=Auto Pause upon End of Track
+			Report = 1u << 2, // 1=Enable Report-Interrupts for Audio Play
+			XAFilter = 1u << 3, // 1=Process only XA-ADPCM sectors that match Setfilter
+			IgnoreBit = 1u << 4, // 1=Ignore Sector Size and Setloc position
+			SectorSize = 1u << 5, // 0=800h=DataOnly, 1=924h=WholeSectorExceptSyncBytes
+			XAADPCM = 1u << 6, // 0=Off, 1=Send XA-ADPCM sectors to SPU Audio Input
+			DoubleSpeed = 1u << 7 // 0=Normal speed, 1=Double speed
+		};
+	};
+
 	enum class ErrorCode
 	{
 		InvalidArgument = 0x10,
@@ -140,8 +158,21 @@ private:
 	void ExecuteCommand( Command command ) noexcept;
 	void ExecuteSecondResponse( Command command ) noexcept;
 	void QueueSecondResponse( Command command, int32_t ticks ) noexcept;
+	void CheckPendingCommand() noexcept;
 	void CheckInterrupt() noexcept;
 	void ShiftQueuedInterrupt() noexcept;
+
+	void SendStatusResponse( uint8_t response = InterruptResponse::First )
+	{
+		m_responseBuffer.Push( m_status );
+		m_interruptFlags = response;
+	}
+
+	void SendAsyncStatusResponse( uint8_t response = InterruptResponse::Second )
+	{
+		m_secondResponseBuffer.Push( m_status );
+		m_queuedInterrupt = response;
+	}
 
 	void SendErrorResponse( ErrorCode errorCode )
 	{
@@ -150,10 +181,17 @@ private:
 		m_interruptFlags = InterruptResponse::ErrorCode;
 	}
 
-	void SendStatusResponse( uint8_t response = InterruptResponse::First )
+	void SendAsyncErrorResponse( ErrorCode errorCode )
 	{
-		m_responseBuffer.Push( m_status );
-		m_interruptFlags = response;
+		m_secondResponseBuffer.Push( m_status | Status::Error );
+		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
+		m_queuedInterrupt = InterruptResponse::ErrorCode;
+	}
+
+	uint32_t GetReadCycles() const noexcept
+	{
+		const uint32_t cyclesPerSecond = 44100 * 0x300;
+		return ( m_mode & ControllerMode::DoubleSpeed ) ? ( cyclesPerSecond / 150 ) : ( cyclesPerSecond / 75 );
 	}
 
 private:
@@ -169,7 +207,8 @@ private:
 
 	// timing
 	Command m_pendingCommand = Command::Invalid;
-	Command m_pendingSecondResponseCommand = Command::Invalid;
+	Command m_firstResponseCommand = Command::Invalid;
+	Command m_secondResponseCommand = Command::Invalid;
 	uint32_t m_cyclesUntilCommand = 0;
 	uint32_t m_cyclesUntilSecondResponse = 0;
 

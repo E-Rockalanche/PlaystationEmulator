@@ -45,8 +45,8 @@ public:
 	static constexpr uint32_t SecondsPerMinute = 60;
 	static constexpr uint32_t SectorsPerSecond = 75;
 	static constexpr uint32_t SectorsPerMinute = SecondsPerMinute * SectorsPerSecond;
-	static constexpr uint32_t BytesPerSector = 0x930;
-	// static constexpr uint32_t DataBytesPerSector = 0x800; // excludes sector encoding (CDROM, CD-XA Form1, CD-XA Form2)
+	static constexpr uint32_t RawBytesPerSector = 0x930;
+	static constexpr uint32_t DataBytesPerSector = 0x800; // excludes sector encoding (CDROM, CD-XA Form1, CD-XA Form2)
 
 	static constexpr uint32_t MinutesPerDiskBCD = 0x74;
 	static constexpr uint32_t SecondsPerMinuteBCD = 0x60;
@@ -115,8 +115,9 @@ public:
 
 	void Seek( const Location& location )
 	{
-		const uint32_t sector = location.minute * SectorsPerMinute + location.second * SectorsPerSecond + location.sector;
-		const uint32_t address = sector * BytesPerSector;
+		// CDROM starts at 2 seconds
+		const uint32_t sector = location.minute * SectorsPerMinute + location.second * SectorsPerSecond + location.sector - 2 * SectorsPerSecond;
+		const uint32_t address = sector * RawBytesPerSector;
 
 		m_file.seekg( address );
 	}
@@ -128,9 +129,7 @@ public:
 
 	bool VerifySync()
 	{
-		static constexpr char OO = static_cast<char>( 0 );
-		static constexpr char FF = static_cast<char>( -1 );
-		static const Sync SyncBytes{ OO, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, OO };
+		static const Sync SyncBytes{ 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0 };
 
 		Sync sync = Read<Sync>();
 		return sync == SyncBytes;
