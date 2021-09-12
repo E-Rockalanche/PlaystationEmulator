@@ -13,6 +13,25 @@ namespace PSX
 class GeometryTransformationEngine
 {
 public:
+	void Reset();
+
+	uint32_t Read( uint32_t index ) const noexcept;
+
+	void Write( uint32_t index, uint32_t value ) noexcept;
+
+	uint32_t ReadControl( uint32_t index ) const noexcept
+	{
+		return Read( index + 32 );
+	}
+
+	void WriteControl( uint32_t index, uint32_t value ) noexcept
+	{
+		Write( index + 32, value );
+	}
+
+	void ExecuteCommand( uint32_t command ) noexcept;
+
+private:
 	enum class Register : uint32_t
 	{
 		// data registers
@@ -154,24 +173,6 @@ public:
 		GeneralInterpolationBase = 0x3e, // GPL(sf)5
 		NormalColorColorTriple = 0x3f // normal color color triple vector
 	};
-
-	void Reset();
-
-	uint32_t Read( uint32_t index ) const noexcept;
-
-	void Write( uint32_t index, uint32_t value ) noexcept;
-
-	uint32_t ReadControl( uint32_t index ) const noexcept
-	{
-		return Read( index + 32 );
-	}
-
-	void WriteControl( uint32_t index, uint32_t value ) noexcept
-	{
-		Write( index + 32, value );
-	}
-
-	void ExecuteCommand( uint32_t command ) noexcept;
 
 private:
 	void DoPerspectiveTransformation( const Math::Vector3<int16_t>& vector, bool shiftFraction ) noexcept;

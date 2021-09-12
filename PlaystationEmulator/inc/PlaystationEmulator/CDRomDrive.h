@@ -17,6 +17,43 @@ class InterruptControl;
 class CDRomDrive
 {
 public:
+	CDRomDrive( InterruptControl& interruptControl, CycleScheduler& cycleScheduler );
+
+	void Reset();
+
+	template <typename T>
+	T ReadDataFifo() noexcept
+	{
+		T value = 0;
+
+		for ( int i = 0; i < sizeof( T ); ++i )
+			value |= static_cast<T>( m_dataBuffer.Pop() ) << ( i * 8 );
+
+		return value;
+	}
+
+	uint8_t Read( uint32_t index ) noexcept;
+	void Write( uint32_t index, uint8_t value ) noexcept;
+
+	void AddCycles( uint32_t cycles ) noexcept;
+	uint32_t GetCyclesUntilCommand() const noexcept;
+
+	void SetCDRom( std::unique_ptr<CDRom> cdrom )
+	{
+		m_cdrom = std::move( cdrom );
+	}
+
+	bool CanReadDisk() const noexcept
+	{
+		return m_cdrom != nullptr;
+	}
+
+private:
+	static constexpr uint32_t DataBufferSize = CDRom::RawBytesPerSector - CDRom::SyncSize;
+	static constexpr uint32_t ParamaterBufferSize = 16;
+	static constexpr uint32_t ResponseBufferSize = 16;
+	static constexpr uint32_t NumSectorBuffers = 8;
+
 	enum class Command : uint8_t
 	{
 		Invalid = 0x00, // reportedly "Sync"
@@ -62,39 +99,6 @@ public:
 
 		// 0x58-0x5f crashes the HC05 (jumps into a data area)
 	};
-
-	CDRomDrive( InterruptControl& interruptControl, CycleScheduler& cycleScheduler );
-
-	void Reset();
-
-	template <typename T>
-	T ReadDataFifo() noexcept
-	{
-		T value = 0;
-
-		for ( int i = 0; i < sizeof( T ); ++i )
-			value |= static_cast<T>( m_dataBuffer.Pop() ) << ( i * 8 );
-
-		return value;
-	}
-
-	uint8_t Read( uint32_t index ) noexcept;
-	void Write( uint32_t index, uint8_t value ) noexcept;
-
-	void AddCycles( uint32_t cycles ) noexcept;
-	uint32_t GetCyclesUntilCommand() const noexcept;
-
-	void SetCDRom( std::unique_ptr<CDRom> cdrom )
-	{
-		m_cdrom = std::move( cdrom );
-	}
-
-	bool CanReadDisk() const noexcept
-	{
-		return m_cdrom != nullptr;
-	}
-
-private:
 
 	struct Status
 	{
@@ -143,17 +147,18 @@ private:
 		enum : uint8_t
 		{
 			None = 0x00,
-			DataReport = 0x01,
+			ReceivedData = 0x01,
 			Second = 0x02,
 			First = 0x03,
 			DataEnd = 0x04,
-			ErrorCode = 0x05,
+			Error = 0x05,
 
 			// command start can be or'd with the above responses
 			CommandStart = 0x10
 		};
 	};
 
+private:
 	void SendCommand( Command command ) noexcept;
 	void ExecuteCommand( Command command ) noexcept;
 	void ExecuteSecondResponse( Command command ) noexcept;
@@ -161,37 +166,48 @@ private:
 	void CheckPendingCommand() noexcept;
 	void CheckInterrupt() noexcept;
 	void ShiftQueuedInterrupt() noexcept;
+	void LoadDataFifo() noexcept;
 
-	void SendStatusResponse( uint8_t response = InterruptResponse::First )
+	// send status and interrupt
+	void SendResponse( uint8_t response = InterruptResponse::First )
 	{
 		m_responseBuffer.Push( m_status );
 		m_interruptFlags = response;
 	}
 
-	void SendAsyncStatusResponse( uint8_t response = InterruptResponse::Second )
+	// queue status and second interrupt
+	void SendSecondResponse( uint8_t response = InterruptResponse::Second )
 	{
 		m_secondResponseBuffer.Push( m_status );
 		m_queuedInterrupt = response;
 	}
 
-	void SendErrorResponse( ErrorCode errorCode )
+	// send status, error code, and interrupt
+	void SendError( ErrorCode errorCode )
 	{
 		m_responseBuffer.Push( m_status | Status::Error );
 		m_responseBuffer.Push( static_cast<uint8_t>( errorCode ) );
-		m_interruptFlags = InterruptResponse::ErrorCode;
+		m_interruptFlags = InterruptResponse::Error;
 	}
 
-	void SendAsyncErrorResponse( ErrorCode errorCode )
+	// queue status, error code, and interrupt
+	void SendSecondError( ErrorCode errorCode )
 	{
 		m_secondResponseBuffer.Push( m_status | Status::Error );
 		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
-		m_queuedInterrupt = InterruptResponse::ErrorCode;
+		m_queuedInterrupt = InterruptResponse::Error;
 	}
 
 	uint32_t GetReadCycles() const noexcept
 	{
 		const uint32_t cyclesPerSecond = 44100 * 0x300;
 		return ( m_mode & ControllerMode::DoubleSpeed ) ? ( cyclesPerSecond / 150 ) : ( cyclesPerSecond / 75 );
+	}
+
+	void ClearSectorBuffers()
+	{
+		for ( auto& sector : m_sectorBuffers )
+			sector.size = 0;
 	}
 
 private:
@@ -225,20 +241,28 @@ private:
 	CDRom::Location m_trackLocation;
 	CDRom::Location m_seekLocation;
 
+	uint32_t m_currentSector = 0;
+
 	uint8_t m_firstTrack = 0;
 	uint8_t m_lastTrack = 0;
 
-	bool m_wantCommand = false;
-	bool m_wantData = false;
 	bool m_muteADPCM = false;
-
 	bool m_motorOn = false;
 
-	FifoBuffer<uint8_t, 16> m_parameterBuffer;
-	FifoBuffer<uint8_t, 16> m_responseBuffer;
-	FifoBuffer<uint8_t, 16> m_secondResponseBuffer;
+	FifoBuffer<uint8_t, ParamaterBufferSize> m_parameterBuffer;
+	FifoBuffer<uint8_t, ResponseBufferSize> m_responseBuffer;
+	FifoBuffer<uint8_t, ResponseBufferSize> m_secondResponseBuffer;
+	FifoBuffer<uint8_t, DataBufferSize> m_dataBuffer;
 
-	FifoBuffer<uint8_t, 32 * 1024> m_dataBuffer;
+	struct SectorBuffer
+	{
+		size_t size = 0;
+		std::array<uint8_t, DataBufferSize> bytes;
+	};
+
+	std::array<SectorBuffer, NumSectorBuffers> m_sectorBuffers;
+	uint32_t m_readSectorBuffer = 0;
+	uint32_t m_writeSectorBuffer = 0;
 };
 
 }

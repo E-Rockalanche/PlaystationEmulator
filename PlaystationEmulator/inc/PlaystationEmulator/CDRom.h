@@ -45,26 +45,19 @@ public:
 	static constexpr uint32_t SecondsPerMinute = 60;
 	static constexpr uint32_t SectorsPerSecond = 75;
 	static constexpr uint32_t SectorsPerMinute = SecondsPerMinute * SectorsPerSecond;
-	static constexpr uint32_t RawBytesPerSector = 0x930;
-	static constexpr uint32_t DataBytesPerSector = 0x800; // excludes sector encoding (CDROM, CD-XA Form1, CD-XA Form2)
 
 	static constexpr uint32_t MinutesPerDiskBCD = 0x74;
 	static constexpr uint32_t SecondsPerMinuteBCD = 0x60;
 	static constexpr uint32_t SectorsPerSecondBCD = 0x75;
 
-	using Sync = std::array<char, 0x0c>;
+	static constexpr uint32_t RawBytesPerSector = 0x930;
+	static constexpr uint32_t DataBytesPerSector = 0x800; // excludes sector encoding (CDROM, CD-XA Form1, CD-XA Form2)
 
-	struct Location
-	{
-		static Location FromBCD( uint8_t mm, uint8_t ss, uint8_t sect )
-		{
-			return Location{ BCDToBinary( mm ), BCDToBinary( ss ), BCDToBinary( sect ) };
-		}
+	static constexpr uint32_t SyncSize = 0x0c;
+	static constexpr uint32_t HeaderSize = 4;
+	static constexpr uint32_t SubHeaderSize = 4;
 
-		uint8_t minute = 0;
-		uint8_t second = 0;
-		uint8_t sector = 0;
-	};
+	using Sync = std::array<char, SyncSize>;
 
 	struct Header
 	{
@@ -97,6 +90,26 @@ public:
 		uint8_t codingInfo = 0;
 	};
 
+	struct Location
+	{
+		static Location FromBCD( uint8_t mm, uint8_t ss, uint8_t sect ) noexcept
+		{
+			return Location{ BCDToBinary( mm ), BCDToBinary( ss ), BCDToBinary( sect ) };
+		}
+
+		uint32_t GetLogicalSector() const noexcept
+		{
+			const auto physicalSector = minute * SectorsPerMinute + second * SectorsPerSecond + sector;
+			dbAssert( physicalSector >= 2 * SectorsPerSecond );
+			return physicalSector - 2 * SectorsPerSecond;
+		}
+
+		uint8_t minute = 0;
+		uint8_t second = 0;
+		uint8_t sector = 0;
+	};
+
+public:
 	bool Open( const char* filename )
 	{
 		m_file.open( filename, std::ios::binary );
@@ -113,10 +126,8 @@ public:
 		m_file.close();
 	}
 
-	void Seek( const Location& location )
+	void Seek( uint32_t sector )
 	{
-		// CDROM starts at 2 seconds
-		const uint32_t sector = location.minute * SectorsPerMinute + location.second * SectorsPerSecond + location.sector - 2 * SectorsPerSecond;
 		const uint32_t address = sector * RawBytesPerSector;
 
 		m_file.seekg( address );
@@ -127,7 +138,7 @@ public:
 		m_file.read( data, count );
 	}
 
-	bool VerifySync()
+	bool ReadSync()
 	{
 		static const Sync SyncBytes{ 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0 };
 
@@ -143,6 +154,11 @@ public:
 	SubHeader ReadSubHeader()
 	{
 		return Read<SubHeader>();
+	}
+
+	void Ignore( size_t bytes )
+	{
+		m_file.ignore( bytes );
 	}
 
 private:

@@ -11,8 +11,9 @@ namespace
 {
 
 template <typename T>
-constexpr uint32_t SignExtend( T value ) noexcept
+constexpr uint32_t SignExtend16( T value ) noexcept
 {
+	static_assert( sizeof( T ) == sizeof( int16_t ) );
 	return static_cast<uint32_t>( static_cast<int16_t>( value ) );
 }
 
@@ -149,7 +150,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::RT13RT21:	return readMatrixPair( m_rotation, 2 );
 		case Register::RT22RT23:	return readMatrixPair( m_rotation, 4 );
 		case Register::RT31RT32:	return readMatrixPair( m_rotation, 6 );
-		case Register::RT33:		return SignExtend( m_rotation[ 2 ][ 2 ] );
+		case Register::RT33:		return SignExtend16( m_rotation[ 2 ][ 2 ] );
 
 		case Register::TranslationX:	return static_cast<uint32_t>( m_translation.x );
 		case Register::TranslationY:	return static_cast<uint32_t>( m_translation.y );
@@ -159,7 +160,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::L13L21:	return readMatrixPair( m_lightSource, 2 );
 		case Register::L22L23:	return readMatrixPair( m_lightSource, 4 );
 		case Register::L31L32:	return readMatrixPair( m_lightSource, 6 );
-		case Register::L33:		return SignExtend( m_lightSource[ 2 ][ 2 ] );
+		case Register::L33:		return SignExtend16( m_lightSource[ 2 ][ 2 ] );
 
 		case Register::BackgroundRed:	return static_cast<uint32_t>( m_backgroundColor.r );
 		case Register::BackgroundGreen:	return static_cast<uint32_t>( m_backgroundColor.g );
@@ -169,7 +170,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::LR3LG1:	return readMatrixPair( m_lightColor, 2 );
 		case Register::LG2LG3:	return readMatrixPair( m_lightColor, 4 );
 		case Register::LB1LB2:	return readMatrixPair( m_lightColor, 6 );
-		case Register::LB3:		return SignExtend( m_lightColor[ 2 ][ 2 ] );
+		case Register::LB3:		return SignExtend16( m_lightColor[ 2 ][ 2 ] );
 
 		case Register::FarColorRed:		return static_cast<uint32_t>( m_farColor.r );
 		case Register::FarColorGreen:	return static_cast<uint32_t>( m_farColor.g );
@@ -178,7 +179,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::ScreenOffsetX:	return static_cast<uint32_t>( m_screenOffset.x );
 		case Register::ScreenOffsetY:	return static_cast<uint32_t>( m_screenOffset.y );
 
-		case Register::ProjectionPlaneDistance:		return SignExtend( m_projectionPlaneDistance );
+		case Register::ProjectionPlaneDistance:		return SignExtend16( m_projectionPlaneDistance );
 
 		case Register::DepthQueueA:		return static_cast<uint16_t>( m_depthQueueParamA );
 		case Register::DepthQueueB:		return static_cast<uint32_t>( m_depthQueueParamB );

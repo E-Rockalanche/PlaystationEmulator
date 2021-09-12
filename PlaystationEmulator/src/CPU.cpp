@@ -654,17 +654,11 @@ void MipsR3000Cpu::LoadWord( Instruction instr ) noexcept
 
 void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 {
-	dbExpects( instr.z() != 0 ); // instruction not valid for coprocessor 0
-
 	const auto address = GetVAddr( instr );
 	if ( address % 4 == 0 )
 	{
-		dbBreak(); // don't actually know if we need this yet
-
-		const auto value = LoadImp<int32_t>( address ); // TODO: do we load before checking the copprocessor?
-
 		if ( instr.z() == 2 )
-			m_gte.Write( instr.rt(), value );
+			m_gte.Write( instr.rt(), LoadImp<uint32_t>( address ) );
 		else
 			RaiseException( Cop0::ExceptionCode::CoprocessorUnusable ); // TODO: does this trigger if cop2 is disabled?
 	}
@@ -913,13 +907,20 @@ void MipsR3000Cpu::StoreWord( Instruction instr ) noexcept
 
 void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction instr ) noexcept
 {
-	dbExpects( instr.z() != 0 ); // instruction is invalid for coprocessor 0
+	const auto coprocessor = instr.z();
 
 	const uint32_t address = GetVAddr( instr );
-	dbExpects( address % 4 == 0 ); // exception for non word-aligned address
-
-	dbBreak();
-	// TODO: coprocessor unit sources a word, which the processor writes tothe addressed memory
+	if ( address % 4 == 0 )
+	{
+		if ( coprocessor == 2 )
+			m_memoryMap.Write<uint32_t>( address, m_gte.Read( instr.rt() ) );
+		else
+			RaiseException( Cop0::ExceptionCode::CoprocessorUnusable, coprocessor );
+	}
+	else
+	{
+		RaiseException( Cop0::ExceptionCode::AddressErrorStore, coprocessor );
+	}
 }
 
 void MipsR3000Cpu::StoreWordLeft( Instruction instr ) noexcept

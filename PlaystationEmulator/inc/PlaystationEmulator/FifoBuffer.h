@@ -56,7 +56,7 @@ public:
 		return BufferSize - m_last;
 	}
 
-	size_type MaxSize() noexcept
+	size_type MaxSize() const noexcept
 	{
 		return BufferSize;
 	}
