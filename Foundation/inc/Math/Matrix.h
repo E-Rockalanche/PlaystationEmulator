@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Vector.h"
+
 #include <stdx/assert.h>
 
 #include <array>

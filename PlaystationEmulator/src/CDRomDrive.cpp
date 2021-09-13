@@ -407,6 +407,15 @@ void CDRomDrive::ShiftQueuedInterrupt() noexcept
 	CheckInterrupt();
 }
 
+void CDRomDrive::AbortCommands() noexcept
+{
+	m_pendingCommand = Command::Invalid;
+	m_firstResponseCommand = Command::Invalid;
+	m_secondResponseCommand = Command::Invalid;
+	m_cyclesUntilCommand = InfiniteCycles;
+	m_cyclesUntilSecondResponse = InfiniteCycles;
+}
+
 #define COMMAND_CASE( command ) case Command::command:	command();	break
 
 void CDRomDrive::ExecuteCommand( Command command ) noexcept
@@ -448,16 +457,13 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			dbLog( "CDRomDrive::Init" ); // TODO: set mode=0x00, activate drive motor, standby, abort all commands
 
 			m_mode = 0;
+			m_motorOn = true;
 
-			// TODO: activate driver motor, standby
+			// TODO: standby
 
-			m_firstResponseCommand = Command::Invalid;
-			m_secondResponseCommand = Command::Invalid;
-			m_cyclesUntilCommand = InfiniteCycles;
-			m_cyclesUntilSecondResponse = InfiniteCycles;
+			AbortCommands();
 
 			SendResponse();
-
 			QueueSecondResponse( Command::Init );
 			break;
 		}
@@ -696,17 +702,23 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 
 		case Command::Mute:
 		{
+			// Turn off audio streaming to SPU (affects both CD-DA and XA-ADPCM).
+			// Even when muted, the CDROM controller is internally processing audio sectors( as seen in 1F801800h.Bit2, which works as usually for XA - ADPCM ),
+			// muting is just forcing the CD output volume to zero.
+			// Mute is used by Dino Crisis 1 to mute noise during modchip detection.
 			dbLog( "CDRomDRive::Mute" );
+			// TODO
 			SendResponse();
-			dbBreak(); // TODO
 			break;
 		}
 
 		case Command::Demute:
 		{
+			// Turn on audio streaming to SPU (affects both CD-DA and XA-ADPCM). The Demute command is needed only if one has formerly used the Mute command
+			// (by default, the PSX is demuted after power-up (...and/or after Init command?), and is demuted after cdrom-booting).
 			dbLog( "CDRomDRive::Demute" );
+			// TODO
 			SendResponse();
-			dbBreak(); // TODO
 			break;
 		}
 
@@ -835,7 +847,6 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 		case Command::Init:
 		{
 			dbLog( "CDRomDrive::Init -- second response" );
-			dbBreak(); // TODO
 			SendSecondResponse();
 			break;
 		}
@@ -843,7 +854,6 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 		case Command::MotorOn:
 		{
 			dbLog( "CDRomDrive::MotorOn -- second response" );
-			dbBreak(); // TODO
 			SendSecondResponse();
 			break;
 		}

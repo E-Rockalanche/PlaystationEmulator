@@ -1,6 +1,7 @@
 #include "GeometryTransformationEngine.h"
 
 #include <stdx/assert.h>
+#include <stdx/bit.h>
 
 #include <algorithm>
 
@@ -11,10 +12,23 @@ namespace
 {
 
 template <typename T>
+inline void ShiftBuffer( T& buffer )
+{
+	for ( size_t i = 1; i < buffer.size(); ++i )
+		buffer[ i - 1 ] = buffer[ i ];
+}
+
+template <typename T>
 constexpr uint32_t SignExtend16( T value ) noexcept
 {
 	static_assert( sizeof( T ) == sizeof( int16_t ) );
 	return static_cast<uint32_t>( static_cast<int16_t>( value ) );
+}
+
+template <typename T, typename U>
+constexpr int64_t DotProduct3( const T& lhs, const U& rhs )
+{
+	return int64_t( lhs[ 0 ] ) * int64_t( rhs[ 0 ] ) + int64_t( lhs[ 1 ] ) * int64_t( rhs[ 1 ] ) + int64_t( lhs[ 2 ] ) * int64_t( rhs[ 2 ] );
 }
 
 }
@@ -47,11 +61,11 @@ void GeometryTransformationEngine::Reset()
 
 	m_translation = { 0 };
 
-	m_lightSource = Matrix( 0 );
+	m_lightMatrix = Matrix( 0 );
 
 	m_backgroundColor = { 0 };
 
-	m_lightColor = Matrix( 0 );
+	m_colorMatrix = Matrix( 0 );
 
 	m_farColor = { 0 };
 
@@ -72,7 +86,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 {
 	dbExpects( index < 64 );
 
-	dbLog( "GeometryTransformationEngine::Read() -- [%u]", index );
+	// dbLog( "GeometryTransformationEngine::Read() -- [%u]", index );
 
 	auto readVXYn = [this]( size_t n ) -> uint32_t
 	{
@@ -156,25 +170,25 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::TranslationY:	return static_cast<uint32_t>( m_translation.y );
 		case Register::TranslationZ:	return static_cast<uint32_t>( m_translation.z );
 
-		case Register::L11L12:	return readMatrixPair( m_lightSource, 0 );
-		case Register::L13L21:	return readMatrixPair( m_lightSource, 2 );
-		case Register::L22L23:	return readMatrixPair( m_lightSource, 4 );
-		case Register::L31L32:	return readMatrixPair( m_lightSource, 6 );
-		case Register::L33:		return SignExtend16( m_lightSource[ 2 ][ 2 ] );
+		case Register::L11L12:	return readMatrixPair( m_lightMatrix, 0 );
+		case Register::L13L21:	return readMatrixPair( m_lightMatrix, 2 );
+		case Register::L22L23:	return readMatrixPair( m_lightMatrix, 4 );
+		case Register::L31L32:	return readMatrixPair( m_lightMatrix, 6 );
+		case Register::L33:		return SignExtend16( m_lightMatrix[ 2 ][ 2 ] );
 
-		case Register::BackgroundRed:	return static_cast<uint32_t>( m_backgroundColor.r );
-		case Register::BackgroundGreen:	return static_cast<uint32_t>( m_backgroundColor.g );
-		case Register::BackgroundBlue:	return static_cast<uint32_t>( m_backgroundColor.b );
+		case Register::BackgroundRed:	return static_cast<uint32_t>( m_backgroundColor.x );
+		case Register::BackgroundGreen:	return static_cast<uint32_t>( m_backgroundColor.y );
+		case Register::BackgroundBlue:	return static_cast<uint32_t>( m_backgroundColor.z );
 
-		case Register::LR1LR2:	return readMatrixPair( m_lightColor, 0 );
-		case Register::LR3LG1:	return readMatrixPair( m_lightColor, 2 );
-		case Register::LG2LG3:	return readMatrixPair( m_lightColor, 4 );
-		case Register::LB1LB2:	return readMatrixPair( m_lightColor, 6 );
-		case Register::LB3:		return SignExtend16( m_lightColor[ 2 ][ 2 ] );
+		case Register::LR1LR2:	return readMatrixPair( m_colorMatrix, 0 );
+		case Register::LR3LG1:	return readMatrixPair( m_colorMatrix, 2 );
+		case Register::LG2LG3:	return readMatrixPair( m_colorMatrix, 4 );
+		case Register::LB1LB2:	return readMatrixPair( m_colorMatrix, 6 );
+		case Register::LB3:		return SignExtend16( m_colorMatrix[ 2 ][ 2 ] );
 
-		case Register::FarColorRed:		return static_cast<uint32_t>( m_farColor.r );
-		case Register::FarColorGreen:	return static_cast<uint32_t>( m_farColor.g );
-		case Register::FarColorBlue:	return static_cast<uint32_t>( m_farColor.b );
+		case Register::FarColorRed:		return static_cast<uint32_t>( m_farColor.x );
+		case Register::FarColorGreen:	return static_cast<uint32_t>( m_farColor.y );
+		case Register::FarColorBlue:	return static_cast<uint32_t>( m_farColor.z );
 
 		case Register::ScreenOffsetX:	return static_cast<uint32_t>( m_screenOffset.x );
 		case Register::ScreenOffsetY:	return static_cast<uint32_t>( m_screenOffset.y );
@@ -199,7 +213,7 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 {
 	dbExpects( index < 64 );
 
-	dbLog( "GeometryTransformationEngine::Write() -- [%u <- %X]", index, value );
+	// dbLog( "GeometryTransformationEngine::Write() -- [%u <- %X]", index, value );
 
 	auto assignVXYn = [this]( size_t index, uint32_t value )
 	{
@@ -261,8 +275,7 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 		case Register::SXY2:	assignScreenXY( 2, value );		break;
 
 		case Register::SXYP:
-			m_screenXYFifo[ 0 ] = m_screenXYFifo[ 1 ];
-			m_screenXYFifo[ 1 ] = m_screenXYFifo[ 2 ];
+			ShiftBuffer( m_screenXYFifo );
 			assignScreenXY( 2, value );
 			break;
 
@@ -310,25 +323,25 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 		case Register::TranslationY:	m_translation.y = static_cast<int32_t>( value );	break;
 		case Register::TranslationZ:	m_translation.z = static_cast<int32_t>( value );	break;
 
-		case Register::L11L12:	assignMatrixPair( m_lightSource, 0, value );	break;
-		case Register::L13L21:	assignMatrixPair( m_lightSource, 2, value );	break;
-		case Register::L22L23:	assignMatrixPair( m_lightSource, 4, value );	break;
-		case Register::L31L32:	assignMatrixPair( m_lightSource, 6, value );	break;
-		case Register::L33:		m_lightSource[ 2 ][ 2 ] = static_cast<int16_t>( value );	break;
+		case Register::L11L12:	assignMatrixPair( m_lightMatrix, 0, value );	break;
+		case Register::L13L21:	assignMatrixPair( m_lightMatrix, 2, value );	break;
+		case Register::L22L23:	assignMatrixPair( m_lightMatrix, 4, value );	break;
+		case Register::L31L32:	assignMatrixPair( m_lightMatrix, 6, value );	break;
+		case Register::L33:		m_lightMatrix[ 2 ][ 2 ] = static_cast<int16_t>( value );	break;
 
-		case Register::BackgroundRed:	m_backgroundColor.r = static_cast<int32_t>( value );	break;
-		case Register::BackgroundGreen:	m_backgroundColor.g = static_cast<int32_t>( value );	break;
-		case Register::BackgroundBlue:	m_backgroundColor.b = static_cast<int32_t>( value );	break;
+		case Register::BackgroundRed:	m_backgroundColor.x = static_cast<int32_t>( value );	break;
+		case Register::BackgroundGreen:	m_backgroundColor.y = static_cast<int32_t>( value );	break;
+		case Register::BackgroundBlue:	m_backgroundColor.z = static_cast<int32_t>( value );	break;
 
-		case Register::LR1LR2:	assignMatrixPair( m_lightColor, 0, value );		break;
-		case Register::LR3LG1:	assignMatrixPair( m_lightColor, 2, value );		break;
-		case Register::LG2LG3:	assignMatrixPair( m_lightColor, 4, value );		break;
-		case Register::LB1LB2:	assignMatrixPair( m_lightColor, 6, value );		break;
-		case Register::LB3:		m_lightColor[ 2 ][ 2 ] = static_cast<int16_t>( value );		break;
+		case Register::LR1LR2:	assignMatrixPair( m_colorMatrix, 0, value );		break;
+		case Register::LR3LG1:	assignMatrixPair( m_colorMatrix, 2, value );		break;
+		case Register::LG2LG3:	assignMatrixPair( m_colorMatrix, 4, value );		break;
+		case Register::LB1LB2:	assignMatrixPair( m_colorMatrix, 6, value );		break;
+		case Register::LB3:		m_colorMatrix[ 2 ][ 2 ] = static_cast<int16_t>( value );		break;
 
-		case Register::FarColorRed:		m_farColor.r = static_cast<int32_t>( value );	break;
-		case Register::FarColorGreen:	m_farColor.g = static_cast<int32_t>( value );	break;
-		case Register::FarColorBlue:	m_farColor.b = static_cast<int32_t>( value );	break;
+		case Register::FarColorRed:		m_farColor.x = static_cast<int32_t>( value );	break;
+		case Register::FarColorGreen:	m_farColor.y = static_cast<int32_t>( value );	break;
+		case Register::FarColorBlue:	m_farColor.z = static_cast<int32_t>( value );	break;
 
 		case Register::ScreenOffsetX:	m_screenOffset.x = static_cast<int32_t>( value );	break;
 		case Register::ScreenOffsetY:	m_screenOffset.y = static_cast<int32_t>( value );	break;
@@ -341,7 +354,13 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 		case Register::ZScaleFactor3:	m_zScaleFactor3 = static_cast<int16_t>( value );	break;
 		case Register::ZScaleFactor4:	m_zScaleFactor4 = static_cast<int16_t>( value );	break;
 
-		case Register::ErrorFlags:	m_errorFlags = value;	break;
+		case Register::ErrorFlags:
+		{
+			m_errorFlags = value & ErrorFlag::WriteMask;
+			const bool hasError = m_errorFlags & ErrorFlag::ErrorMask;
+			stdx::set_bits<uint32_t>( m_errorFlags, ErrorFlag::Error, hasError );
+			break;
+		}
 
 		default:
 			dbBreak(); // TODO
@@ -349,32 +368,209 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 	}
 }
 
-void GeometryTransformationEngine::ExecuteCommand( uint32_t command ) noexcept
+template <size_t Index>
+void GeometryTransformationEngine::SetMAC( int64_t value, int shiftAmount ) noexcept
 {
-	dbLog( "GeometryTransformationEngine::ExecuteCommand() -- [%X]", command );
+	dbExpects( shiftAmount == 0 || Index != 0 );
 
-	const auto opcode = static_cast<Opcode>( command & 0x3f );
-	const bool shiftFraction = command & ( 1 << 19 );
-
-	auto calcAvgZ = [this]( uint32_t size, uint32_t scale )
+	static constexpr int64_t Min = ( Index == 0 ) ? MAC0Min : MAC123Min;
+	static constexpr int64_t Max = ( Index == 0 ) ? MAC0Max : MAC123Max;
+	if ( value < Min )
 	{
-		m_mac0 = 0;
-		for ( size_t i = 4 - size; i < 4; ++i )
-			m_mac0 += m_screenZFifo[ i ];
-		m_mac0 *= scale;
-		m_orderTableAvgZ = static_cast<uint16_t>( std::clamp( m_mac0 / 0x1000, 0, 0xffff ) );
+		if constexpr ( Index == 0 )
+			m_errorFlags |= ErrorFlag::MAC0Underflow;
+		if constexpr ( Index == 1 )
+			m_errorFlags |= ErrorFlag::MAC1Underflow;
+		if constexpr ( Index == 2 )
+			m_errorFlags |= ErrorFlag::MAC2Underflow;
+		if constexpr ( Index == 3 )
+			m_errorFlags |= ErrorFlag::MAC3Underflow;
+	}
+	else if ( value > Max )
+	{
+		if constexpr ( Index == 0 )
+			m_errorFlags |= ErrorFlag::MAC0Overflow;
+		if constexpr ( Index == 1 )
+			m_errorFlags |= ErrorFlag::MAC1Overflow;
+		if constexpr ( Index == 2 )
+			m_errorFlags |= ErrorFlag::MAC2Overflow;
+		if constexpr ( Index == 3 )
+			m_errorFlags |= ErrorFlag::MAC3Overflow;
+	}
+
+	value >>= shiftAmount;
+
+	if constexpr ( Index == 0 )
+		m_mac0 = static_cast<int32_t>( value );
+	else
+		m_mac123[ Index - 1 ] = static_cast<int32_t>( value );
+}
+
+template <size_t Index>
+void GeometryTransformationEngine::SetIR( int32_t value, bool lm ) noexcept
+{
+	dbExpects( lm == false || Index != 0 );
+
+	static constexpr auto Min = ( Index == 0 ) ? IR0Min : IR123Min;
+	static constexpr auto Max = ( Index == 0 ) ? IR0Max : IR123Max;
+
+	const auto minValue = lm ? 0 : Min;
+	if ( value < minValue || value > Max )
+	{
+		value = ( value < minValue ) ? minValue : Max;
+
+		if constexpr ( Index == 0 )
+			m_errorFlags |= ErrorFlag::IR0Saturated;
+		if constexpr ( Index == 1 )
+			m_errorFlags |= ErrorFlag::IR1Saturated;
+		if constexpr ( Index == 2 )
+			m_errorFlags |= ErrorFlag::IR2Saturated;
+		if constexpr ( Index == 3 )
+			m_errorFlags |= ErrorFlag::IR3Saturated;
+	}
+
+	if constexpr ( Index == 0 )
+		m_ir0 = static_cast<int16_t>( value );
+	else
+		m_ir123[ Index - 1 ] = static_cast<int16_t>( value );
+}
+
+template <size_t Index>
+void GeometryTransformationEngine::SetMACAndIR( int64_t value, int shiftAmount, bool lm ) noexcept
+{
+	SetMAC<Index>( value, shiftAmount );
+	SetIR<Index>( static_cast<int32_t>( value >> shiftAmount ), lm );
+}
+
+template <size_t Component>
+uint32_t GeometryTransformationEngine::TruncateRGB( int32_t value ) noexcept
+{
+	if ( value < ColorMin || value > ColorMax )
+	{
+		if constexpr ( Component == 0 )
+			m_errorFlags |= ErrorFlag::ColorFifoRSaturated;
+		if constexpr ( Component == 1 )
+			m_errorFlags |= ErrorFlag::ColorFifoGSaturated;
+		if constexpr ( Component == 2 )
+			m_errorFlags |= ErrorFlag::ColorFifoBSaturated;
+
+		return ( value < ColorMin ) ? ColorMin : ColorMax;
+	}
+
+	return static_cast<uint32_t>( value );
+}
+
+void GeometryTransformationEngine::PushScreenZ( int32_t value ) noexcept
+{
+	if ( value < ZMin )
+	{
+		value = ZMin;
+		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
+	}
+	else if ( value > ZMax )
+	{
+		value = ZMax;
+		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
+	}
+
+	ShiftBuffer( m_screenZFifo );
+	m_screenZFifo.back() = static_cast<uint16_t>( value );
+}
+
+void GeometryTransformationEngine::PushScreenXY( int32_t x, int32_t y ) noexcept
+{
+	auto truncate = [this]( int32_t coord, uint32_t errorFlag ) -> int16_t
+	{
+		if ( coord < ScreenMin )
+		{
+			m_errorFlags |= errorFlag;
+			return ScreenMin;
+		}
+		else if ( coord > ScreenMax )
+		{
+			m_errorFlags |= errorFlag;
+			return ScreenMax;
+		}
+		return static_cast<int16_t>( coord );
 	};
 
-	switch ( opcode )
+	ShiftBuffer( m_screenXYFifo );
+	auto& pos = m_screenXYFifo.back();
+	pos.x = truncate( x, ErrorFlag::SX2Saturated );
+	pos.y = truncate( y, ErrorFlag::SY2Saturated );
+}
+
+void GeometryTransformationEngine::PushColor( int32_t r, int32_t g, int32_t b ) noexcept
+{
+	ShiftBuffer( m_colorCodeFifo );
+	m_colorCodeFifo.back() = TruncateRGB<0>( r ) | ( TruncateRGB<1>( g ) << 8 ) | ( TruncateRGB<2>( b ) << 16 ) | ( m_code << 24 );
+}
+
+void GeometryTransformationEngine::CalculateAverageZ( size_t size, uint32_t zScaleFactor ) noexcept
+{
+	int64_t result = 0;
+	for ( size_t i = 0; i < size; ++i )
+		result += m_screenZFifo[ i ];
+
+	result *= zScaleFactor;
+
+	SetMAC<0>( result );
+
+	result = m_mac0 / 0x1000;
+
+	if ( result < ZMin )
+	{
+		result = ZMin;
+		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
+	}
+	else if ( result > ZMax )
+	{
+		result = ZMax;
+		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
+	}
+
+	m_orderTableAvgZ = static_cast<uint16_t>( result );
+}
+
+void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept
+{
+#define MULT( N ) SetMACAndIR<(N)+1>( DotProduct3( matrix[ (N) ], vector ), shiftAmount, lm )
+	MULT( 0 );
+	MULT( 1 );
+	MULT( 2 );
+#undef MULT
+}
+
+void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept
+{
+#define MULT( N ) SetMACAndIR<(N)+1>( int64_t( translation[ (N) ] ) * int64_t( 0x1000 ) + DotProduct3( matrix[ (N) ], vector ), shiftAmount, lm )
+	MULT( 0 );
+	MULT( 1 );
+	MULT( 2 );
+#undef MULT
+}
+
+void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexcept
+{
+	// dbLog( "GeometryTransformationEngine::ExecuteCommand() -- [%X]", commandValue );
+
+	Command command{ commandValue };
+
+	m_errorFlags = 0;
+
+	const bool sf = command.sf;
+	const bool lm = command.lm;
+
+	switch ( static_cast<Opcode>( command.opcode ) )
 	{
 		case Opcode::PerspectiveTransformationSingle:
-			DoPerspectiveTransformation( m_vectors[ 0 ], shiftFraction );
+			DoPerspectiveTransformation( m_vectors[ 0 ], sf );
 			break;
 
 		case Opcode::PerspectiveTransformationTriple:
-			DoPerspectiveTransformation( m_vectors[ 0 ], shiftFraction );
-			DoPerspectiveTransformation( m_vectors[ 1 ], shiftFraction );
-			DoPerspectiveTransformation( m_vectors[ 2 ], shiftFraction );
+			DoPerspectiveTransformation( m_vectors[ 0 ], sf );
+			DoPerspectiveTransformation( m_vectors[ 1 ], sf );
+			DoPerspectiveTransformation( m_vectors[ 2 ], sf );
 			break;
 
 		case Opcode::NormalClipping:
@@ -383,60 +579,117 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t command ) noexcept
 			auto& sxy1 = m_screenXYFifo[ 1 ];
 			auto& sxy2 = m_screenXYFifo[ 2 ];
 			// cross product
-			m_mac0 = ( sxy0.x * sxy1.y + sxy1.x * sxy2.y + sxy2.x * sxy0.y ) - ( sxy0.x * sxy2.y + sxy1.x * sxy0.y + sxy2.x * sxy1.y );
+			SetMAC<0>( ( sxy0.x * sxy1.y + sxy1.x * sxy2.y + sxy2.x * sxy0.y ) - ( sxy0.x * sxy2.y + sxy1.x * sxy0.y + sxy2.x * sxy1.y ) );
 			break;
 		}
 
 		case Opcode::Average3Z:
-			calcAvgZ( 3, m_zScaleFactor3 );
+			CalculateAverageZ( 3, m_zScaleFactor3 );
 			break;
 
 		case Opcode::Average4Z:
-			calcAvgZ( 4, m_zScaleFactor4 );
+			CalculateAverageZ( 4, m_zScaleFactor4 );
+			break;
+
+		case Opcode::NormalColorDepthCueSingle:
+			DoNormalColor<false, true>( m_vectors[ 0 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorDepthCueTriple:
+			DoNormalColor<false, true>( m_vectors[ 0 ], sf, lm );
+			DoNormalColor<false, true>( m_vectors[ 1 ], sf, lm );
+			DoNormalColor<false, true>( m_vectors[ 2 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorSingle:
+			DoNormalColor<false, false>( m_vectors[ 0 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorTriple:
+			DoNormalColor<false, false>( m_vectors[ 0 ], sf, lm );
+			DoNormalColor<false, false>( m_vectors[ 1 ], sf, lm );
+			DoNormalColor<false, false>( m_vectors[ 2 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorColorSingle:
+			DoNormalColor<true, false>( m_vectors[ 0 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorColorTriple:
+			DoNormalColor<true, false>( m_vectors[ 0 ], sf, lm );
+			DoNormalColor<true, false>( m_vectors[ 1 ], sf, lm );
+			DoNormalColor<true, false>( m_vectors[ 2 ], sf, lm );
 			break;
 
 		default:
 			dbBreak(); // TODO
 			break;
 	}
+
+	if ( m_errorFlags & ErrorFlag::ErrorMask )
+		m_errorFlags |= ErrorFlag::Error;
 }
 
-void GeometryTransformationEngine::DoPerspectiveTransformation( const Math::Vector3<int16_t>& vector, bool shiftFraction ) noexcept
+void GeometryTransformationEngine::DoPerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
 {
-	auto shiftFifo = []( auto& buffer )
-	{
-		for ( size_t i = 1; i < buffer.size(); ++i )
-			buffer[ i - 1 ] = buffer[ i ];
-	};
+	ShiftBuffer( m_screenXYFifo );
+	ShiftBuffer( m_screenZFifo );
 
-	shiftFifo( m_screenXYFifo );
-	shiftFifo( m_screenZFifo );
+	Transform( m_rotation, vector, m_translation, shiftAmount, 0 ); // lm is alway zero
 
-	auto dotProduct3 = []( const auto& lhs, const auto& rhs )
-	{
-		return lhs[ 0 ] * rhs[ 0 ] + lhs[ 1 ] * rhs[ 1 ] + lhs[ 2 ] * rhs[ 2 ];
-	};
+	PushScreenZ( m_mac123.z >> ( 12 - shiftAmount ) );
 
-	const auto shiftAmount = shiftFraction ? 12 : 0;
-	for ( size_t i = 0; i < 3; ++i )
-		m_mac123[ i ] = ( m_translation[ i ] * 0x1000 + dotProduct3( m_rotation[ i ], vector ) ) >> shiftAmount;
-
-	for ( size_t i = 0; i < 3; ++i )
-		m_ir123[ i ] = static_cast<int16_t>( m_mac123[ i ] );
-
-	m_screenZFifo[ 3 ] = static_cast<uint16_t>( m_mac123[ 2 ] >> ( shiftFraction ? 0 : 12 ) );
-
-	auto temp = ( ( m_projectionPlaneDistance * 0x20000 / m_screenZFifo[ 3 ] ) + 1 ) / 2;
-	if ( temp > 0x1ffff )
+	// TODO: use Unsigned Newton-Raphson (UNR) algorithm
+	auto temp = ( ( ( m_projectionPlaneDistance * 0x20000 ) / m_screenZFifo.back() ) + 1 ) / 2;
+	if ( temp > 0x1ffff || temp == 0 )
 	{
 		temp = 0x1ffff;
-		m_errorFlags |= ErorFlag::DivideOverflow;
+		m_errorFlags |= ErrorFlag::DivideOverflow;
 	}
 
-	m_screenXYFifo[ 2 ].x = static_cast<int16_t>( ( temp * m_ir123.x + m_screenOffset.x ) / 0x10000 );
-	m_screenXYFifo[ 2 ].y = static_cast<int16_t>( ( temp * m_ir123.y + m_screenOffset.y ) / 0x10000 );
-	m_mac0 = temp * m_depthQueueParamA + m_depthQueueParamB;
-	m_ir0 = static_cast<int16_t>( m_mac0 / 0x1000 );
+	const int32_t screenX = ( temp * m_ir123.x + m_screenOffset.x ) / 0x10000;
+	const int32_t screenY = ( temp * m_ir123.y + m_screenOffset.y ) / 0x10000;
+	PushScreenXY( screenX, screenY );
+
+	SetMAC<0>( temp * m_depthQueueParamA + m_depthQueueParamB );
+	SetIR<0>( m_mac0 / 0x1000, false );
+}
+
+template <bool Color, bool DepthCue>
+void GeometryTransformationEngine::DoNormalColor( const Vector16& normal, int shiftAmount, bool lm ) noexcept
+{
+	ShiftBuffer( m_colorCodeFifo );
+
+	Transform( m_lightMatrix, normal, shiftAmount, lm );
+
+	Transform( m_colorMatrix, m_ir123, m_backgroundColor, shiftAmount, lm );
+
+	if constexpr ( DepthCue || Color )
+	{
+		SetMAC<1>( ( m_color[ 0 ] * m_ir123[ 0 ] ) << 4 );
+		SetMAC<2>( ( m_color[ 1 ] * m_ir123[ 1 ] ) << 4 );
+		SetMAC<3>( ( m_color[ 2 ] * m_ir123[ 2 ] ) << 4 );
+	}
+
+	if constexpr ( DepthCue )
+	{
+		SetMAC<1>( m_mac123[ 0 ] + ( m_farColor[ 0 ] - m_mac123[ 0 ] ) * m_ir0 );
+		SetMAC<2>( m_mac123[ 1 ] + ( m_farColor[ 1 ] - m_mac123[ 1 ] ) * m_ir0 );
+		SetMAC<3>( m_mac123[ 2 ] + ( m_farColor[ 2 ] - m_mac123[ 2 ] ) * m_ir0 );
+	}
+
+	if constexpr ( DepthCue || Color )
+	{
+		SetMAC<1>( m_mac123[ 0 ] >> shiftAmount );
+		SetMAC<2>( m_mac123[ 1 ] >> shiftAmount );
+		SetMAC<3>( m_mac123[ 2 ] >> shiftAmount );
+	}
+
+	SetIR<1>( m_mac123[ 0 ] );
+	SetIR<2>( m_mac123[ 1 ] );
+	SetIR<3>( m_mac123[ 2 ] );
+
+	PushColor( m_mac123.x / 16, m_mac123.y / 16, m_mac123.z / 16 );
 }
 
 }

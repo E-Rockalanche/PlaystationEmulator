@@ -166,6 +166,8 @@ private:
 	void CheckPendingCommand() noexcept;
 	void CheckInterrupt() noexcept;
 	void ShiftQueuedInterrupt() noexcept;
+	void AbortCommands() noexcept;
+
 	void LoadDataFifo() noexcept;
 
 	// send status and interrupt

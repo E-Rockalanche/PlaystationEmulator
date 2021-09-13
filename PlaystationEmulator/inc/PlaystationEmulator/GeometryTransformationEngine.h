@@ -112,7 +112,7 @@ private:
 	};
 	static_assert( static_cast<uint32_t>( Register::ErrorFlags ) == 63 );
 
-	struct ErorFlag
+	struct ErrorFlag
 	{
 		enum : uint32_t
 		{
@@ -121,8 +121,8 @@ private:
 			SY2Saturated = 1 << 13,
 			SX2Saturated = 1 << 14,
 
-			MAC0OverflowNegative = 1 << 15,
-			MAC0OverflowPositive = 1 << 16,
+			MAC0Underflow = 1 << 15,
+			MAC0Overflow = 1 << 16,
 
 			DivideOverflow = 1 << 17,
 
@@ -136,13 +136,17 @@ private:
 			IR2Saturated = 1 << 23,
 			IR1Saturated = 1 << 24,
 
-			MAC3OverflowNegative = 1 << 25,
-			MAC2OverflowNegative = 1 << 26,
-			MAC1OverflowNegative = 1 << 27,
+			MAC3Underflow = 1 << 25,
+			MAC2Underflow = 1 << 26,
+			MAC1Underflow = 1 << 27,
 
-			MAC3OverflowPositive = 1 << 28,
-			MAC2OverflowPositive = 1 << 29,
-			MAC1OverflowPositive = 1 << 30,
+			MAC3Overflow = 1 << 28,
+			MAC2Overflow = 1 << 29,
+			MAC1Overflow = 1 << 30,
+
+			Error = 1u << 31, // set if any bit in ErrorMask is set
+
+			ErrorMask = 0x7f87e000,
 
 			WriteMask = 0x7ffff000
 		};
@@ -174,14 +178,91 @@ private:
 		NormalColorColorTriple = 0x3f // normal color color triple vector
 	};
 
-private:
-	void DoPerspectiveTransformation( const Math::Vector3<int16_t>& vector, bool shiftFraction ) noexcept;
+	union Command
+	{
+		Command( uint32_t v ) : value{ v } {}
+
+		struct
+		{
+			uint32_t opcode : 6;
+			uint32_t : 4;
+			uint32_t lm : 1; // saturate ir123 to 0-7fff
+			uint32_t : 2;
+			uint32_t mvmvaTranslationVector : 2;
+			uint32_t mvmvaMultiplyVector : 2;
+			uint32_t mvmvaMultiplyMatrix : 2;
+			uint32_t sf : 1; // shift fraction
+			uint32_t : 12;
+		};
+		uint32_t value;
+	};
+	static_assert( sizeof( Command ) == 4 );
+
+	using Matrix = Math::Matrix<int16_t, 3, 3>;
+	using Vector16 = Math::Vector3<int16_t>;
+	using Vector32 = Math::Vector3<int32_t>;
+
+	static constexpr int64_t MAC0Min = std::numeric_limits<int32_t>::min();
+	static constexpr int64_t MAC0Max = std::numeric_limits<int32_t>::max();
+
+	static constexpr int64_t MAC123Min = -( int64_t( 1 ) << 43 );
+	static constexpr int64_t MAC123Max = ( int64_t( 1 ) << 43 ) - 1;
+
+	static constexpr int16_t IR0Min = 0x0000;
+	static constexpr int16_t IR0Max = 0x1000;
+
+	static constexpr int16_t IR123Min = std::numeric_limits<int16_t>::min(); // or 0 if lm = 1
+	static constexpr int16_t IR123Max = std::numeric_limits<int16_t>::max();
+
+	static constexpr uint8_t ColorMin = 0x00u;
+	static constexpr uint8_t ColorMax = 0xffu;
+
+	static constexpr uint16_t ZMin = 0u;
+	static constexpr uint16_t ZMax = 0xffffu;
+
+	static constexpr int32_t DivideMin = 0;
+	static constexpr int32_t DivideMax = 0x1ffff;
+
+	static constexpr int16_t ScreenMin = -0x400;
+	static constexpr int16_t ScreenMax = 0x3ff;
 
 private:
-	using Matrix = Math::Matrix<int16_t, 3, 3>;
+
+	template <size_t Index>
+	void SetMAC( int64_t value, int shiftAmount = 0 ) noexcept;
+
+	template <size_t Index>
+	void SetIR( int32_t value, bool lm = false ) noexcept;
+
+	template <size_t Index>
+	void SetMACAndIR( int64_t value, int shiftAmount, bool lm ) noexcept;
+
+	template <size_t Index>
+	uint32_t TruncateRGB( int32_t value ) noexcept;
+
+	void PushScreenZ( int32_t value ) noexcept;
+
+	void PushScreenXY( int32_t x, int32_t y ) noexcept;
+
+	void PushColor( int32_t r, int32_t g, int32_t b ) noexcept;
+
+	void CalculateAverageZ( size_t size, uint32_t scale ) noexcept;
+
+	// stores result in MAC and IR
+	void Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept;
+
+	// stores result in MAC and IR
+	void Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept;
+
+	void DoPerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept;
+
+	template <bool Color, bool DepthCue>
+	void DoNormalColor( const Vector16& vector, int shiftAmount, bool lm ) noexcept;
+
+private:
 
 	// signed 16bit
-	std::array<Math::Vector3<int16_t>, 3> m_vectors{};
+	std::array<Vector16, 3> m_vectors{};
 
 	Math::ColorRGB<uint8_t> m_color{ 0 };
 	uint8_t m_code = 0;
@@ -192,7 +273,7 @@ private:
 	int16_t m_ir0 = 0;
 
 	// signed 16bit
-	Math::Vector3<int16_t> m_ir123{ 0 };
+	Vector16 m_ir123{ 0 };
 
 	// TODO: screen XY coordinate FIFOs
 	std::array<Math::Vector2<int16_t>, 3> m_screenXYFifo{};
@@ -205,7 +286,7 @@ private:
 
 	// signed 32 bit
 	int32_t m_mac0 = 0;
-	Math::Vector3<int32_t> m_mac123{ 0 };
+	Vector32 m_mac123{ 0 };
 
 	// convert rgb color between 48bit and 15bit
 	Math::ColorRGB<uint8_t> m_colorConversion{ 0 }; // 5bits per component. R/W as uint16_t
@@ -218,19 +299,19 @@ private:
 	Matrix m_rotation = Matrix( 0 );
 
 	// signed 31bit integer
-	Math::Vector3<int32_t> m_translation{ 0 };
+	Vector32 m_translation{ 0 };
 
 	// signed 3bit integer 12bit fraction
-	Matrix m_lightSource = Matrix( 0 );
+	Matrix m_lightMatrix = Matrix( 0 );
 
 	// signed 19bit integer 12bit fraction
-	Math::ColorRGB<int32_t> m_backgroundColor{ 0 };
+	Vector32 m_backgroundColor{ 0 };
 
 	// signed 3bit integer 12bit fraction
-	Matrix m_lightColor = Matrix( 0 );
+	Matrix m_colorMatrix = Matrix( 0 );
 
 	// signed 27bit integer 4bit fraction
-	Math::ColorRGB<int32_t> m_farColor{ 0 };
+	Vector32 m_farColor{ 0 };
 
 	// signed 15bit integer 16bit fraction
 	Math::Vector2<int32_t> m_screenOffset{ 0 };
