@@ -131,10 +131,13 @@ public:
 		const uint32_t address = sector * RawBytesPerSector;
 
 		m_file.seekg( address );
+
+		dbEnsures( !m_file.eof() );
 	}
 
 	void Read( char* data, std::size_t count )
 	{
+		dbExpects( !m_file.eof() );
 		m_file.read( data, count );
 	}
 
@@ -165,6 +168,7 @@ private:
 	template <typename T>
 	T Read()
 	{
+		dbExpects( !m_file.eof() );
 		T obj;
 		m_file.read( reinterpret_cast<char*>( &obj ), sizeof( obj ) );
 		return obj;

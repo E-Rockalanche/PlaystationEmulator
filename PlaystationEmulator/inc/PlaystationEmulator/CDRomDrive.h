@@ -85,8 +85,6 @@ private:
 		GetID = 0x1a,
 		ReadS = 0x1b,
 		ResetDrive = 0x1c,
-		GetQ = 0x1d, // adr, point
-		ReadTOC = 0x1e,
 
 		Secret1 = 0x50,
 		Secret2 = 0x51, // "Licensed by"
@@ -206,10 +204,23 @@ private:
 		return ( m_mode & ControllerMode::DoubleSpeed ) ? ( cyclesPerSecond / 150 ) : ( cyclesPerSecond / 75 );
 	}
 
-	void ClearSectorBuffers()
+	uint32_t GetFirstResponseCycles( Command command ) const noexcept
+	{
+		// timing taken from duckstation
+		return ( command == Command::Init )
+			? 120000
+			: ( CanReadDisk() ? 25000 : 15000 );
+	}
+
+	void ClearSectorBuffers() noexcept
 	{
 		for ( auto& sector : m_sectorBuffers )
 			sector.size = 0;
+	}
+
+	bool CommandTransferBusy() const noexcept
+	{
+		return m_pendingCommand != Command::Invalid;
 	}
 
 private:
@@ -225,12 +236,9 @@ private:
 
 	// timing
 	Command m_pendingCommand = Command::Invalid;
-	Command m_firstResponseCommand = Command::Invalid;
 	Command m_secondResponseCommand = Command::Invalid;
 	uint32_t m_cyclesUntilCommand = 0;
 	uint32_t m_cyclesUntilSecondResponse = 0;
-
-	bool m_commandTransferBusy = false;
 
 	uint8_t m_status = 0;
 

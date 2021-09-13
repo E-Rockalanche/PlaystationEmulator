@@ -100,12 +100,9 @@ void CDRomDrive::Reset()
 	m_queuedInterrupt = 0;
 
 	m_pendingCommand = Command::Invalid;
-	m_firstResponseCommand = Command::Invalid;
 	m_secondResponseCommand = Command::Invalid;
 	m_cyclesUntilCommand = InfiniteCycles;
 	m_cyclesUntilSecondResponse = InfiniteCycles;
-
-	m_commandTransferBusy = false;
 
 	m_status = 0;
 
@@ -152,7 +149,7 @@ uint8_t CDRomDrive::Read( uint32_t registerIndex ) noexcept
 				( !m_parameterBuffer.Full() << 4 ) |
 				( !m_responseBuffer.Empty() << 5 ) |
 				( !m_dataBuffer.Empty() << 6 ) |
-				( m_commandTransferBusy << 7 ) );
+				( CommandTransferBusy() << 7 ) );
 
 			dbLog( "CDRomDrive::Read() -- status [%X]", status );
 			return status;
@@ -208,7 +205,9 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 			{
 				case 0: // command register
 					dbLog( "CDRomDrive::Write() -- send command [%X]", value );
+					m_cycleScheduler.UpdateEarly();
 					SendCommand( static_cast<Command>( value ) );
+					m_cycleScheduler.ScheduleNextUpdate();
 					break;
 
 				case 1: // sound map data out
@@ -345,7 +344,7 @@ void CDRomDrive::AddCycles( uint32_t cycles ) noexcept
 
 	if ( updateCycles( m_cyclesUntilCommand, cycles ) )
 	{
-		const auto command = std::exchange( m_firstResponseCommand, Command::Invalid );
+		const auto command = std::exchange( m_pendingCommand, Command::Invalid );
 		ExecuteCommand( command );
 	}
 }
@@ -357,24 +356,28 @@ uint32_t CDRomDrive::GetCyclesUntilCommand() const noexcept
 
 void CDRomDrive::SendCommand( Command command ) noexcept
 {
-	dbExpects( !m_commandTransferBusy ); // TODO: malfunction if busy
-	dbExpects( m_pendingCommand == Command::Invalid );
-	dbExpects( m_cyclesUntilCommand == InfiniteCycles );
+	if ( CommandTransferBusy() )
+	{
+		dbLogWarning( "CDRomDrive::SendCommand() -- command transfer is busy" );
+	}
 
-	m_cycleScheduler.UpdateEarly();
+	if ( m_secondResponseCommand != Command::Invalid )
+	{
+		dbLogWarning( "CDRomDrive::SendCommand() -- cancelling second response [%X]", m_secondResponseCommand );
+		m_secondResponseCommand = Command::Invalid;
+		m_cyclesUntilSecondResponse = InfiniteCycles;
+	}
 
 	m_pendingCommand = command;
 	CheckPendingCommand();
-
-	m_cycleScheduler.ScheduleNextUpdate();
 }
 
 void CDRomDrive::QueueSecondResponse( Command command, int32_t ticks = 0x0004a00 ) noexcept // default ticks value is placeholder
 {
 	dbExpects( m_cycleScheduler.IsUpdating() ); // this should only get called in a cycle update callback
 	dbExpects( ticks > 0 );
-	dbExpects( m_secondResponseCommand == Command::Invalid );
-	dbExpects( m_cyclesUntilSecondResponse == InfiniteCycles );
+	// dbExpects( m_secondResponseCommand == Command::Invalid );
+	// dbExpects( m_cyclesUntilSecondResponse == InfiniteCycles );
 
 	m_secondResponseCommand = command;
 	m_cyclesUntilSecondResponse = ticks;
@@ -382,12 +385,9 @@ void CDRomDrive::QueueSecondResponse( Command command, int32_t ticks = 0x0004a00
 
 void CDRomDrive::CheckPendingCommand() noexcept
 {
+	// latest command doesn't send until the interrupt are cleared
 	if ( m_pendingCommand != Command::Invalid && m_interruptFlags == 0 )
-	{
-		m_firstResponseCommand = std::exchange( m_pendingCommand, Command::Invalid );
-		m_cyclesUntilCommand = ( m_firstResponseCommand == Command::Init ) ? 0x0013cce : 0x000c4e1; // init command takes longer to respond
-		m_commandTransferBusy = true;
-	}
+		m_cyclesUntilCommand = GetFirstResponseCycles( m_pendingCommand );
 }
 
 void CDRomDrive::CheckInterrupt() noexcept
@@ -410,7 +410,6 @@ void CDRomDrive::ShiftQueuedInterrupt() noexcept
 void CDRomDrive::AbortCommands() noexcept
 {
 	m_pendingCommand = Command::Invalid;
-	m_firstResponseCommand = Command::Invalid;
 	m_secondResponseCommand = Command::Invalid;
 	m_cyclesUntilCommand = InfiniteCycles;
 	m_cyclesUntilSecondResponse = InfiniteCycles;
@@ -422,7 +421,6 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 {
 	dbLog( "CDRomDrive::ExecuteCommand() -- [%X]", command );
 
-	m_commandTransferBusy = false;
 	m_responseBuffer.Reset( 0 );
 
 	switch ( command )
@@ -510,8 +508,15 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			// Aborts Reading and Playing, the motor is kept spinning, and the drive head maintains the current location within reasonable error
 			dbLog( "CDRomDrive::Pause()" );
 
-			m_secondResponseCommand = Command::Invalid;
-			m_cyclesUntilSecondResponse = InfiniteCycles;
+			switch ( m_secondResponseCommand )
+			{
+				case Command::ReadN:
+				case Command::ReadS:
+				case Command::Play:
+					m_secondResponseCommand = Command::Invalid;
+					m_cyclesUntilSecondResponse = InfiniteCycles;
+					break;
+			}
 
 			SendResponse();
 			QueueSecondResponse( Command::Pause );
@@ -574,6 +579,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		case Command::ReadN:
 			// Read with retry. The command responds once with "stat,INT3", and then it's repeatedly sending "stat,INT1 --> datablock",
 			// that is continued even after a successful read has occured; use the Pause command to terminate the repeated INT1 responses.
+
 		case Command::ReadS:
 			// Read without automatic retry. Not sure what that means... does WHAT on errors?
 		{
@@ -582,13 +588,6 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			ClearSectorBuffers();
 			SendResponse();
 			QueueSecondResponse( command, GetReadCycles() );
-			break;
-		}
-
-		case Command::ReadTOC:
-		{
-			dbLog( "CDRomDrive::ReadTOC" );
-			dbBreak(); // not supported in vC0
 			break;
 		}
 
@@ -678,16 +677,6 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			// TODO: return return start of specified track
 			m_responseBuffer.Push( 0 );
 			m_responseBuffer.Push( 0 );
-			break;
-		}
-
-		case Command::GetQ:
-		{
-			const auto adr = m_parameterBuffer.Pop();
-			const auto point = m_parameterBuffer.Pop();
-			dbLog( "CDRomDrive::GetQ() -- adr: %X, point: %X", (uint32_t)adr, (uint32_t)point );
-
-			dbBreak(); // not supported in vC0
 			break;
 		}
 
