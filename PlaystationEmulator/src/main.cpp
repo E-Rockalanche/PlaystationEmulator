@@ -211,7 +211,6 @@ int main( int, char** )
 
 	cycleScheduler.ScheduleNextUpdate();
 
-	// bool viewVRam = false;
 	bool quit = false;
 	while ( !quit )
 	{
@@ -235,10 +234,6 @@ int main( int, char** )
 						case SDLK_t:
 							// load test EXE
 							LoadExecutable( "psxtest_cpu.exe", *cpu, *ram );
-							break;
-
-						case SDLK_v:
-							viewVRam = !viewVRam;
 							break;
 
 						case SDLK_k:
@@ -273,11 +268,6 @@ int main( int, char** )
 			cpu->Tick();
 
 		renderer.DrawBatch();
-
-		/*
-		if( viewVRam )
-			renderer.RenderVRamView();
-			*/
 
 		renderer.DisplayFrame();
 

@@ -156,7 +156,13 @@ public:
 
 	SubHeader ReadSubHeader()
 	{
-		return Read<SubHeader>();
+		const auto sub = Read<SubHeader>();
+		const auto copy = Read<SubHeader>();
+		dbAssert( sub.file == copy.file &&
+			sub.channel == copy.channel &&
+			sub.submode == copy.submode &&
+			sub.codingInfo == copy.codingInfo );
+		return sub;
 	}
 
 	void Ignore( size_t bytes )

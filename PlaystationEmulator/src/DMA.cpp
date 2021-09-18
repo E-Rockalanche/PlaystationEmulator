@@ -145,6 +145,27 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 	}
 }
 
+uint32_t Dma::GetCyclesForTransfer( ChannelIndex channel, uint32_t words ) noexcept
+{
+	/*
+	DMA Transfer Rates
+	DMA0 MDEC.IN     1 clk/word   ;0110h clks per 100h words ;\plus whatever
+	DMA1 MDEC.OUT    1 clk/word   ;0110h clks per 100h words ;/decompression time
+	DMA2 GPU         1 clk/word   ;0110h clks per 100h words ;-plus ...
+	DMA3 CDROM/BIOS  24 clks/word ;1800h clks per 100h words ;\plus single/double
+	DMA3 CDROM/GAMES 40 clks/word ;2800h clks per 100h words ;/speed sector rate
+	DMA4 SPU         4 clks/word  ;0420h clks per 100h words ;-plus ...
+	DMA5 PIO         20 clks/word ;1400h clks per 100h words ;-not actually used
+	DMA6 OTC         1 clk/word   ;0110h clks per 100h words ;-plus nothing
+	*/
+	switch ( channel )
+	{
+		case ChannelIndex::CdRom:	return ( words * 0x2800 ) / 0x100;
+		case ChannelIndex::Spu:		return ( words * 0x0420 ) / 0x100;
+		default:					return ( words * 0x0110 ) / 0x100;
+	}
+}
+
 void Dma::FinishTransfer( uint32_t channelIndex ) noexcept
 {
 	m_channels[ channelIndex ].SetTransferComplete();
@@ -165,7 +186,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	auto& channel = m_channels[ channelIndex ];
 
 	const bool toRam = channel.GetTransferDirection() == Channel::TransferDirection::ToMainRam;
-	dbLog( "Dma::DoBlockTransfer() -- channel: %u, direction: %i, chopping: %i, dmaChopSize: %u, cpuChopSize: %i",
+	dbLog( "Dma::DoBlockTransfer() -- channel: %u, toRAM: %i, chopping: %i, dmaChopSize: %u, cpuChopSize: %i",
 		channelIndex,
 		(int)toRam,
 		channel.GetChoppingEnable(),
@@ -178,21 +199,10 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	dbAssert( address % 4 == 0 );
 	// TODO: address might need to be bitwise anded with 0x001ffffc
 
-	uint32_t wordCount = channel.GetWordCount();
-	dbAssert( wordCount != 0 );
+	const uint32_t totalWords = channel.GetWordCount();
+	dbAssert( totalWords != 0 );
 
-	/*
-	DMA Transfer Rates
-	DMA0 MDEC.IN     1 clk/word   ;0110h clks per 100h words ;\plus whatever
-	DMA1 MDEC.OUT    1 clk/word   ;0110h clks per 100h words ;/decompression time
-	DMA2 GPU         1 clk/word   ;0110h clks per 100h words ;-plus ...
-	DMA3 CDROM/BIOS  24 clks/word ;1800h clks per 100h words ;\plus single/double
-	DMA3 CDROM/GAMES 40 clks/word ;2800h clks per 100h words ;/speed sector rate
-	DMA4 SPU         4 clks/word  ;0420h clks per 100h words ;-plus ...
-	DMA5 PIO         20 clks/word ;1400h clks per 100h words ;-not actually used
-	DMA6 OTC         1 clk/word   ;0110h clks per 100h words ;-plus nothing
-	*/
-	m_cycleScheduler.AddCycles( wordCount ); // TODO: be more accurate
+	uint32_t wordCount = totalWords;
 
 	if ( toRam )
 	{
@@ -249,6 +259,8 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	}
 
 	FinishTransfer( channelIndex );
+
+	m_cycleScheduler.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalWords ) );
 }
 
 void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept

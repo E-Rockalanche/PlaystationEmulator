@@ -229,6 +229,8 @@ private:
 		return GetForceIrq() || ( GetIrqMasterEnable() && ( GetIrqEnables() & GetIrqFlags() ) != 0 );
 	}
 
+	static uint32_t GetCyclesForTransfer( ChannelIndex channel, uint32_t words ) noexcept;
+
 private:
 	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
 
