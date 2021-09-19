@@ -670,9 +670,13 @@ void GeometryTransformationEngine::DoNormalColor( const Vector16& normal, int sh
 
 	if constexpr ( DepthCue )
 	{
-		SetMAC<1>( m_mac123[ 0 ] + ( m_farColor[ 0 ] - m_mac123[ 0 ] ) * m_ir0 );
-		SetMAC<2>( m_mac123[ 1 ] + ( m_farColor[ 1 ] - m_mac123[ 1 ] ) * m_ir0 );
-		SetMAC<3>( m_mac123[ 2 ] + ( m_farColor[ 2 ] - m_mac123[ 2 ] ) * m_ir0 );
+		SetIR<1>( ( ( m_farColor[ 0 ] << 12 ) - m_mac123[ 0 ] ) >> shiftAmount, false );
+		SetIR<2>( ( ( m_farColor[ 1 ] << 12 ) - m_mac123[ 1 ] ) >> shiftAmount, false );
+		SetIR<3>( ( ( m_farColor[ 2 ] << 12 ) - m_mac123[ 2 ] ) >> shiftAmount, false );
+
+		SetMAC<1>( ( m_ir123[ 0 ] * m_ir0 ) + m_mac123[ 0 ] );
+		SetMAC<2>( ( m_ir123[ 1 ] * m_ir0 ) + m_mac123[ 1 ] );
+		SetMAC<3>( ( m_ir123[ 2 ] * m_ir0 ) + m_mac123[ 2 ] );
 	}
 
 	if constexpr ( DepthCue || Color )

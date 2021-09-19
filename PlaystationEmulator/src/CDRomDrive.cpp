@@ -931,7 +931,7 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 					case 3:
 					{
 						const auto subHeader = m_cdrom->ReadSubHeader();
-						dbAssert( subHeader.submode & CDRom::SubMode::Data ); //can only read data for now
+						// dbAssert( subHeader.submode & CDRom::SubMode::Data ); //can only read data for now
 						break;
 					}
 
