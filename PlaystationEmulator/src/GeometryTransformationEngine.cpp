@@ -409,7 +409,7 @@ void GeometryTransformationEngine::SetMAC( int64_t value, int shiftAmount ) noex
 template <size_t Index>
 void GeometryTransformationEngine::SetIR( int32_t value, bool lm ) noexcept
 {
-	dbExpects( lm == false || Index != 0 );
+	// duckstation lets ir0 be saturated
 
 	static constexpr auto Min = ( Index == 0 ) ? IR0Min : IR123Min;
 	static constexpr auto Max = ( Index == 0 ) ? IR0Max : IR123Max;
@@ -558,7 +558,7 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 
 	m_errorFlags = 0;
 
-	const bool sf = command.sf;
+	const int sf = command.sf ? 12 : 0;
 	const bool lm = command.lm;
 
 	switch ( static_cast<Opcode>( command.opcode ) )
@@ -632,34 +632,31 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 
 void GeometryTransformationEngine::DoPerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
 {
-	ShiftBuffer( m_screenXYFifo );
-	ShiftBuffer( m_screenZFifo );
+	// perspective transformation ignores lm bit
 
-	Transform( m_rotation, vector, m_translation, shiftAmount, 0 ); // lm is alway zero
+	Transform( m_rotation, vector, m_translation, shiftAmount, false );
 
 	PushScreenZ( m_mac123.z >> ( 12 - shiftAmount ) );
 
 	// TODO: use Unsigned Newton-Raphson (UNR) algorithm
-	auto temp = ( ( ( m_projectionPlaneDistance * 0x20000 ) / m_screenZFifo.back() ) + 1 ) / 2;
+	int64_t temp = ( ( ( m_projectionPlaneDistance * 0x20000 ) / m_screenZFifo.back() ) + 1 ) / 2;
 	if ( temp > 0x1ffff || temp == 0 )
 	{
 		temp = 0x1ffff;
 		m_errorFlags |= ErrorFlag::DivideOverflow;
 	}
 
-	const int32_t screenX = ( temp * m_ir123.x + m_screenOffset.x ) / 0x10000;
-	const int32_t screenY = ( temp * m_ir123.y + m_screenOffset.y ) / 0x10000;
+	const int32_t screenX = static_cast<int32_t>( ( temp * m_ir123.x + m_screenOffset.x ) / 0x10000 );
+	const int32_t screenY = static_cast<int32_t>( ( temp * m_ir123.y + m_screenOffset.y ) / 0x10000 );
 	PushScreenXY( screenX, screenY );
 
 	SetMAC<0>( temp * m_depthQueueParamA + m_depthQueueParamB );
-	SetIR<0>( m_mac0 / 0x1000, false );
+	SetIR<0>( m_mac0 / 0x1000, true );
 }
 
 template <bool Color, bool DepthCue>
 void GeometryTransformationEngine::DoNormalColor( const Vector16& normal, int shiftAmount, bool lm ) noexcept
 {
-	ShiftBuffer( m_colorCodeFifo );
-
 	Transform( m_lightMatrix, normal, shiftAmount, lm );
 
 	Transform( m_colorMatrix, m_ir123, m_backgroundColor, shiftAmount, lm );
@@ -680,16 +677,17 @@ void GeometryTransformationEngine::DoNormalColor( const Vector16& normal, int sh
 
 	if constexpr ( DepthCue || Color )
 	{
-		SetMAC<1>( m_mac123[ 0 ] >> shiftAmount );
-		SetMAC<2>( m_mac123[ 1 ] >> shiftAmount );
-		SetMAC<3>( m_mac123[ 2 ] >> shiftAmount );
+		SetMAC<1>( m_mac123[ 0 ], shiftAmount );
+		SetMAC<2>( m_mac123[ 1 ], shiftAmount );
+		SetMAC<3>( m_mac123[ 2 ], shiftAmount );
 	}
 
-	SetIR<1>( m_mac123[ 0 ] );
-	SetIR<2>( m_mac123[ 1 ] );
-	SetIR<3>( m_mac123[ 2 ] );
-
 	PushColor( m_mac123.x / 16, m_mac123.y / 16, m_mac123.z / 16 );
+
+	// TODO: not sure is lm is fixed here
+	SetIR<1>( m_mac123[ 0 ], lm );
+	SetIR<2>( m_mac123[ 1 ], lm );
+	SetIR<3>( m_mac123[ 2 ], lm );
 }
 
 }

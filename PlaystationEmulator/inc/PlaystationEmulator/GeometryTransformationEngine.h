@@ -232,7 +232,7 @@ private:
 	void SetMAC( int64_t value, int shiftAmount = 0 ) noexcept;
 
 	template <size_t Index>
-	void SetIR( int32_t value, bool lm = false ) noexcept;
+	void SetIR( int32_t value, bool lm ) noexcept;
 
 	template <size_t Index>
 	void SetMACAndIR( int64_t value, int shiftAmount, bool lm ) noexcept;

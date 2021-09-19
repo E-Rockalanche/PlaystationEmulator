@@ -38,8 +38,11 @@ public:
 	// update cycles early (typically called before accessing registers that could alter the result)
 	void UpdateEarly() noexcept
 	{
-		UpdateCycles( m_cycles );
-		m_cycles = 0;
+		if ( m_cycles > 0 )
+		{
+			UpdateCycles( m_cycles );
+			m_cycles = 0;
+		}
 	}
 	
 	// calculates cycles until next event

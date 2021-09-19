@@ -206,6 +206,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 	if ( toRam )
 	{
+		dbLog( "\twriting %X bytes to %X", totalWords, address );
 		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
 			case ChannelIndex::RamOrderTable:
@@ -242,6 +243,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	}
 	else
 	{
+		dbLog( "\treading %X bytes from %X", totalWords, address );
 		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
 			case ChannelIndex::Gpu:

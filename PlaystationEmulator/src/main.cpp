@@ -205,7 +205,7 @@ int main( int, char** )
 	};
 
 	auto cdrom = std::make_unique<PSX::CDRom>();
-	cdrom->Open( "CrashBandicoot.bin" );
+	cdrom->Open( "RidgeRacerTrack1.bin" );
 
 	cdRomDrive->SetCDRom( std::move( cdrom ) );
 
