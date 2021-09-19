@@ -209,7 +209,7 @@ int main( int argc, char** argv )
 	if ( binFilename )
 	{
 		auto cdrom = std::make_unique<PSX::CDRom>();
-		if ( cdrom->Open( "CrashBandicoot.bin" ) )
+		if ( cdrom->Open( binFilename ) )
 			cdRomDrive->SetCDRom( std::move( cdrom ) );
 	}
 
