@@ -688,7 +688,6 @@ void GeometryTransformationEngine::DoNormalColor( const Vector16& normal, int sh
 
 	PushColor( m_mac123.x / 16, m_mac123.y / 16, m_mac123.z / 16 );
 
-	// TODO: not sure is lm is fixed here
 	SetIR<1>( m_mac123[ 0 ], lm );
 	SetIR<2>( m_mac123[ 1 ], lm );
 	SetIR<3>( m_mac123[ 2 ], lm );

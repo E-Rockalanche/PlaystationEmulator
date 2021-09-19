@@ -9,6 +9,8 @@
 namespace PSX
 {
 
+// circular queue used by PSX hardware
+
 template <typename T, size_t BufferSize>
 class FifoBuffer
 {
@@ -17,18 +19,13 @@ public:
 
 	// element access
 
-	T Pop() noexcept
-	{
-		dbExpects( !Empty() );
-		return m_buffer[ m_first++ ];
-	}
-
 	T Peek() const noexcept
 	{
-		dbExpects( !Empty() );
+		dbExpects( m_size > 0 );
 		return m_buffer[ m_first ];
 	}
 
+	// get pointer to raw buffer
 	const T* Data() const noexcept
 	{
 		return m_buffer.data();
@@ -38,27 +35,22 @@ public:
 
 	size_type Size() const noexcept
 	{
-		return m_last - m_first;
+		return m_size;
 	}
 
 	bool Empty() const noexcept
 	{
-		return m_last == m_first;
+		return m_size == 0;
 	}
 
 	bool Full() const noexcept
 	{
-		return Size() == BufferSize;
+		return m_size == BufferSize;
 	}
 
 	size_type Capacity() const noexcept
 	{
-		return BufferSize - m_last;
-	}
-
-	size_type MaxSize() const noexcept
-	{
-		return BufferSize;
+		return BufferSize - m_size;
 	}
 
 	// modifiers
@@ -67,43 +59,58 @@ public:
 	{
 		m_last = 0;
 		m_first = 0;
+		m_size = 0;
 	}
 
+	// clears queue and fills buffer with value
 	void Reset( T value = T() ) noexcept
 	{
 		Clear();
 		m_buffer.fill( value );
 	}
 
+	T Pop() noexcept
+	{
+		dbExpects( m_size > 0 );
+		const T result = m_buffer[ m_first ];
+		m_first = ( m_first + 1 ) % BufferSize;
+		--m_size;
+		return result;
+	}
+
 	void Push( T value ) noexcept
 	{
-		m_buffer[ m_last++ ] = value;
+		dbExpects( m_size < BufferSize );
+		m_buffer[ m_last ] = value;
+		m_last = ( m_last + 1 ) % BufferSize;
+		++m_size;
 	}
 
 	void Push( const T* data, size_type count ) noexcept
 	{
-		dbExpects( count <= Capacity() );
-		std::copy_n( data, count, m_buffer.data() + m_last );
-		m_last += count;
-	}
+		dbExpects( m_size + count <= BufferSize );
 
-	// move current position back to regain access to the last popped element
-	void Unpop() noexcept
-	{
-		dbExpects( m_first > 0 );
-		--m_first;
-	}
-	
-	// shift remaining data to front of buffer
-	void Shift() noexcept
-	{
-		if ( m_first > 0 )
-			std::copy_n( m_buffer.data() + m_first, Size(), m_buffer.data() );
+		// split copy into two segment if ( m_last + count > BufferSize )
+
+		const size_type seg1Capacity = BufferSize - m_last;
+		const size_type seg1Size = ( count <= seg1Capacity ) ? count : seg1Capacity;
+		const size_type seg2Size = count - seg1Size;
+
+		// copy data to buffer after m_last
+		std::copy_n( data, seg1Size, m_buffer.data() + m_last );
+
+		// copy remaining data to start of buffer
+		if ( seg2Size > 0 )
+			std::copy_n( data + seg1Size, seg2Size, m_buffer.data() );
+
+		m_last = ( m_last + count ) % BufferSize;
+		m_size += count;
 	}
 
 private:
 	size_type m_first = 0;
 	size_type m_last = 0;
+	size_type m_size = 0;
 	std::array<T, BufferSize> m_buffer{};
 };
 

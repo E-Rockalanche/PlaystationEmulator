@@ -94,8 +94,10 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 	return true;
 }
 
-int main( int, char** )
+int main( int argc, char** argv )
 {
+	const char* binFilename = ( argc >= 2 ) ? argv[ 1 ] : nullptr;
+
 	dbLog( "initializing SDL" );
 	if ( SDL_Init( SDL_INIT_VIDEO ) < 0 )
 	{
@@ -204,10 +206,12 @@ int main( int, char** )
 		{ SDLK_z, PSX::Button::Square },
 	};
 
-	auto cdrom = std::make_unique<PSX::CDRom>();
-	cdrom->Open( "RidgeRacerTrack1.bin" );
-
-	cdRomDrive->SetCDRom( std::move( cdrom ) );
+	if ( binFilename )
+	{
+		auto cdrom = std::make_unique<PSX::CDRom>();
+		if ( cdrom->Open( "CrashBandicoot.bin" ) )
+			cdRomDrive->SetCDRom( std::move( cdrom ) );
+	}
 
 	cycleScheduler.ScheduleNextUpdate();
 

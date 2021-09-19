@@ -204,6 +204,11 @@ private:
 		return ( m_mode & ControllerMode::DoubleSpeed ) ? ( cyclesPerSecond / 150 ) : ( cyclesPerSecond / 75 );
 	}
 
+	uint32_t GetSeekCycles() const noexcept
+	{
+		return 20000; // TODO: account for motor spin up time, sector difference, etc
+	}
+
 	uint32_t GetFirstResponseCycles( Command command ) const noexcept
 	{
 		// timing taken from duckstation
@@ -258,6 +263,7 @@ private:
 
 	bool m_muteADPCM = false;
 	bool m_motorOn = false;
+	bool m_pendingSeek = false; // SetLoc was called, but we haven't seeked there yet
 
 	FifoBuffer<uint8_t, ParamaterBufferSize> m_parameterBuffer;
 	FifoBuffer<uint8_t, ResponseBufferSize> m_responseBuffer;

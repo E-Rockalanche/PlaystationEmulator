@@ -144,12 +144,12 @@ uint8_t CDRomDrive::Read( uint32_t registerIndex ) noexcept
 		case 0:
 		{
 			// TODO: XA_ADPCM fifo empty
-			const uint8_t status = static_cast<uint8_t>( m_index |
-				( m_parameterBuffer.Empty() << 3 ) |
-				( !m_parameterBuffer.Full() << 4 ) |
-				( !m_responseBuffer.Empty() << 5 ) |
-				( !m_dataBuffer.Empty() << 6 ) |
-				( CommandTransferBusy() << 7 ) );
+			const uint8_t status = m_index |
+				( (uint8_t)m_parameterBuffer.Empty() << 3 ) |
+				( (uint8_t)!m_parameterBuffer.Full() << 4 ) |
+				( (uint8_t)!m_responseBuffer.Empty() << 5 ) |
+				( (uint8_t)!m_dataBuffer.Empty() << 6 ) |
+				( (uint8_t)CommandTransferBusy() << 7 );
 
 			dbLog( "CDRomDrive::Read() -- status [%X]", status );
 			return status;
@@ -157,10 +157,17 @@ uint8_t CDRomDrive::Read( uint32_t registerIndex ) noexcept
 
 		case 1: // response FIFO (all indices)
 		{
-			// TODO: when reading past last response, buffer is padded with 0s to the end of the buffer, and then restarts at the first byte
-			const uint8_t value = m_responseBuffer.Pop();
-			dbLog( "CDRomDrive::Read() -- response FIFO [%X]", value );
-			return value;
+			if ( !m_responseBuffer.Empty() )
+			{
+				const uint8_t value = m_responseBuffer.Pop();
+				dbLog( "CDRomDrive::Read() -- response FIFO [%X]", value );
+				return value;
+			}
+			else
+			{
+				dbLog( "CDRomDrive::Read() -- response FIFO is empty" );
+				return 0;
+			}
 		}
 
 		case 2: // data FIFO (all indices) 8 or 16 bit
@@ -277,9 +284,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 					m_interruptFlags = m_interruptFlags & ~value;
 
 					if ( value & InterruptFlag::ResetParameterFifo )
-						m_parameterBuffer.Reset();
-
-					// m_responseBuffer.Reset(); // TODO when first/second responses are broken up
+						m_parameterBuffer.Clear();
 
 					if ( m_interruptFlags == 0 )
 					{
@@ -421,7 +426,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 {
 	dbLog( "CDRomDrive::ExecuteCommand() -- [%X]", command );
 
-	m_responseBuffer.Reset( 0 );
+	m_responseBuffer.Clear();
 
 	switch ( command )
 	{
@@ -539,6 +544,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			{
 				// valid arguments
 				m_seekLocation = CDRom::Location::FromBCD( mm, ss, sect );
+				m_pendingSeek = true;
 				SendResponse();
 			}
 			else
@@ -560,7 +566,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			{
 				m_status |= Status::Seek;
 				SendResponse();
-				QueueSecondResponse( command );
+				QueueSecondResponse( command, GetSeekCycles() );
 			}
 			else
 			{
@@ -589,6 +595,14 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		{
 			dbLog( "CDRomDrive::ReadN" );
 
+			uint32_t cycles = GetReadCycles();
+
+			if ( m_pendingSeek )
+			{
+				dbLog( "\tseek before reading" );
+				cycles += GetSeekCycles();
+			}
+
 			if ( m_status & Status::Read )
 				dbLog( "\talready reading" );
 
@@ -597,7 +611,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			m_readSectorBuffer = 0;
 			m_writeSectorBuffer = 0;
 			SendResponse();
-			QueueSecondResponse( command, GetReadCycles() );
+			QueueSecondResponse( command, cycles );
 			break;
 		}
 
@@ -793,7 +807,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		}
 	}
 
-	m_parameterBuffer.Reset();
+	m_parameterBuffer.Clear();
 
 	dbAssert( m_interruptFlags != InterruptResponse::None ); // there should be a response
 
@@ -807,7 +821,7 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 	dbLog( "CDRomDrive::ExecuteSecondResponse() -- [%X]", command );
 
 	dbAssert( m_queuedInterrupt == 0 ); // cannot queue more than 1 interrupt
-	m_secondResponseBuffer.Reset( 0 );
+	m_secondResponseBuffer.Clear();
 
 	switch ( command )
 	{
@@ -871,6 +885,7 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 			{
 				m_currentSector = m_seekLocation.GetLogicalSector();
 				m_cdrom->Seek( m_currentSector );
+				m_pendingSeek = false;
 				SendSecondResponse();
 			}
 			else
@@ -894,6 +909,14 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 		case Command::ReadS:
 		{
 			dbLog( "CDRomDrive::Read%c -- second response", ( command == Command::ReadN ) ? 'N' : 'S' );
+
+			// TEMP
+			if ( m_pendingSeek )
+			{
+				m_currentSector = m_seekLocation.GetLogicalSector();
+				m_cdrom->Seek( m_currentSector );
+				m_pendingSeek = false;
+			}
 
 			stdx::reset_bits<uint8_t>( m_status, Status::Read );
 
@@ -971,7 +994,11 @@ void CDRomDrive::LoadDataFifo() noexcept
 {
 	dbLog( "CDRomDrive::LoadDataFifo()" );
 
-	dbAssert( m_dataBuffer.Empty() );
+	if ( !m_dataBuffer.Empty() )
+	{
+		dbLogWarning( "data buffer is not empty" );
+		return;
+	}
 
 	auto& sector = m_sectorBuffers[ m_readSectorBuffer ];
 

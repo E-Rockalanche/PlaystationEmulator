@@ -157,7 +157,7 @@ void Gpu::Reset()
 
 void Gpu::ClearCommandBuffer() noexcept
 {
-	m_commandBuffer.Reset();
+	m_commandBuffer.Clear();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
 	SetGP0Mode( &Gpu::GP0_Command );

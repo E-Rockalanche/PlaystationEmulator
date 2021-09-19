@@ -261,7 +261,7 @@ const char* const FunctionNamesB[]
 	"OpenEvent",
 	"CloseEvent",
 	"WaitEvent",
-	"TestEvent",
+	nullptr, // "TestEvent",
 	"EnableEvent",
 	"DisableEvent",
 	"OpenThread",
