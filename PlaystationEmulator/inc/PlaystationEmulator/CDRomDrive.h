@@ -84,7 +84,10 @@ private:
 		Test = 0x19, // sub_function
 		GetID = 0x1a,
 		ReadS = 0x1b,
-		ResetDrive = 0x1c,
+		Reset = 0x1c,
+		GetQ = 0x1d,
+		ReadTOC = 0x1e,
+		VideoCD = 0x1f,
 
 		Secret1 = 0x50,
 		Secret2 = 0x51, // "Licensed by"

@@ -471,11 +471,11 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			break;
 		}
 
-		case Command::ResetDrive:
+		case Command::Reset:
 		{
 			// Resets the drive controller, reportedly, same as opening and closing the drive door.
 			// The command executes no matter if/how many parameters are used
-			dbLog( "CDRomDrive::ResetDrive" );
+			dbLog( "CDRomDrive::Reset" );
 			dbBreak(); // TODO
 			SendResponse();
 			break;

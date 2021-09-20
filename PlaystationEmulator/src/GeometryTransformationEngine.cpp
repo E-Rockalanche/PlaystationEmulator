@@ -11,11 +11,14 @@ namespace PSX
 namespace
 {
 
-template <typename T>
-inline void ShiftBuffer( T& buffer )
+template <typename Buffer, typename T>
+inline void PushBack( Buffer& buffer, T value )
 {
-	for ( size_t i = 1; i < buffer.size(); ++i )
-		buffer[ i - 1 ] = buffer[ i ];
+	const auto sizeMinus1 = buffer.size() - 1;
+	for ( size_t i = 0; i < sizeMinus1; ++i )
+		buffer[ i ] = buffer[ i + 1 ];
+
+	buffer[ sizeMinus1 ] = value;
 }
 
 template <typename T>
@@ -37,8 +40,7 @@ void GeometryTransformationEngine::Reset()
 {
 	m_vectors.fill( Math::Vector3<int16_t>{ 0 } );
 
-	m_color = { 0 };
-	m_code = 0;
+	m_color = ColorRGBC();
 
 	m_orderTableAvgZ = 0;
 
@@ -47,12 +49,10 @@ void GeometryTransformationEngine::Reset()
 
 	m_screenXYFifo.fill( Math::Vector2<int16_t>{ 0 } );
 	m_screenZFifo.fill( 0 );
-	m_colorCodeFifo.fill( 0 );
+	m_colorCodeFifo.fill( ColorRGBC() );
 
 	m_mac0 = 0;
 	m_mac123 = { 0 };
-
-	m_colorConversion = { 0 };
 
 	m_leadingBitsSource = 0;
 	m_leadingBitsResult = 0;
@@ -121,7 +121,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::VZ1:		return readVZn( 1 );
 		case Register::VZ2:		return readVZn( 2 );
 
-		case Register::ColorCode:	return Math::ToColorCode( m_color ) | ( m_code << 24 );
+		case Register::ColorCode:	return m_color.value;
 
 		case Register::OrderTableAvgZ:	return m_orderTableAvgZ;
 
@@ -140,9 +140,9 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::SZ2:		return m_screenZFifo[ 2 ];
 		case Register::SZ3:		return m_screenZFifo[ 3 ];
 
-		case Register::RGB0:	return m_colorCodeFifo[ 0 ];
-		case Register::RGB1:	return m_colorCodeFifo[ 1 ];
-		case Register::RGB2:	return m_colorCodeFifo[ 2 ];
+		case Register::RGB0:	return m_colorCodeFifo[ 0 ].value;
+		case Register::RGB1:	return m_colorCodeFifo[ 1 ].value;
+		case Register::RGB2:	return m_colorCodeFifo[ 2 ].value;
 
 		case Register::Prohibited:
 			return 0;
@@ -154,7 +154,12 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 
 		case Register::ColorConversionInput:
 		case Register::ColorConversionOutput:
-			return static_cast<uint32_t>( m_colorConversion.r | ( m_colorConversion.g << 5 ) | ( m_colorConversion.b << 10 ) );
+		{
+			const uint32_t r = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 0 ] / 0x80, 0x00, 0x1f ) );
+			const uint32_t g = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 1 ] / 0x80, 0x00, 0x1f ) );
+			const uint32_t b = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 2 ] / 0x80, 0x00, 0x1f ) );
+			return r | ( g << 5 ) | ( b << 10 );
+		}
 
 		case Register::LeadingBitsSource:	return m_leadingBitsSource;
 
@@ -193,6 +198,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		case Register::ScreenOffsetX:	return static_cast<uint32_t>( m_screenOffset.x );
 		case Register::ScreenOffsetY:	return static_cast<uint32_t>( m_screenOffset.y );
 
+		// hardware bug: H is sign expanded even though it is unsigned
 		case Register::ProjectionPlaneDistance:		return SignExtend16( m_projectionPlaneDistance );
 
 		case Register::DepthQueueA:		return static_cast<uint16_t>( m_depthQueueParamA );
@@ -213,7 +219,7 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 {
 	dbExpects( index < 64 );
 
-	// dbLog( "GeometryTransformationEngine::Write() -- [%u <- %X]", index, value );
+	// writing to registers doesn't trigger overflow flags
 
 	auto assignVXYn = [this]( size_t index, uint32_t value )
 	{
@@ -227,23 +233,15 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 		m_vectors[ index ].z = static_cast<int16_t>( value );
 	};
 
-	auto assignIRn = [this]( size_t index, uint32_t value )
-	{
-		m_ir123[ index ] = static_cast<int16_t>( value );
-		m_colorConversion[ index ] = static_cast<uint8_t>( std::clamp<int16_t>( static_cast<int16_t>( value ) / 0x80, 0x00, 0x1f ) );
-	};
-
 	auto assignMatrixPair = [this]( Matrix& matrix, size_t elementOffset, uint32_t value )
 	{
 		matrix.elements[ elementOffset ] = static_cast<int16_t>( value );
 		matrix.elements[ elementOffset + 1 ] = static_cast<int16_t>( value >> 16 );
 	};
 
-	auto assignScreenXY = [this]( size_t index, uint32_t value )
+	auto toScreenXY = []( uint32_t value )
 	{
-		auto& v = m_screenXYFifo[ index ];
-		v.x = static_cast<int16_t>( value );
-		v.y = static_cast<int16_t>( value >> 16 );
+		return ScreenXY( static_cast<int16_t>( value ), static_cast<int16_t>( value >> 16 ) );
 	};
 
 	switch ( static_cast<Register>( index ) )
@@ -256,27 +254,21 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 		case Register::VZ1:		assignVZn( 1, value );	break;
 		case Register::VZ2:		assignVZn( 2, value );	break;
 
-		case Register::ColorCode:
-			m_color = Math::FromColorCode<uint8_t>( value );
-			m_code = value >> 24;
-			break;
+		case Register::ColorCode:	m_color.value = value;	break;
 
-		case Register::OrderTableAvgZ:
-			m_orderTableAvgZ = static_cast<uint16_t>( value );
-			break;
+		case Register::OrderTableAvgZ:	m_orderTableAvgZ = static_cast<uint16_t>( value );	break;
 
-		case Register::IR0:		m_ir0 = static_cast<int16_t>( value );
-		case Register::IR1:		assignIRn( 0, value );	break;
-		case Register::IR2:		assignIRn( 1, value );	break;
-		case Register::IR3:		assignIRn( 2, value );	break;
+		case Register::IR0:		m_ir0 = static_cast<int16_t>( value );			break;
+		case Register::IR1:		m_ir123[ 0 ] = static_cast<int16_t>( value );	break;
+		case Register::IR2:		m_ir123[ 1 ] = static_cast<int16_t>( value );	break;
+		case Register::IR3:		m_ir123[ 2 ] = static_cast<int16_t>( value );	break;
 
-		case Register::SXY0:	assignScreenXY( 0, value );		break;
-		case Register::SXY1:	assignScreenXY( 1, value );		break;
-		case Register::SXY2:	assignScreenXY( 2, value );		break;
+		case Register::SXY0:	m_screenXYFifo[ 0 ] = toScreenXY( value );	break;
+		case Register::SXY1:	m_screenXYFifo[ 1 ] = toScreenXY( value );	break;
+		case Register::SXY2:	m_screenXYFifo[ 2 ] = toScreenXY( value );	break;
 
 		case Register::SXYP:
-			ShiftBuffer( m_screenXYFifo );
-			assignScreenXY( 2, value );
+			PushBack( m_screenXYFifo, toScreenXY( value ) );
 			break;
 
 		case Register::SZ0:		m_screenZFifo[ 0 ] = static_cast<uint16_t>( value );	break;
@@ -284,9 +276,9 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 		case Register::SZ2:		m_screenZFifo[ 2 ] = static_cast<uint16_t>( value );	break;
 		case Register::SZ3:		m_screenZFifo[ 3 ] = static_cast<uint16_t>( value );	break;
 
-		case Register::RGB0:	m_colorCodeFifo[ 0 ] = value;	break;
-		case Register::RGB1:	m_colorCodeFifo[ 1 ] = value;	break;
-		case Register::RGB2:	m_colorCodeFifo[ 2 ] = value;	break;
+		case Register::RGB0:	m_colorCodeFifo[ 0 ].value = value;		break;
+		case Register::RGB1:	m_colorCodeFifo[ 1 ].value = value;		break;
+		case Register::RGB2:	m_colorCodeFifo[ 2 ].value = value;		break;
 
 		case Register::Prohibited:	break;
 
@@ -297,13 +289,9 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 
 		case Register::ColorConversionInput:
 		{
-			m_colorConversion.r = value & 0x1f;
-			m_colorConversion.g = ( value >> 5 ) & 0x1f;
-			m_colorConversion.b = ( value >> 10 ) & 0x1f;
-
-			for ( size_t i = 0; i < 3; ++i )
-				m_ir123[ i ] = static_cast<int16_t>( m_colorConversion[ i ] << 7 );
-
+			m_ir123[ 0 ] = static_cast<int16_t>( ( value & 0x1f ) * 0x80 );				// red
+			m_ir123[ 1 ] = static_cast<int16_t>( ( ( value >> 5 ) & 0x1f ) * 0x80 );	// green
+			m_ir123[ 2 ] = static_cast<int16_t>( ( ( value >> 10 ) & 0x1f ) * 0x80 );	// blue
 			break;
 		}
 
@@ -435,15 +423,8 @@ void GeometryTransformationEngine::SetIR( int32_t value, bool lm ) noexcept
 		m_ir123[ Index - 1 ] = static_cast<int16_t>( value );
 }
 
-template <size_t Index>
-void GeometryTransformationEngine::SetMACAndIR( int64_t value, int shiftAmount, bool lm ) noexcept
-{
-	SetMAC<Index>( value, shiftAmount );
-	SetIR<Index>( static_cast<int32_t>( value >> shiftAmount ), lm );
-}
-
 template <size_t Component>
-uint32_t GeometryTransformationEngine::TruncateRGB( int32_t value ) noexcept
+uint8_t GeometryTransformationEngine::TruncateRGB( int32_t value ) noexcept
 {
 	if ( value < ColorMin || value > ColorMax )
 	{
@@ -457,7 +438,7 @@ uint32_t GeometryTransformationEngine::TruncateRGB( int32_t value ) noexcept
 		return ( value < ColorMin ) ? ColorMin : ColorMax;
 	}
 
-	return static_cast<uint32_t>( value );
+	return static_cast<uint8_t>( value );
 }
 
 void GeometryTransformationEngine::PushScreenZ( int32_t value ) noexcept
@@ -473,8 +454,7 @@ void GeometryTransformationEngine::PushScreenZ( int32_t value ) noexcept
 		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
 	}
 
-	ShiftBuffer( m_screenZFifo );
-	m_screenZFifo.back() = static_cast<uint16_t>( value );
+	PushBack( m_screenZFifo, static_cast<uint16_t>( value ) );
 }
 
 void GeometryTransformationEngine::PushScreenXY( int32_t x, int32_t y ) noexcept
@@ -494,16 +474,7 @@ void GeometryTransformationEngine::PushScreenXY( int32_t x, int32_t y ) noexcept
 		return static_cast<int16_t>( coord );
 	};
 
-	ShiftBuffer( m_screenXYFifo );
-	auto& pos = m_screenXYFifo.back();
-	pos.x = truncate( x, ErrorFlag::SX2Saturated );
-	pos.y = truncate( y, ErrorFlag::SY2Saturated );
-}
-
-void GeometryTransformationEngine::PushColor( int32_t r, int32_t g, int32_t b ) noexcept
-{
-	ShiftBuffer( m_colorCodeFifo );
-	m_colorCodeFifo.back() = TruncateRGB<0>( r ) | ( TruncateRGB<1>( g ) << 8 ) | ( TruncateRGB<2>( b ) << 16 ) | ( m_code << 24 );
+	PushBack( m_screenXYFifo, ScreenXY{ truncate( x, ErrorFlag::SX2Saturated ), truncate( y, ErrorFlag::SY2Saturated ) } );
 }
 
 void GeometryTransformationEngine::CalculateAverageZ( size_t size, uint32_t zScaleFactor ) noexcept
@@ -534,20 +505,69 @@ void GeometryTransformationEngine::CalculateAverageZ( size_t size, uint32_t zSca
 
 void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept
 {
-#define MULT( N ) SetMACAndIR<(N)+1>( DotProduct3( matrix[ (N) ], vector ), shiftAmount, lm )
+#define MULT( N ) SetMAC<(N)+1>( DotProduct3( matrix[ (N) ], vector ), shiftAmount )
 	MULT( 0 );
 	MULT( 1 );
 	MULT( 2 );
 #undef MULT
+	SetIR<1>( m_mac123.x, lm );
+	SetIR<2>( m_mac123.y, lm );
+	SetIR<3>( m_mac123.z, lm );
 }
 
 void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept
 {
-#define MULT( N ) SetMACAndIR<(N)+1>( int64_t( translation[ (N) ] ) * int64_t( 0x1000 ) + DotProduct3( matrix[ (N) ], vector ), shiftAmount, lm )
-	MULT( 0 );
-	MULT( 1 );
-	MULT( 2 );
+#define MULT_TRANSLATE( N ) SetMAC<(N)+1>( int64_t( translation[ (N) ] ) * int64_t( 0x1000 ) + DotProduct3( matrix[ (N) ], vector ), shiftAmount )
+	MULT_TRANSLATE( 0 );
+	MULT_TRANSLATE( 1 );
+	MULT_TRANSLATE( 2 );
 #undef MULT
+	SetIR<1>( m_mac123.x, lm );
+	SetIR<2>( m_mac123.y, lm );
+	SetIR<3>( m_mac123.z, lm );
+}
+
+void GeometryTransformationEngine::MultiplyColorWithIR( ColorRGBC color ) noexcept
+{
+	SetMAC<1>( ( int64_t( color.r ) * int64_t( m_ir123.x ) ) << 4 );
+	SetMAC<2>( ( int64_t( color.g ) * int64_t( m_ir123.y ) ) << 4 );
+	SetMAC<3>( ( int64_t( color.b ) * int64_t( m_ir123.z ) ) << 4 );
+}
+
+void GeometryTransformationEngine::LerpFarColorWithMAC( int shiftAmount ) noexcept
+{
+	// [IR1,IR2,IR3] = (([RFC,GFC,BFC] SHL 12) - [MAC1,MAC2,MAC3]) SAR (sf*12)
+	SetIR<1>( ( ( int64_t( m_farColor[ 0 ] ) << 12 ) - m_mac123[ 0 ] ) >> shiftAmount, false );
+	SetIR<2>( ( ( int64_t( m_farColor[ 1 ] ) << 12 ) - m_mac123[ 1 ] ) >> shiftAmount, false );
+	SetIR<3>( ( ( int64_t( m_farColor[ 2 ] ) << 12 ) - m_mac123[ 2 ] ) >> shiftAmount, false );
+
+	// [MAC1,MAC2,MAC3] = (([IR1,IR2,IR3] * IR0) + [MAC1,MAC2,MAC3])
+	SetMAC<1>( ( m_ir123[ 0 ] * int64_t( m_ir0 ) ) + m_mac123[ 0 ] );
+	SetMAC<2>( ( m_ir123[ 1 ] * int64_t( m_ir0 ) ) + m_mac123[ 1 ] );
+	SetMAC<3>( ( m_ir123[ 2 ] * int64_t( m_ir0 ) ) + m_mac123[ 2 ] );
+}
+
+void GeometryTransformationEngine::ShiftMACRight( int shiftAmount ) noexcept
+{
+	// [MAC1,MAC2,MAC3] = [MAC1,MAC2,MAC3] SAR (sf*12)
+	SetMAC<1>( m_mac123[ 0 ], shiftAmount );
+	SetMAC<2>( m_mac123[ 1 ], shiftAmount );
+	SetMAC<3>( m_mac123[ 2 ], shiftAmount );
+}
+
+void GeometryTransformationEngine::PushColorFromMAC( bool lm ) noexcept
+{
+	ColorRGBC color;
+	color.r = TruncateRGB<0>( m_mac123.x / 16 );
+	color.g = TruncateRGB<1>( m_mac123.y / 16 );
+	color.b = TruncateRGB<2>( m_mac123.z / 16 );
+	color.c = m_color.c;
+
+	PushBack( m_colorCodeFifo, color );
+
+	SetIR<1>( m_mac123[ 0 ], lm );
+	SetIR<2>( m_mac123[ 1 ], lm );
+	SetIR<3>( m_mac123[ 2 ], lm );
 }
 
 void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexcept
@@ -563,14 +583,14 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 
 	switch ( static_cast<Opcode>( command.opcode ) )
 	{
-		case Opcode::PerspectiveTransformationSingle:
-			DoPerspectiveTransformation( m_vectors[ 0 ], sf );
+		case Opcode::RotateTranslatePerspectiveSingle:
+			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
 			break;
 
-		case Opcode::PerspectiveTransformationTriple:
-			DoPerspectiveTransformation( m_vectors[ 0 ], sf );
-			DoPerspectiveTransformation( m_vectors[ 1 ], sf );
-			DoPerspectiveTransformation( m_vectors[ 2 ], sf );
+		case Opcode::RotateTranslatePerspectiveTriple:
+			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 1 ], sf );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 2 ], sf );
 			break;
 
 		case Opcode::NormalClipping:
@@ -579,7 +599,8 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 			auto& sxy1 = m_screenXYFifo[ 1 ];
 			auto& sxy2 = m_screenXYFifo[ 2 ];
 			// cross product
-			SetMAC<0>( ( sxy0.x * sxy1.y + sxy1.x * sxy2.y + sxy2.x * sxy0.y ) - ( sxy0.x * sxy2.y + sxy1.x * sxy0.y + sxy2.x * sxy1.y ) );
+			SetMAC<0>(	( sxy0.x * sxy1.y + sxy1.x * sxy2.y + sxy2.x * sxy0.y ) -
+						( sxy0.x * sxy2.y + sxy1.x * sxy0.y + sxy2.x * sxy1.y ) );
 			break;
 		}
 
@@ -591,38 +612,114 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 			CalculateAverageZ( 4, m_zScaleFactor4 );
 			break;
 
-		case Opcode::NormalColorDepthCueSingle:
-			DoNormalColor<false, true>( m_vectors[ 0 ], sf, lm );
+		case Opcode::MultipleVectorMatrixVectorAdd:
+			MultipleVectorMatrixVectorAdd( command );
 			break;
 
-		case Opcode::NormalColorDepthCueTriple:
-			DoNormalColor<false, true>( m_vectors[ 0 ], sf, lm );
-			DoNormalColor<false, true>( m_vectors[ 1 ], sf, lm );
-			DoNormalColor<false, true>( m_vectors[ 2 ], sf, lm );
+		case Opcode::SquareIR:
+		{
+			// [MAC1, MAC2, MAC3] = [ IR1*IR1, IR2*IR2, IR3*IR3 ] SHR( sf * 12 )
+			SetMAC<1>( m_ir123.x * m_ir123.x, sf );
+			SetMAC<2>( m_ir123.y * m_ir123.y, sf );
+			SetMAC<3>( m_ir123.z * m_ir123.z, sf );
+
+			// [ IR1, IR2, IR3 ] = [ MAC1, MAC2, MAC3 ]; IR1, IR2, IR3 saturated to max 7FFFh
+			SetIR<1>( m_mac123.x, true );
+			SetIR<2>( m_mac123.y, true );
+			SetIR<3>( m_mac123.z, true );
 			break;
+		}
+
+		case Opcode::OuterProduct:
+		{
+			// D1,D2,D3 are meant to be the RT11,RT22,RT33 elements of the RT matrix "misused" as vector. lm should be usually zero.
+			const auto D1 = m_rotation[ 0 ][ 0 ];
+			const auto D2 = m_rotation[ 1 ][ 1 ];
+			const auto D3 = m_rotation[ 2 ][ 2 ];
+			SetMAC<1>( m_ir123.z * D2 - m_ir123.y * D3, sf ); // IR3*D2-IR2*D3
+			SetMAC<2>( m_ir123.x * D3 - m_ir123.z * D1, sf ); // IR1*D3-IR3*D1
+			SetMAC<3>( m_ir123.y * D1 - m_ir123.x * D2, sf ); // IR2*D1-IR1*D2
+			SetIR<1>( m_mac123.x, lm );
+			SetIR<2>( m_mac123.y, lm );
+			SetIR<3>( m_mac123.z, lm );
+			break;
+		}
 
 		case Opcode::NormalColorSingle:
-			DoNormalColor<false, false>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
 			break;
 
 		case Opcode::NormalColorTriple:
-			DoNormalColor<false, false>( m_vectors[ 0 ], sf, lm );
-			DoNormalColor<false, false>( m_vectors[ 1 ], sf, lm );
-			DoNormalColor<false, false>( m_vectors[ 2 ], sf, lm );
+			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<false, false, false>( m_vectors[ 1 ], sf, lm );
+			NormalizeColor<false, false, false>( m_vectors[ 2 ], sf, lm );
 			break;
 
 		case Opcode::NormalColorColorSingle:
-			DoNormalColor<true, false>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
 			break;
 
 		case Opcode::NormalColorColorTriple:
-			DoNormalColor<true, false>( m_vectors[ 0 ], sf, lm );
-			DoNormalColor<true, false>( m_vectors[ 1 ], sf, lm );
-			DoNormalColor<true, false>( m_vectors[ 2 ], sf, lm );
+			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<true, false, true>( m_vectors[ 1 ], sf, lm );
+			NormalizeColor<true, false, true>( m_vectors[ 2 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorDepthCueSingle:
+			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorDepthCueTriple:
+			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<true, true, true>( m_vectors[ 1 ], sf, lm );
+			NormalizeColor<true, true, true>( m_vectors[ 2 ], sf, lm );
+			break;
+
+		case Opcode::ColorColor:
+			Color<false>( sf, true );
+			break;
+
+		case Opcode::ColorDepthCue:
+			Color<true>( sf, lm );
+			break;
+
+		case Opcode::DepthCueColorLight:
+			DepthCue<true, false>( m_color, sf, lm );
+			break;
+
+		case Opcode::DepthCueingSingle:
+			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
+			break;
+
+		case Opcode::DepthCueingTriple:
+			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
+			break;
+
+		case Opcode::InterpolateFarColor:
+		{
+			// [IR1,IR2,IR3] SHL 12
+			SetMAC<1>( int64_t( m_ir123.x ) << 12 );
+			SetMAC<2>( int64_t( m_ir123.y ) << 12 );
+			SetMAC<3>( int64_t( m_ir123.z ) << 12 );
+
+			LerpFarColorWithMAC( sf );
+			ShiftMACRight( sf );
+			PushColorFromMAC( lm );
+			break;
+		}
+
+		case Opcode::GeneralInterpolation:
+			GeneralInterpolation<false>( sf, lm );
+			break;
+
+		case Opcode::GeneralInterpolationBase:
+			GeneralInterpolation<true>( sf, lm );
 			break;
 
 		default:
-			dbBreak(); // TODO
+			dbBreak(); // invalid command
 			break;
 	}
 
@@ -630,7 +727,7 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 		m_errorFlags |= ErrorFlag::Error;
 }
 
-void GeometryTransformationEngine::DoPerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
+void GeometryTransformationEngine::RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
 {
 	// perspective transformation ignores lm bit
 
@@ -639,11 +736,17 @@ void GeometryTransformationEngine::DoPerspectiveTransformation( const Vector16& 
 	PushScreenZ( m_mac123.z >> ( 12 - shiftAmount ) );
 
 	// TODO: use Unsigned Newton-Raphson (UNR) algorithm
-	int64_t temp = ( ( ( m_projectionPlaneDistance * 0x20000 ) / m_screenZFifo.back() ) + 1 ) / 2;
-	if ( temp > 0x1ffff || temp == 0 )
+	const auto z = m_screenZFifo.back();
+	int64_t temp;
+	if ( z <= m_projectionPlaneDistance / 2 )
 	{
 		temp = 0x1ffff;
 		m_errorFlags |= ErrorFlag::DivideOverflow;
+	}
+	else
+	{
+		temp = ( ( ( m_projectionPlaneDistance * 0x20000 ) / m_screenZFifo.back() ) + 1 ) / 2;
+		dbAssert( temp <= 0x1ffff );
 	}
 
 	const int32_t screenX = static_cast<int32_t>( ( temp * m_ir123.x + m_screenOffset.x ) / 0x10000 );
@@ -654,43 +757,124 @@ void GeometryTransformationEngine::DoPerspectiveTransformation( const Vector16& 
 	SetIR<0>( m_mac0 / 0x1000, true );
 }
 
-template <bool Color, bool DepthCue>
-void GeometryTransformationEngine::DoNormalColor( const Vector16& normal, int shiftAmount, bool lm ) noexcept
+template <bool MultiplyColorIR, bool LerpFarColor, bool ShiftMAC>
+void GeometryTransformationEngine::NormalizeColor( const Vector16& normal, int shiftAmount, bool lm ) noexcept
 {
 	Transform( m_lightMatrix, normal, shiftAmount, lm );
 
 	Transform( m_colorMatrix, m_ir123, m_backgroundColor, shiftAmount, lm );
 
-	if constexpr ( DepthCue || Color )
+	if constexpr ( MultiplyColorIR )
+		MultiplyColorWithIR( m_color );
+
+	if constexpr ( LerpFarColor )
+		LerpFarColorWithMAC( shiftAmount );
+
+	if constexpr ( ShiftMAC )
+		ShiftMACRight( shiftAmount );
+
+	PushColorFromMAC( lm );
+}
+
+
+template <bool LerpFarColor>
+void GeometryTransformationEngine::Color( int shiftAmount, bool lm ) noexcept
+{
+	Transform( m_colorMatrix, m_ir123, m_backgroundColor, shiftAmount, lm );
+
+	MultiplyColorWithIR( m_color );
+
+	if constexpr ( LerpFarColor )
+		LerpFarColorWithMAC( shiftAmount );
+
+	ShiftMACRight( shiftAmount );
+
+	PushColorFromMAC( lm );
+}
+
+template <bool MultiplyColorIR, bool ShiftColorLeft16>
+void GeometryTransformationEngine::DepthCue( ColorRGBC color, int shiftAmount, bool lm ) noexcept
+{
+	if constexpr ( MultiplyColorIR )
+		MultiplyColorWithIR( color );
+
+	if constexpr ( ShiftColorLeft16 )
 	{
-		SetMAC<1>( ( m_color[ 0 ] * m_ir123[ 0 ] ) << 4 );
-		SetMAC<2>( ( m_color[ 1 ] * m_ir123[ 1 ] ) << 4 );
-		SetMAC<3>( ( m_color[ 2 ] * m_ir123[ 2 ] ) << 4 );
+		SetMAC<1>( int64_t( color.r ) << 16 );
+		SetMAC<2>( int64_t( color.g ) << 16 );
+		SetMAC<3>( int64_t( color.b ) << 16 );
 	}
 
-	if constexpr ( DepthCue )
-	{
-		SetIR<1>( ( ( m_farColor[ 0 ] << 12 ) - m_mac123[ 0 ] ) >> shiftAmount, false );
-		SetIR<2>( ( ( m_farColor[ 1 ] << 12 ) - m_mac123[ 1 ] ) >> shiftAmount, false );
-		SetIR<3>( ( ( m_farColor[ 2 ] << 12 ) - m_mac123[ 2 ] ) >> shiftAmount, false );
+	LerpFarColorWithMAC( shiftAmount );
+	ShiftMACRight( shiftAmount );
+	PushColorFromMAC( lm );
+}
 
-		SetMAC<1>( ( m_ir123[ 0 ] * m_ir0 ) + m_mac123[ 0 ] );
-		SetMAC<2>( ( m_ir123[ 1 ] * m_ir0 ) + m_mac123[ 1 ] );
-		SetMAC<3>( ( m_ir123[ 2 ] * m_ir0 ) + m_mac123[ 2 ] );
+template <bool Base>
+void GeometryTransformationEngine::GeneralInterpolation( int shiftAmount, bool lm ) noexcept
+{
+	if constexpr ( Base )
+	{
+		SetMAC<1>( int64_t( m_mac123[ 0 ] ) << shiftAmount );
+		SetMAC<2>( int64_t( m_mac123[ 1 ] ) << shiftAmount );
+		SetMAC<3>( int64_t( m_mac123[ 2 ] ) << shiftAmount );
+	}
+	else
+	{
+		m_mac123.x = 0;
+		m_mac123.y = 0;
+		m_mac123.z = 0;
 	}
 
-	if constexpr ( DepthCue || Color )
+	SetMAC<1>( ( m_ir123[ 0 ] * int64_t( m_ir0 ) ) + m_mac123[ 0 ], shiftAmount );
+	SetMAC<2>( ( m_ir123[ 1 ] * int64_t( m_ir0 ) ) + m_mac123[ 1 ], shiftAmount );
+	SetMAC<3>( ( m_ir123[ 2 ] * int64_t( m_ir0 ) ) + m_mac123[ 2 ], shiftAmount );
+
+	PushColorFromMAC( lm );
+}
+
+void GeometryTransformationEngine::MultipleVectorMatrixVectorAdd( Command command ) noexcept
+{
+	const int shiftAmount = command.sf ? 12 : 0;
+
+	const Matrix* matrix = nullptr;
+	switch ( static_cast<MultiplyMatrix>( command.multiplyMatrix ) )
 	{
-		SetMAC<1>( m_mac123[ 0 ], shiftAmount );
-		SetMAC<2>( m_mac123[ 1 ], shiftAmount );
-		SetMAC<3>( m_mac123[ 2 ], shiftAmount );
+		case MultiplyMatrix::Rotation:	matrix = &m_rotation;		break;
+		case MultiplyMatrix::Light:		matrix = &m_lightMatrix;	break;
+		case MultiplyMatrix::Color:		matrix = &m_colorMatrix;	break;
+		case MultiplyMatrix::Reserved:	dbBreak();	return;
 	}
 
-	PushColor( m_mac123.x / 16, m_mac123.y / 16, m_mac123.z / 16 );
+	const Vector16* vector = nullptr;
+	switch ( static_cast<MultiplyVector>( command.multiplyVector ) )
+	{
+		case MultiplyVector::V0:
+		case MultiplyVector::V1:
+		case MultiplyVector::V2:
+			vector = &m_vectors[ command.multiplyVector ];
+			break;
 
-	SetIR<1>( m_mac123[ 0 ], lm );
-	SetIR<2>( m_mac123[ 1 ], lm );
-	SetIR<3>( m_mac123[ 2 ], lm );
+		case MultiplyVector::IR:
+			vector = &m_ir123;
+			break;
+	}
+
+	const Vector32* translation = nullptr;
+	switch ( static_cast<TranslationVector>( command.translationVector ) )
+	{
+		case TranslationVector::Translation:		translation = &m_translation;		break;
+		case TranslationVector::BackgroundColor:	translation = &m_backgroundColor;	break;
+		case TranslationVector::FarColorBugged:		translation = &m_farColor;			break; // TODO: do buggy transformation
+		case TranslationVector::None:				translation = nullptr;				break;
+	}
+
+	dbAssert( matrix );
+	dbAssert( vector );
+	if ( translation )
+		Transform( *matrix, *vector, *translation, shiftAmount, command.lm );
+	else
+		Transform( *matrix, *vector, shiftAmount, command.lm );
 }
 
 }

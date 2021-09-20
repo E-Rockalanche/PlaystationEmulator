@@ -154,28 +154,52 @@ private:
 
 	enum class Opcode
 	{
-		PerspectiveTransformationSingle = 0x01, // RTPS
-		NormalClipping = 0x06, // NCLIP
-		OuterProduct = 0x0c, // OP(sf) outer product of 2 vectors
+		RotateTranslatePerspectiveSingle = 0x01, // RTPS
+		RotateTranslatePerspectiveTriple = 0x30, // RTPT
+		MultipleVectorMatrixVectorAdd = 0x12, // MVMVA multiply vector by matrix and add translation vector
+		DepthCueColorLight = 0x29, // DCPL
 		DepthCueingSingle = 0x10, // DPCS
+		DepthCueingTriple = 0x2a, // DPCT
 		InterpolateFarColor = 0x11, // INTPL interpolation of a vector and far color vector
-		TransformVector = 0x12, // MVMVA multiply vector by matrix and add translation vector
-		NormalColorDepthCueSingle = 0x13, // NCDS normal color depth cue single vector
-		ColorDepthCue = 0x14, // CDP
-		NormalColorDepthCueTriple = 0x16, // NCDT normal color depth cue triple vectors
-		NormalColorColorSingle = 0x1b, // NCCS normal color color single vector
-		ColorColor = 0x1c, // CC
+		SquareIR = 0x28, // SQR(sf)5 square of vector IR
 		NormalColorSingle = 0x1e, // NCS
 		NormalColorTriple = 0x20, // NCT
-		SquareIR = 0x28, // SQR(sf)5 square of vector IR
-		DepthCueColorLight = 0x29, // DCPL
-		DepthCueingTriple = 0x2a, // DPCT
+		NormalColorDepthCueSingle = 0x13, // NCDS normal color depth cue single vector
+		NormalColorDepthCueTriple = 0x16, // NCDT normal color depth cue triple vectors
+		NormalColorColorSingle = 0x1b, // NCCS normal color color single vector
+		NormalColorColorTriple = 0x3f, // normal color color triple vector
+		ColorDepthCue = 0x14, // CDP
+		ColorColor = 0x1c, // CC
+		NormalClipping = 0x06, // NCLIP
 		Average3Z = 0x2d, // AVSZ3 average of 3 z values
 		Average4Z = 0x2e, // AVSZ4 average of 4 z values
-		PerspectiveTransformationTriple = 0x30, // RTPT
+		OuterProduct = 0x0c, // OP(sf) outer product of 2 vectors
 		GeneralInterpolation = 0x3d, // GPF(sf)5
 		GeneralInterpolationBase = 0x3e, // GPL(sf)5
-		NormalColorColorTriple = 0x3f // normal color color triple vector
+	};
+
+	enum class MultiplyMatrix
+	{
+		Rotation,
+		Light,
+		Color,
+		Reserved
+	};
+
+	enum class MultiplyVector
+	{
+		V0,
+		V1,
+		V2,
+		IR
+	};
+
+	enum class TranslationVector
+	{
+		Translation,
+		BackgroundColor,
+		FarColorBugged,
+		None
 	};
 
 	union Command
@@ -188,9 +212,9 @@ private:
 			uint32_t : 4;
 			uint32_t lm : 1; // saturate ir123 to 0-7fff
 			uint32_t : 2;
-			uint32_t mvmvaTranslationVector : 2;
-			uint32_t mvmvaMultiplyVector : 2;
-			uint32_t mvmvaMultiplyMatrix : 2;
+			uint32_t translationVector : 2;
+			uint32_t multiplyVector : 2;
+			uint32_t multiplyMatrix : 2;
 			uint32_t sf : 1; // shift fraction
 			uint32_t : 12;
 		};
@@ -198,9 +222,24 @@ private:
 	};
 	static_assert( sizeof( Command ) == 4 );
 
+	union ColorRGBC
+	{
+		ColorRGBC() : value{ 0 } {}
+
+		struct
+		{
+			uint8_t r;
+			uint8_t g;
+			uint8_t b;
+			uint8_t c;
+		};
+		uint32_t value;
+	};
+
 	using Matrix = Math::Matrix<int16_t, 3, 3>;
 	using Vector16 = Math::Vector3<int16_t>;
 	using Vector32 = Math::Vector3<int32_t>;
+	using ScreenXY = Math::Vector2<int16_t>;
 
 	static constexpr int64_t MAC0Min = std::numeric_limits<int32_t>::min();
 	static constexpr int64_t MAC0Max = std::numeric_limits<int32_t>::max();
@@ -235,37 +274,45 @@ private:
 	void SetIR( int32_t value, bool lm ) noexcept;
 
 	template <size_t Index>
-	void SetMACAndIR( int64_t value, int shiftAmount, bool lm ) noexcept;
-
-	template <size_t Index>
-	uint32_t TruncateRGB( int32_t value ) noexcept;
+	uint8_t TruncateRGB( int32_t value ) noexcept;
 
 	void PushScreenZ( int32_t value ) noexcept;
-
 	void PushScreenXY( int32_t x, int32_t y ) noexcept;
-
-	void PushColor( int32_t r, int32_t g, int32_t b ) noexcept;
 
 	void CalculateAverageZ( size_t size, uint32_t scale ) noexcept;
 
-	// stores result in MAC and IR
 	void Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept;
-
-	// stores result in MAC and IR
 	void Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept;
 
-	void DoPerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept;
+	void MultiplyColorWithIR( ColorRGBC color ) noexcept;
+	void LerpFarColorWithMAC( int shiftAmount ) noexcept;
+	void ShiftMACRight( int shiftAmount ) noexcept;
+	void PushColorFromMAC( bool lm ) noexcept;
 
-	template <bool Color, bool DepthCue>
-	void DoNormalColor( const Vector16& vector, int shiftAmount, bool lm ) noexcept;
+	// command functions
+
+	void RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept;
+
+	void MultipleVectorMatrixVectorAdd( Command command ) noexcept;
+
+	template <bool MultiplyColorIR, bool LerpFarColor, bool ShiftMAC>
+	void NormalizeColor( const Vector16& vector, int shiftAmount, bool lm ) noexcept;
+
+	template <bool LerpFarColor>
+	void Color( int shiftAmount, bool lm ) noexcept;
+
+	template <bool MultiplyColorIR, bool ShiftColorLeft16>
+	void DepthCue( ColorRGBC color, int shiftAount, bool lm ) noexcept;
+
+	template <bool Base>
+	void GeneralInterpolation( int shiftAmount, bool lm ) noexcept;
 
 private:
 
 	// signed 16bit
 	std::array<Vector16, 3> m_vectors{};
 
-	Math::ColorRGB<uint8_t> m_color{ 0 };
-	uint8_t m_code = 0;
+	ColorRGBC m_color;
 
 	uint16_t m_orderTableAvgZ = 0;
 
@@ -276,20 +323,17 @@ private:
 	Vector16 m_ir123{ 0 };
 
 	// TODO: screen XY coordinate FIFOs
-	std::array<Math::Vector2<int16_t>, 3> m_screenXYFifo{};
+	std::array<ScreenXY, 3> m_screenXYFifo{};
 
 	// TODO: screen Z coordinate FIFOs
 	std::array<uint16_t, 4> m_screenZFifo{};
 
 	// TODO: color CRGB code/color FIFOs
-	std::array<uint32_t, 3> m_colorCodeFifo{};
+	std::array<ColorRGBC, 3> m_colorCodeFifo{};
 
 	// signed 32 bit
 	int32_t m_mac0 = 0;
 	Vector32 m_mac123{ 0 };
-
-	// convert rgb color between 48bit and 15bit
-	Math::ColorRGB<uint8_t> m_colorConversion{ 0 }; // 5bits per component. R/W as uint16_t
 
 	// count leading zeroes/ones
 	uint32_t m_leadingBitsSource = 0; // R/W
