@@ -872,9 +872,9 @@ void Gpu::RenderRectangle() noexcept
 
 		const TexCoord topLeft{ value };
 		vertices[ 0 ].texCoord = topLeft;
-		vertices[ 1 ].texCoord = TexCoord{ topLeft.u, static_cast<uint16_t>( topLeft.v + height ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width ), topLeft.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width ), static_cast<uint16_t>( topLeft.v + height ) };
+		vertices[ 1 ].texCoord = TexCoord{ topLeft.u, static_cast<uint16_t>( topLeft.v + height - 1 ) };
+		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width - 1 ), topLeft.v };
+		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width - 1 ), static_cast<uint16_t>( topLeft.v + height - 1 ) };
 
 		const uint16_t clut = static_cast<uint16_t>( value >> 16 );
 		const uint16_t drawMode = m_status.GetDrawMode();
