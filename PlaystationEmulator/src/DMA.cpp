@@ -25,7 +25,10 @@ uint32_t Dma::Channel::Read( uint32_t index ) const noexcept
 		case Register::BaseAddress:		return m_baseAddress;
 		case Register::BlockControl:	return m_blockControl;
 		case Register::ChannelControl:	return m_channelControl;
-		default:						return 0;
+
+		default:
+			dbBreak();	
+			return 0;
 	}
 }
 
@@ -35,7 +38,7 @@ void Dma::Channel::Write( uint32_t index, uint32_t value ) noexcept
 	switch ( index )
 	{
 		case Register::BaseAddress:
-			m_baseAddress = value & BaseAddressMask;
+			SetBaseAddress( value );
 			break;
 
 		case Register::BlockControl:
@@ -43,6 +46,10 @@ void Dma::Channel::Write( uint32_t index, uint32_t value ) noexcept
 
 		case Register::ChannelControl:
 			m_channelControl = value & ChannelControl::WriteMask;
+			break;
+
+		default:
+			dbBreak();
 			break;
 	}
 }
@@ -141,6 +148,7 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 
 		case 30:
 		case 31:
+			dbBreak();
 			break;
 	}
 }
@@ -260,6 +268,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		}
 	}
 
+
 	FinishTransfer( channelIndex );
 
 	m_cycleScheduler.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalWords ) );
@@ -295,12 +304,14 @@ void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 		}
 
 		address = header & 0x00ffffff;
-
 		totalCount += wordCount;
 	}
 	while ( address != 0x00ffffff );
 
-	m_cycleScheduler.AddCycles( totalCount ); // TODO: be more accurate
+	// base address is updated at end of transfer
+	channel.SetBaseAddress( 0x00ffffff );
+
+	m_cycleScheduler.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalCount ) );
 
 	FinishTransfer( channelIndex );
 }

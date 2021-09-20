@@ -156,7 +156,7 @@ private:
 	{
 		RotateTranslatePerspectiveSingle = 0x01, // RTPS
 		RotateTranslatePerspectiveTriple = 0x30, // RTPT
-		MultipleVectorMatrixVectorAdd = 0x12, // MVMVA multiply vector by matrix and add translation vector
+		MultiplyVectorMatrixVectorAdd = 0x12, // MVMVA multiply vector by matrix and add translation vector
 		DepthCueColorLight = 0x29, // DCPL
 		DepthCueingSingle = 0x10, // DPCS
 		DepthCueingTriple = 0x2a, // DPCT
@@ -273,13 +273,15 @@ private:
 	template <size_t Index>
 	void SetIR( int32_t value, bool lm ) noexcept;
 
+	void CopyMACToIR( bool lm ) noexcept;
+
 	template <size_t Index>
 	uint8_t TruncateRGB( int32_t value ) noexcept;
 
 	void PushScreenZ( int32_t value ) noexcept;
 	void PushScreenXY( int32_t x, int32_t y ) noexcept;
 
-	void CalculateAverageZ( size_t size, uint32_t scale ) noexcept;
+	void SetOrderTableZ( int32_t z ) noexcept;
 
 	void Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept;
 	void Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept;
@@ -293,7 +295,7 @@ private:
 
 	void RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept;
 
-	void MultipleVectorMatrixVectorAdd( Command command ) noexcept;
+	void MultiplyVectorMatrixVectorAdd( Command command ) noexcept;
 
 	template <bool MultiplyColorIR, bool LerpFarColor, bool ShiftMAC>
 	void NormalizeColor( const Vector16& vector, int shiftAmount, bool lm ) noexcept;
@@ -314,7 +316,7 @@ private:
 
 	ColorRGBC m_color;
 
-	uint16_t m_orderTableAvgZ = 0;
+	uint16_t m_orderTableZ = 0;
 
 	// signed 3bit integer 12bit fraction?
 	int16_t m_ir0 = 0;

@@ -25,7 +25,7 @@ template <typename T>
 constexpr uint32_t SignExtend16( T value ) noexcept
 {
 	static_assert( sizeof( T ) == sizeof( int16_t ) );
-	return static_cast<uint32_t>( static_cast<int16_t>( value ) );
+	return static_cast<uint32_t>( static_cast<int32_t>( static_cast<int16_t>( value ) ) );
 }
 
 template <typename T, typename U>
@@ -42,7 +42,7 @@ void GeometryTransformationEngine::Reset()
 
 	m_color = ColorRGBC();
 
-	m_orderTableAvgZ = 0;
+	m_orderTableZ = 0;
 
 	m_ir0 = 0;
 	m_ir123 = { 0 };
@@ -123,12 +123,12 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 
 		case Register::ColorCode:	return m_color.value;
 
-		case Register::OrderTableAvgZ:	return m_orderTableAvgZ;
+		case Register::OrderTableAvgZ:	return m_orderTableZ;
 
-		case Register::IR0:		return static_cast<uint32_t>( m_ir0 );
-		case Register::IR1:		return static_cast<uint32_t>( m_ir123.x );
-		case Register::IR2:		return static_cast<uint32_t>( m_ir123.y );
-		case Register::IR3:		return static_cast<uint32_t>( m_ir123.z );
+		case Register::IR0:		return SignExtend16( m_ir0 );
+		case Register::IR1:		return SignExtend16( m_ir123.x );
+		case Register::IR2:		return SignExtend16( m_ir123.y );
+		case Register::IR3:		return SignExtend16( m_ir123.z );
 
 		case Register::SXY0:	return readScreenXYn( 0 );
 		case Register::SXY1:	return readScreenXYn( 1 );
@@ -201,11 +201,11 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 		// hardware bug: H is sign expanded even though it is unsigned
 		case Register::ProjectionPlaneDistance:		return SignExtend16( m_projectionPlaneDistance );
 
-		case Register::DepthQueueA:		return static_cast<uint16_t>( m_depthQueueParamA );
+		case Register::DepthQueueA:		return SignExtend16( m_depthQueueParamA ); // TODO: is this sign extended?
 		case Register::DepthQueueB:		return static_cast<uint32_t>( m_depthQueueParamB );
 
-		case Register::ZScaleFactor3:	return static_cast<uint16_t>( m_zScaleFactor3 );
-		case Register::ZScaleFactor4:	return static_cast<uint16_t>( m_zScaleFactor4 );
+		case Register::ZScaleFactor3:	return SignExtend16( m_zScaleFactor3 ); // TODO: is this sign extended?
+		case Register::ZScaleFactor4:	return SignExtend16( m_zScaleFactor4 ); // TODO: is this sign extended?
 
 		case Register::ErrorFlags:	return m_errorFlags;
 
@@ -256,7 +256,7 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 
 		case Register::ColorCode:	m_color.value = value;	break;
 
-		case Register::OrderTableAvgZ:	m_orderTableAvgZ = static_cast<uint16_t>( value );	break;
+		case Register::OrderTableAvgZ:	m_orderTableZ = static_cast<uint16_t>( value );	break;
 
 		case Register::IR0:		m_ir0 = static_cast<int16_t>( value );			break;
 		case Register::IR1:		m_ir123[ 0 ] = static_cast<int16_t>( value );	break;
@@ -423,6 +423,13 @@ void GeometryTransformationEngine::SetIR( int32_t value, bool lm ) noexcept
 		m_ir123[ Index - 1 ] = static_cast<int16_t>( value );
 }
 
+inline void GeometryTransformationEngine::CopyMACToIR( bool lm ) noexcept
+{
+	SetIR<1>( m_mac123.x, lm );
+	SetIR<2>( m_mac123.y, lm );
+	SetIR<3>( m_mac123.z, lm );
+}
+
 template <size_t Component>
 uint8_t GeometryTransformationEngine::TruncateRGB( int32_t value ) noexcept
 {
@@ -477,30 +484,19 @@ void GeometryTransformationEngine::PushScreenXY( int32_t x, int32_t y ) noexcept
 	PushBack( m_screenXYFifo, ScreenXY{ truncate( x, ErrorFlag::SX2Saturated ), truncate( y, ErrorFlag::SY2Saturated ) } );
 }
 
-void GeometryTransformationEngine::CalculateAverageZ( size_t size, uint32_t zScaleFactor ) noexcept
+void GeometryTransformationEngine::SetOrderTableZ( int32_t z ) noexcept
 {
-	int64_t result = 0;
-	for ( size_t i = 0; i < size; ++i )
-		result += m_screenZFifo[ i ];
-
-	result *= zScaleFactor;
-
-	SetMAC<0>( result );
-
-	result = m_mac0 / 0x1000;
-
-	if ( result < ZMin )
+	if ( z < ZMin )
 	{
-		result = ZMin;
+		z = ZMin;
 		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
 	}
-	else if ( result > ZMax )
+	else if ( z > ZMax )
 	{
-		result = ZMax;
+		z = ZMax;
 		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
 	}
-
-	m_orderTableAvgZ = static_cast<uint16_t>( result );
+	m_orderTableZ = static_cast<uint16_t>( z );
 }
 
 void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept
@@ -510,9 +506,8 @@ void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector
 	MULT( 1 );
 	MULT( 2 );
 #undef MULT
-	SetIR<1>( m_mac123.x, lm );
-	SetIR<2>( m_mac123.y, lm );
-	SetIR<3>( m_mac123.z, lm );
+
+	CopyMACToIR( lm );
 }
 
 void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept
@@ -522,9 +517,8 @@ void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector
 	MULT_TRANSLATE( 1 );
 	MULT_TRANSLATE( 2 );
 #undef MULT
-	SetIR<1>( m_mac123.x, lm );
-	SetIR<2>( m_mac123.y, lm );
-	SetIR<3>( m_mac123.z, lm );
+
+	CopyMACToIR( lm );
 }
 
 void GeometryTransformationEngine::MultiplyColorWithIR( ColorRGBC color ) noexcept
@@ -537,6 +531,7 @@ void GeometryTransformationEngine::MultiplyColorWithIR( ColorRGBC color ) noexce
 void GeometryTransformationEngine::LerpFarColorWithMAC( int shiftAmount ) noexcept
 {
 	// [IR1,IR2,IR3] = (([RFC,GFC,BFC] SHL 12) - [MAC1,MAC2,MAC3]) SAR (sf*12)
+	// saturated to -8000h..+7FFFh (ie. as if lm=0)
 	SetIR<1>( ( ( int64_t( m_farColor[ 0 ] ) << 12 ) - m_mac123[ 0 ] ) >> shiftAmount, false );
 	SetIR<2>( ( ( int64_t( m_farColor[ 1 ] ) << 12 ) - m_mac123[ 1 ] ) >> shiftAmount, false );
 	SetIR<3>( ( ( int64_t( m_farColor[ 2 ] ) << 12 ) - m_mac123[ 2 ] ) >> shiftAmount, false );
@@ -565,9 +560,7 @@ void GeometryTransformationEngine::PushColorFromMAC( bool lm ) noexcept
 
 	PushBack( m_colorCodeFifo, color );
 
-	SetIR<1>( m_mac123[ 0 ], lm );
-	SetIR<2>( m_mac123[ 1 ], lm );
-	SetIR<3>( m_mac123[ 2 ], lm );
+	CopyMACToIR( lm );
 }
 
 void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexcept
@@ -595,53 +588,57 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 
 		case Opcode::NormalClipping:
 		{
+			// MAC0 =   SX0*SY1 + SX1*SY2 + SX2*SY0 - SX0*SY2 - SX1*SY0 - SX2*SY1
 			auto& sxy0 = m_screenXYFifo[ 0 ];
 			auto& sxy1 = m_screenXYFifo[ 1 ];
 			auto& sxy2 = m_screenXYFifo[ 2 ];
-			// cross product
-			SetMAC<0>(	( sxy0.x * sxy1.y + sxy1.x * sxy2.y + sxy2.x * sxy0.y ) -
-						( sxy0.x * sxy2.y + sxy1.x * sxy0.y + sxy2.x * sxy1.y ) );
+
+			SetMAC<0>(	( ( sxy0.x * sxy1.y ) + ( sxy1.x * sxy2.y ) + ( sxy2.x * sxy0.y ) ) -
+						( ( sxy0.x * sxy2.y ) + ( sxy1.x * sxy0.y ) + ( sxy2.x * sxy1.y ) ) );
 			break;
 		}
 
 		case Opcode::Average3Z:
-			CalculateAverageZ( 3, m_zScaleFactor3 );
+			// MAC0 =  ZSF3*(SZ1+SZ2+SZ3)
+			SetMAC<0>( ( m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor3 ) );
+			// OTZ  =  MAC0/1000h
+			SetOrderTableZ( m_mac0 / 0x1000 );
 			break;
 
 		case Opcode::Average4Z:
-			CalculateAverageZ( 4, m_zScaleFactor4 );
+			// MAC0 =  ZSF4*(SZ0+SZ1+SZ2+SZ3)
+			SetMAC<0>( ( m_screenZFifo[ 0 ] + m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor4 ) );
+			// OTZ  =  MAC0/1000h
+			SetOrderTableZ( m_mac0 / 0x1000 );
 			break;
 
-		case Opcode::MultipleVectorMatrixVectorAdd:
-			MultipleVectorMatrixVectorAdd( command );
+		case Opcode::MultiplyVectorMatrixVectorAdd:
+			MultiplyVectorMatrixVectorAdd( command );
 			break;
 
 		case Opcode::SquareIR:
 		{
 			// [MAC1, MAC2, MAC3] = [ IR1*IR1, IR2*IR2, IR3*IR3 ] SHR( sf * 12 )
-			SetMAC<1>( m_ir123.x * m_ir123.x, sf );
-			SetMAC<2>( m_ir123.y * m_ir123.y, sf );
-			SetMAC<3>( m_ir123.z * m_ir123.z, sf );
+			SetMAC<1>( int64_t( m_ir123.x ) * int64_t( m_ir123.x ), sf );
+			SetMAC<2>( int64_t( m_ir123.y ) * int64_t( m_ir123.y ), sf );
+			SetMAC<3>( int64_t( m_ir123.z ) * int64_t( m_ir123.z ), sf );
 
 			// [ IR1, IR2, IR3 ] = [ MAC1, MAC2, MAC3 ]; IR1, IR2, IR3 saturated to max 7FFFh
-			SetIR<1>( m_mac123.x, true );
-			SetIR<2>( m_mac123.y, true );
-			SetIR<3>( m_mac123.z, true );
+			// lm flag doesn't matter because result should always be positive
+			CopyMACToIR( true );
 			break;
 		}
 
 		case Opcode::OuterProduct:
 		{
 			// D1,D2,D3 are meant to be the RT11,RT22,RT33 elements of the RT matrix "misused" as vector. lm should be usually zero.
-			const auto D1 = m_rotation[ 0 ][ 0 ];
-			const auto D2 = m_rotation[ 1 ][ 1 ];
-			const auto D3 = m_rotation[ 2 ][ 2 ];
-			SetMAC<1>( m_ir123.z * D2 - m_ir123.y * D3, sf ); // IR3*D2-IR2*D3
-			SetMAC<2>( m_ir123.x * D3 - m_ir123.z * D1, sf ); // IR1*D3-IR3*D1
-			SetMAC<3>( m_ir123.y * D1 - m_ir123.x * D2, sf ); // IR2*D1-IR1*D2
-			SetIR<1>( m_mac123.x, lm );
-			SetIR<2>( m_mac123.y, lm );
-			SetIR<3>( m_mac123.z, lm );
+			const int64_t D1 = m_rotation[ 0 ][ 0 ];
+			const int64_t D2 = m_rotation[ 1 ][ 1 ];
+			const int64_t D3 = m_rotation[ 2 ][ 2 ];
+			SetMAC<1>( ( m_ir123.z * D2 ) - ( m_ir123.y * D3 ), sf ); // IR3*D2-IR2*D3
+			SetMAC<2>( ( m_ir123.x * D3 ) - ( m_ir123.z * D1 ), sf ); // IR1*D3-IR3*D1
+			SetMAC<3>( ( m_ir123.y * D1 ) - ( m_ir123.x * D2 ), sf ); // IR2*D1-IR1*D2
+			CopyMACToIR( lm );
 			break;
 		}
 
@@ -676,7 +673,7 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 			break;
 
 		case Opcode::ColorColor:
-			Color<false>( sf, true );
+			Color<false>( sf, lm );
 			break;
 
 		case Opcode::ColorDepthCue:
@@ -688,18 +685,18 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 			break;
 
 		case Opcode::DepthCueingSingle:
-			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
 			break;
 
 		case Opcode::DepthCueingTriple:
-			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
-			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
-			DepthCue<false, true>( m_colorCodeFifo[ 0 ], sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
 			break;
 
 		case Opcode::InterpolateFarColor:
 		{
-			// [IR1,IR2,IR3] SHL 12
+			// [MAC1,MAC2,MAC3] = [IR1,IR2,IR3] SHL 12
 			SetMAC<1>( int64_t( m_ir123.x ) << 12 );
 			SetMAC<2>( int64_t( m_ir123.y ) << 12 );
 			SetMAC<3>( int64_t( m_ir123.z ) << 12 );
@@ -833,7 +830,7 @@ void GeometryTransformationEngine::GeneralInterpolation( int shiftAmount, bool l
 	PushColorFromMAC( lm );
 }
 
-void GeometryTransformationEngine::MultipleVectorMatrixVectorAdd( Command command ) noexcept
+void GeometryTransformationEngine::MultiplyVectorMatrixVectorAdd( Command command ) noexcept
 {
 	const int shiftAmount = command.sf ? 12 : 0;
 

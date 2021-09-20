@@ -38,6 +38,7 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 	if ( !fin.is_open() )
 	{
 		dbBreakMessage( "failed to open executable file" );
+		dbBreak();
 		return false;
 	}
 
@@ -48,6 +49,7 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 	if ( ( fileSize / 0x800 < 2 ) || ( fileSize % 0x800 != 0 ) )
 	{
 		dbLogError( "file size must be a multiple of 0x800 greater than 1 [%x]", static_cast<uint32_t>( fileSize ) );
+		dbBreak();
 		return false;
 	}
 
@@ -58,12 +60,14 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 	{
 		header.id[ 0xf ] = '\0';
 		dbLogError( "header ID is invalid [%s]", header.id );
+		dbBreak();
 		return false;
 	}
 
 	if ( header.fileSize > fileSize - sizeof( header ) )
 	{
 		dbLogError( "header file size is greater than actual file size [%x] [%x]", header.fileSize, static_cast<uint32_t>( fileSize ) );
+		dbBreak();
 		return false;
 	}
 
@@ -72,6 +76,7 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 	if ( physicalRamDest + header.fileSize > PSX::Ram::Size() )
 	{
 		dbLogError( "file size larger than ram at destination [%x] [%x]", header.fileSize, header.ramDestination );
+		dbBreak();
 		return false;
 	}
 
@@ -204,6 +209,10 @@ int main( int argc, char** argv )
 		{ SDLK_c, PSX::Button::Circle },
 		{ SDLK_x, PSX::Button::X },
 		{ SDLK_z, PSX::Button::Square },
+		{ SDLK_a, PSX::Button::L2 },
+		{ SDLK_s, PSX::Button::L1 },
+		{ SDLK_d, PSX::Button::R1 },
+		{ SDLK_f, PSX::Button::R2 },
 	};
 
 	if ( binFilename )
@@ -232,23 +241,27 @@ int main( int argc, char** argv )
 				case SDL_KEYDOWN:
 				{
 					const auto key = event.key.keysym.sym;
-					/*
+					
 					switch ( key )
 					{
-						case SDLK_t:
-							// load test EXE
+						case SDLK_F1:
+							// load CPU tests
 							LoadExecutable( "psxtest_cpu.exe", *cpu, *ram );
 							break;
 
-						case SDLK_k:
+						case SDLK_F2:
+							// load GTE tests
+							LoadExecutable( "gte-test-all.exe", *cpu, *ram );
+							break;
+
+						case SDLK_F3:
 							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
 							break;
 
-						case SDLK_c:
+						case SDLK_F4:
 							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
 							break;
 					}
-					*/
 
 					auto it = controllerMapping.find( key );
 					if ( it != controllerMapping.end() )

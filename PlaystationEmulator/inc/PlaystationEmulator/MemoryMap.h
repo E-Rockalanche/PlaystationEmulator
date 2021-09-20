@@ -268,9 +268,14 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	else
 	{
 		if constexpr ( Read )
+		{
 			dbBreakMessage( "Unhandled memory read [%X]", address );
+			value = T( -1 );
+		}
 		else
+		{
 			dbBreakMessage( "Unhandled memory write [%X <- %X]", address, value );
+		}
 	}
 }
 

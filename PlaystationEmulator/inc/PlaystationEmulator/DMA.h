@@ -156,6 +156,11 @@ public:
 			m_channelControl &= ~( ChannelControl::StartBusy | ChannelControl::StartTrigger );
 		}
 
+		void SetBaseAddress( uint32_t address )
+		{
+			m_baseAddress = address & BaseAddressMask;
+		}
+
 	private:
 		uint32_t m_baseAddress = 0;
 		uint32_t m_blockControl = 0;
