@@ -268,6 +268,8 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		}
 	}
 
+	if ( channel.GetSyncMode() == Channel::SyncMode::Request )
+		channel.SetBaseAddress( channel.GetBaseAddress() + totalWords * increment );
 
 	FinishTransfer( channelIndex );
 
