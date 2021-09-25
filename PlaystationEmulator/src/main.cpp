@@ -278,14 +278,14 @@ int main( int argc, char** argv )
 
 		while ( !gpu.GetDisplayFrame() )
 		{
-			while( !hookEXE || cpu->GetPC() != HookAddress )
-				cpu->Tick();
-
 			if ( hookEXE && cpu->GetPC() == HookAddress )
 			{
 				hookEXE = false;
 				LoadExecutable( filename.data(), *cpu, *ram );
+				// interruptControl.Reset();
 			}
+
+			cpu->Tick();
 		}
 
 		renderer.DrawBatch();
