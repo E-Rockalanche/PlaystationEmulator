@@ -147,8 +147,6 @@ private:
 	void SetupVRamCopy() noexcept;
 	void FinishVRamTransfer() noexcept;
 
-	void SetDrawOffset( int16_t x, int16_t y ) noexcept;
-
 	// GP0 modes
 	void GP0_Command( uint32_t ) noexcept;
 	void GP0_Params( uint32_t ) noexcept;

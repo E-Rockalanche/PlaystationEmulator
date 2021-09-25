@@ -126,11 +126,15 @@ void Gpu::Reset()
 	m_drawAreaTop = 0;
 	m_drawAreaRight = 0;
 	m_drawAreaBottom = 0;
+	m_renderer.SetDrawArea( 0, 0, 0, 0 );
 
-	SetDrawOffset( 0, 0 );
+	m_drawOffsetX = 0;
+	m_drawOffsetY = 0;
+	m_renderer.SetOrigin( 0, 0 );
 
 	m_displayAreaStartX = 0;
 	m_displayAreaStartY = 0;
+	m_renderer.SetDisplayStart( 0, 0 );
 
 	m_horDisplayRange1 = 0;
 	m_horDisplayRange2 = 0;
@@ -202,14 +206,6 @@ void Gpu::FinishVRamTransfer() noexcept
 		dbBreakMessage( "CPU to VRAM pixel transfer did not finish" );
 		// TODO: partial transfer
 	}
-}
-
-void Gpu::SetDrawOffset( int16_t x, int16_t y ) noexcept
-{
-	dbLog( "Gpu::SetDrawOffset() -- %i, %i", x, y );
-	m_drawOffsetX = x;
-	m_drawOffsetY = y;
-	m_renderer.SetOrigin( x, y );
 }
 
 uint32_t Gpu::GetHorizontalResolution() const noexcept
@@ -293,7 +289,11 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				return static_cast<int16_t>( sign ? ( value | 0xfffff800 ) : value );
 			};
 
-			SetDrawOffset( signExtend( value & 0x7ff ), signExtend( ( value >> 11 ) & 0x7ff ) );
+			m_drawOffsetX = signExtend( value & 0x7ff );
+			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
+			dbLog( "Gpu::GP0_Command() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
+
+			m_renderer.SetOrigin( m_drawOffsetX, m_drawOffsetY );
 			break;
 		}
 
@@ -542,8 +542,11 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_drawAreaTop = 0;
 			m_drawAreaRight = 0;
 			m_drawAreaBottom = 0;
+			m_renderer.SetDrawArea( 0, 0, 0, 0 );
 
-			SetDrawOffset( 0, 0 );
+			m_drawOffsetX = 0;
+			m_drawOffsetY = 0;
+			m_renderer.SetOrigin( 0, 0 );
 
 			m_horDisplayRange1 = 0x200;
 			m_horDisplayRange2 = 0x200 + 256 * 10;
@@ -552,6 +555,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 			m_displayAreaStartX = 0;
 			m_displayAreaStartY = 0;
+			m_renderer.SetDisplayStart( 0, 0 );
 
 			ClearCommandBuffer();
 
@@ -587,6 +591,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_displayAreaStartX = value & 0x3fe;
 			m_displayAreaStartY = ( value >> 10 ) & 0x1ff;
 			dbLog( "Gpu::WriteGP1() -- set display area start [%u, %u]", m_displayAreaStartX, m_displayAreaStartY );
+			m_renderer.SetDisplayStart( m_displayAreaStartX, m_displayAreaStartY );
 			break;
 		}
 

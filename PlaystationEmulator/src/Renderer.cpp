@@ -89,7 +89,6 @@ bool Renderer::Initialize( SDL_Window* window )
 
 void Renderer::SetOrigin( int32_t x, int32_t y )
 {
-	dbLog( "Renderer::SetOrigin() -- %i, %i", x, y );
 	if ( m_uniform.originX != x || m_uniform.originY != y )
 	{
 		DrawBatch();
@@ -102,25 +101,24 @@ void Renderer::SetOrigin( int32_t x, int32_t y )
 	}
 }
 
+void Renderer::SetDisplayStart( uint32_t x, uint32_t y )
+{
+	m_displayX = x;
+	m_displayY = y;
+}
+
 void Renderer::SetDisplaySize( uint32_t w, uint32_t h )
 {
-	(void)w;
-	(void)h;
-
-	/*
-	dbLog( "Renderer::SetDisplaySize() -- %u, %u", w, h );
 	if ( m_displayWidth != w || m_displayHeight != h )
 	{
 		m_displayWidth = w;
 		m_displayHeight = h;
 		SDL_SetWindowSize( m_window, static_cast<int>( w ), static_cast<int>( h ) );
 	}
-	*/
 }
 
 void Renderer::SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY )
 {
-	dbLog( "Renderer::SetTextureWindow() -- mask: %u,%u offset: %u,%u", maskX, maskY, offsetX, offsetY );
 	if ( m_uniform.texWindowMaskX != maskX || m_uniform.texWindowMaskY != maskY || m_uniform.texWindowOffsetX != offsetX || m_uniform.texWindowOffsetY != offsetY )
 	{
 		DrawBatch();
@@ -318,6 +316,12 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
 
+	if ( m_drawAreaLeft >= m_drawAreaRight || m_drawAreaTop >= m_drawAreaBottom )
+	{
+		dbLogWarning( "Renderer::PushTriangle() -- draw area is invalid" );
+		return;
+	}
+
 	SetSemiTransparencyEnabled( semiTransparent );
 
 	// updates read texture if sampling from dirty area
@@ -399,24 +403,25 @@ void Renderer::RestoreRenderState()
 
 void Renderer::DisplayFrame()
 {
-	m_vramDrawFrameBuffer.Unbind();
-	m_noAttributeVAO.Bind();
-	m_fullscreenShader.Bind();
-	m_vramDrawTexture.Bind();
+	m_vramDrawFrameBuffer.Unbind( Render::FrameBufferBinding::Draw );
+	m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Read );
 	dbCheckRenderErrors();
 
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
-	
 	glClear( GL_COLOR_BUFFER_BIT );
+	glViewport( 0, 0, m_displayWidth, m_displayHeight );
 
-	glViewport( 0, 0, VRamWidth, VRamHeight );
-
-	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-
-	SDL_GL_SwapWindow( m_window );
+	glBlitFramebuffer(
+		// src
+		m_displayX, m_displayY, m_displayX + m_displayWidth, m_displayY + m_displayHeight,
+		// dest (must display upside-down)
+		0, m_displayHeight, m_displayWidth, 0,
+		GL_COLOR_BUFFER_BIT, GL_NEAREST );
 
 	dbCheckRenderErrors();
+
+	SDL_GL_SwapWindow( m_window );
 
 	RestoreRenderState();
 }

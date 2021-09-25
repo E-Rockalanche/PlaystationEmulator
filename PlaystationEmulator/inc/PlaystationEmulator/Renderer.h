@@ -31,6 +31,7 @@ public:
 	bool Initialize( SDL_Window* window );
 
 	void SetOrigin( int32_t x, int32_t y );
+	void SetDisplayStart( uint32_t x, uint32_t y );
 	void SetDisplaySize( uint32_t w, uint32_t h );
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
@@ -99,6 +100,8 @@ private:
 	GLint m_texWindowMask = -1;
 	GLint m_texWindowOffset = -1;
 
+	uint32_t m_displayX = 0;
+	uint32_t m_displayY = 0;
 	uint32_t m_displayWidth = 640;
 	uint32_t m_displayHeight = 480;
 

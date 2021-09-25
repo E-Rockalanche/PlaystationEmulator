@@ -251,7 +251,7 @@ int main( int argc, char** argv )
 
 						case SDLK_F2:
 							// load GTE tests
-							LoadExecutable( "gte-test-all.exe", *cpu, *ram );
+							LoadExecutable( "psxtest_gte.exe", *cpu, *ram );
 							break;
 
 						case SDLK_F3:
