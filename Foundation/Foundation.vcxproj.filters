@@ -45,6 +45,9 @@
     <ClInclude Include="inc\stdx\flat_unordered_map.h">
       <Filter>inc\stdx</Filter>
     </ClInclude>
+    <ClInclude Include="inc\stdx\string.h">
+      <Filter>inc\stdx</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp">

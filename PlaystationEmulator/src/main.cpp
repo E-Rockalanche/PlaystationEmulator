@@ -20,6 +20,7 @@
 #include <glad/glad.h>
 
 #include <stdx/flat_unordered_map.h>
+#include <stdx/string.h>
 
 #include <cmath>
 #include <fstream>
@@ -101,7 +102,7 @@ bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram
 
 int main( int argc, char** argv )
 {
-	const char* binFilename = ( argc >= 2 ) ? argv[ 1 ] : nullptr;
+	const std::string_view filename = ( argc >= 2 ) ? argv[ 1 ] : "";
 
 	dbLog( "initializing SDL" );
 	if ( SDL_Init( SDL_INIT_VIDEO ) < 0 )
@@ -215,14 +216,16 @@ int main( int argc, char** argv )
 		{ SDLK_f, PSX::Button::R2 },
 	};
 
-	if ( binFilename )
+	if ( stdx::ends_with( filename, ".bin" ) )
 	{
 		auto cdrom = std::make_unique<PSX::CDRom>();
-		if ( cdrom->Open( binFilename ) )
+		if ( cdrom->Open( filename.data() ) )
 			cdRomDrive->SetCDRom( std::move( cdrom ) );
 	}
 
 	cycleScheduler.ScheduleNextUpdate();
+
+	bool hookEXE = stdx::ends_with( filename, ".exe" );
 
 	bool quit = false;
 	while ( !quit )
@@ -244,16 +247,6 @@ int main( int argc, char** argv )
 					
 					switch ( key )
 					{
-						case SDLK_F1:
-							// load CPU tests
-							LoadExecutable( "psxtest_cpu.exe", *cpu, *ram );
-							break;
-
-						case SDLK_F2:
-							// load GTE tests
-							LoadExecutable( "psxtest_gte.exe", *cpu, *ram );
-							break;
-
 						case SDLK_F3:
 							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
 							break;
@@ -281,8 +274,19 @@ int main( int argc, char** argv )
 			}
 		}
 
+		static constexpr uint32_t HookAddress = 0x80030000;
+
 		while ( !gpu.GetDisplayFrame() )
-			cpu->Tick();
+		{
+			while( !hookEXE || cpu->GetPC() != HookAddress )
+				cpu->Tick();
+
+			if ( hookEXE && cpu->GetPC() == HookAddress )
+			{
+				hookEXE = false;
+				LoadExecutable( filename.data(), *cpu, *ram );
+			}
+		}
 
 		renderer.DrawBatch();
 

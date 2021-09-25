@@ -56,6 +56,8 @@ public:
 		m_registers.Update();
 	}
 
+	uint32_t GetPC() const noexcept { return m_pc; }
+
 private:
 
 	class Registers
