@@ -1,4 +1,4 @@
-#include "GeometryTransformationEngine.h"
+#include "GTE.h"
 
 #include <stdx/assert.h>
 #include <stdx/bit.h>
@@ -36,7 +36,7 @@ constexpr int64_t DotProduct3( const T& lhs, const U& rhs )
 
 }
 
-void GeometryTransformationEngine::Reset()
+void GTE::Reset()
 {
 	m_vectors.fill( Math::Vector3<int16_t>{ 0 } );
 
@@ -82,11 +82,11 @@ void GeometryTransformationEngine::Reset()
 	m_errorFlags = 0;
 }
 
-uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
+uint32_t GTE::Read( uint32_t index ) const noexcept
 {
 	dbExpects( index < 64 );
 
-	// dbLog( "GeometryTransformationEngine::Read() -- [%u]", index );
+	// dbLog( "GTE::Read() -- [%u]", index );
 
 	auto readVXYn = [this]( size_t n ) -> uint32_t
 	{
@@ -215,7 +215,7 @@ uint32_t GeometryTransformationEngine::Read( uint32_t index ) const noexcept
 	}
 }
 
-void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexcept
+void GTE::Write( uint32_t index, uint32_t value ) noexcept
 {
 	dbExpects( index < 64 );
 
@@ -357,7 +357,7 @@ void GeometryTransformationEngine::Write( uint32_t index, uint32_t value ) noexc
 }
 
 template <size_t Index>
-void GeometryTransformationEngine::SetMAC( int64_t value, int shiftAmount ) noexcept
+void GTE::SetMAC( int64_t value, int shiftAmount ) noexcept
 {
 	dbExpects( shiftAmount == 0 || Index != 0 );
 
@@ -395,7 +395,7 @@ void GeometryTransformationEngine::SetMAC( int64_t value, int shiftAmount ) noex
 }
 
 template <size_t Index>
-void GeometryTransformationEngine::SetIR( int32_t value, bool lm ) noexcept
+void GTE::SetIR( int32_t value, bool lm ) noexcept
 {
 	// duckstation lets ir0 be saturated
 
@@ -423,7 +423,7 @@ void GeometryTransformationEngine::SetIR( int32_t value, bool lm ) noexcept
 		m_ir123[ Index - 1 ] = static_cast<int16_t>( value );
 }
 
-inline void GeometryTransformationEngine::CopyMACToIR( bool lm ) noexcept
+inline void GTE::CopyMACToIR( bool lm ) noexcept
 {
 	SetIR<1>( m_mac123.x, lm );
 	SetIR<2>( m_mac123.y, lm );
@@ -431,7 +431,7 @@ inline void GeometryTransformationEngine::CopyMACToIR( bool lm ) noexcept
 }
 
 template <size_t Component>
-uint8_t GeometryTransformationEngine::TruncateRGB( int32_t value ) noexcept
+uint8_t GTE::TruncateRGB( int32_t value ) noexcept
 {
 	if ( value < ColorMin || value > ColorMax )
 	{
@@ -448,7 +448,7 @@ uint8_t GeometryTransformationEngine::TruncateRGB( int32_t value ) noexcept
 	return static_cast<uint8_t>( value );
 }
 
-void GeometryTransformationEngine::PushScreenZ( int32_t value ) noexcept
+void GTE::PushScreenZ( int32_t value ) noexcept
 {
 	if ( value < ZMin )
 	{
@@ -464,7 +464,7 @@ void GeometryTransformationEngine::PushScreenZ( int32_t value ) noexcept
 	PushBack( m_screenZFifo, static_cast<uint16_t>( value ) );
 }
 
-void GeometryTransformationEngine::PushScreenXY( int32_t x, int32_t y ) noexcept
+void GTE::PushScreenXY( int32_t x, int32_t y ) noexcept
 {
 	auto truncate = [this]( int32_t coord, uint32_t errorFlag ) -> int16_t
 	{
@@ -484,7 +484,7 @@ void GeometryTransformationEngine::PushScreenXY( int32_t x, int32_t y ) noexcept
 	PushBack( m_screenXYFifo, ScreenXY{ truncate( x, ErrorFlag::SX2Saturated ), truncate( y, ErrorFlag::SY2Saturated ) } );
 }
 
-void GeometryTransformationEngine::SetOrderTableZ( int32_t z ) noexcept
+void GTE::SetOrderTableZ( int32_t z ) noexcept
 {
 	if ( z < ZMin )
 	{
@@ -499,7 +499,7 @@ void GeometryTransformationEngine::SetOrderTableZ( int32_t z ) noexcept
 	m_orderTableZ = static_cast<uint16_t>( z );
 }
 
-void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept
+void GTE::Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept
 {
 #define MULT( N ) SetMAC<(N)+1>( DotProduct3( matrix[ (N) ], vector ), shiftAmount )
 	MULT( 0 );
@@ -510,7 +510,7 @@ void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector
 	CopyMACToIR( lm );
 }
 
-void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept
+void GTE::Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept
 {
 #define MULT_TRANSLATE( N ) SetMAC<(N)+1>( int64_t( translation[ (N) ] ) * int64_t( 0x1000 ) + DotProduct3( matrix[ (N) ], vector ), shiftAmount )
 	MULT_TRANSLATE( 0 );
@@ -521,14 +521,14 @@ void GeometryTransformationEngine::Transform( const Matrix& matrix, const Vector
 	CopyMACToIR( lm );
 }
 
-void GeometryTransformationEngine::MultiplyColorWithIR( ColorRGBC color ) noexcept
+void GTE::MultiplyColorWithIR( ColorRGBC color ) noexcept
 {
 	SetMAC<1>( ( int64_t( color.r ) * int64_t( m_ir123.x ) ) << 4 );
 	SetMAC<2>( ( int64_t( color.g ) * int64_t( m_ir123.y ) ) << 4 );
 	SetMAC<3>( ( int64_t( color.b ) * int64_t( m_ir123.z ) ) << 4 );
 }
 
-void GeometryTransformationEngine::LerpFarColorWithMAC( int shiftAmount ) noexcept
+void GTE::LerpFarColorWithMAC( int shiftAmount ) noexcept
 {
 	// [IR1,IR2,IR3] = (([RFC,GFC,BFC] SHL 12) - [MAC1,MAC2,MAC3]) SAR (sf*12)
 	// saturated to -8000h..+7FFFh (ie. as if lm=0)
@@ -542,7 +542,7 @@ void GeometryTransformationEngine::LerpFarColorWithMAC( int shiftAmount ) noexce
 	SetMAC<3>( ( m_ir123[ 2 ] * int64_t( m_ir0 ) ) + m_mac123[ 2 ] );
 }
 
-void GeometryTransformationEngine::ShiftMACRight( int shiftAmount ) noexcept
+void GTE::ShiftMACRight( int shiftAmount ) noexcept
 {
 	// [MAC1,MAC2,MAC3] = [MAC1,MAC2,MAC3] SAR (sf*12)
 	SetMAC<1>( m_mac123[ 0 ], shiftAmount );
@@ -550,7 +550,7 @@ void GeometryTransformationEngine::ShiftMACRight( int shiftAmount ) noexcept
 	SetMAC<3>( m_mac123[ 2 ], shiftAmount );
 }
 
-void GeometryTransformationEngine::PushColorFromMAC( bool lm ) noexcept
+void GTE::PushColorFromMAC( bool lm ) noexcept
 {
 	ColorRGBC color;
 	color.r = TruncateRGB<0>( m_mac123.x / 16 );
@@ -563,9 +563,9 @@ void GeometryTransformationEngine::PushColorFromMAC( bool lm ) noexcept
 	CopyMACToIR( lm );
 }
 
-void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexcept
+void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 {
-	// dbLog( "GeometryTransformationEngine::ExecuteCommand() -- [%X]", commandValue );
+	// dbLog( "GTE::ExecuteCommand() -- [%X]", commandValue );
 
 	Command command{ commandValue };
 
@@ -724,7 +724,7 @@ void GeometryTransformationEngine::ExecuteCommand( uint32_t commandValue ) noexc
 		m_errorFlags |= ErrorFlag::Error;
 }
 
-void GeometryTransformationEngine::RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
+void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
 {
 	// perspective transformation ignores lm bit
 
@@ -755,7 +755,7 @@ void GeometryTransformationEngine::RotateTranslatePerspectiveTransformation( con
 }
 
 template <bool MultiplyColorIR, bool LerpFarColor, bool ShiftMAC>
-void GeometryTransformationEngine::NormalizeColor( const Vector16& normal, int shiftAmount, bool lm ) noexcept
+void GTE::NormalizeColor( const Vector16& normal, int shiftAmount, bool lm ) noexcept
 {
 	Transform( m_lightMatrix, normal, shiftAmount, lm );
 
@@ -775,7 +775,7 @@ void GeometryTransformationEngine::NormalizeColor( const Vector16& normal, int s
 
 
 template <bool LerpFarColor>
-void GeometryTransformationEngine::Color( int shiftAmount, bool lm ) noexcept
+void GTE::Color( int shiftAmount, bool lm ) noexcept
 {
 	Transform( m_colorMatrix, m_ir123, m_backgroundColor, shiftAmount, lm );
 
@@ -790,7 +790,7 @@ void GeometryTransformationEngine::Color( int shiftAmount, bool lm ) noexcept
 }
 
 template <bool MultiplyColorIR, bool ShiftColorLeft16>
-void GeometryTransformationEngine::DepthCue( ColorRGBC color, int shiftAmount, bool lm ) noexcept
+void GTE::DepthCue( ColorRGBC color, int shiftAmount, bool lm ) noexcept
 {
 	if constexpr ( MultiplyColorIR )
 		MultiplyColorWithIR( color );
@@ -808,7 +808,7 @@ void GeometryTransformationEngine::DepthCue( ColorRGBC color, int shiftAmount, b
 }
 
 template <bool Base>
-void GeometryTransformationEngine::GeneralInterpolation( int shiftAmount, bool lm ) noexcept
+void GTE::GeneralInterpolation( int shiftAmount, bool lm ) noexcept
 {
 	if constexpr ( Base )
 	{
@@ -830,7 +830,7 @@ void GeometryTransformationEngine::GeneralInterpolation( int shiftAmount, bool l
 	PushColorFromMAC( lm );
 }
 
-void GeometryTransformationEngine::MultiplyVectorMatrixVectorAdd( Command command ) noexcept
+void GTE::MultiplyVectorMatrixVectorAdd( Command command ) noexcept
 {
 	const int shiftAmount = command.sf ? 12 : 0;
 

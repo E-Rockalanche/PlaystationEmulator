@@ -10,7 +10,7 @@ namespace PSX
 {
 
  // aka GTE aka COP2
-class GeometryTransformationEngine
+class GTE
 {
 public:
 	void Reset();

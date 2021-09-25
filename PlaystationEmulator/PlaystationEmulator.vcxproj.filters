@@ -63,9 +63,6 @@
     <ClInclude Include="inc\PlaystationEmulator\File.h">
       <Filter>inc</Filter>
     </ClInclude>
-    <ClInclude Include="inc\PlaystationEmulator\GeometryTransformationEngine.h">
-      <Filter>inc</Filter>
-    </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\ControllerPorts.h">
       <Filter>inc</Filter>
     </ClInclude>
@@ -85,6 +82,9 @@
       <Filter>inc</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\CDRom.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\GTE.h">
       <Filter>inc</Filter>
     </ClInclude>
   </ItemGroup>
@@ -122,9 +122,6 @@
     <ClCompile Include="src\CycleScheduler.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="src\GeometryTransformationEngine.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
     <ClCompile Include="src\MemoryControl.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -132,6 +129,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\ControllerPorts.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GTE.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

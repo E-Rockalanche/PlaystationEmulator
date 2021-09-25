@@ -175,7 +175,7 @@
     <ClInclude Include="inc\PlaystationEmulator\DMA.h" />
     <ClInclude Include="inc\PlaystationEmulator\File.h" />
     <ClInclude Include="inc\PlaystationEmulator\FullscreenShader.h" />
-    <ClInclude Include="inc\PlaystationEmulator\GeometryTransformationEngine.h" />
+    <ClInclude Include="inc\PlaystationEmulator\GTE.h" />
     <ClInclude Include="inc\PlaystationEmulator\GPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\GpuDefs.h" />
     <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />
@@ -197,7 +197,7 @@
     <ClCompile Include="src\CPU.cpp" />
     <ClCompile Include="src\CycleScheduler.cpp" />
     <ClCompile Include="src\DMA.cpp" />
-    <ClCompile Include="src\GeometryTransformationEngine.cpp" />
+    <ClCompile Include="src\GTE.cpp" />
     <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />
     <ClCompile Include="src\main.cpp" />
