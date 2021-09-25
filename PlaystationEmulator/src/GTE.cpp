@@ -356,6 +356,167 @@ void GTE::Write( uint32_t index, uint32_t value ) noexcept
 	}
 }
 
+void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
+{
+	// dbLog( "GTE::ExecuteCommand() -- [%X]", commandValue );
+
+	Command command{ commandValue };
+
+	m_errorFlags = 0;
+
+	const int sf = command.sf ? 12 : 0;
+	const bool lm = command.lm;
+
+	switch ( static_cast<Opcode>( command.opcode ) )
+	{
+		case Opcode::RotateTranslatePerspectiveSingle:
+			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
+			break;
+
+		case Opcode::RotateTranslatePerspectiveTriple:
+			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 1 ], sf );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 2 ], sf );
+			break;
+
+		case Opcode::NormalClipping:
+		{
+			// MAC0 =   SX0*SY1 + SX1*SY2 + SX2*SY0 - SX0*SY2 - SX1*SY0 - SX2*SY1
+			auto& sxy0 = m_screenXYFifo[ 0 ];
+			auto& sxy1 = m_screenXYFifo[ 1 ];
+			auto& sxy2 = m_screenXYFifo[ 2 ];
+
+			SetMAC<0>( ( ( sxy0.x * sxy1.y ) + ( sxy1.x * sxy2.y ) + ( sxy2.x * sxy0.y ) ) -
+				( ( sxy0.x * sxy2.y ) + ( sxy1.x * sxy0.y ) + ( sxy2.x * sxy1.y ) ) );
+			break;
+		}
+
+		case Opcode::Average3Z:
+			// MAC0 =  ZSF3*(SZ1+SZ2+SZ3)
+			SetMAC<0>( ( m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor3 ) );
+			// OTZ  =  MAC0/1000h
+			SetOrderTableZ( m_mac0 / 0x1000 );
+			break;
+
+		case Opcode::Average4Z:
+			// MAC0 =  ZSF4*(SZ0+SZ1+SZ2+SZ3)
+			SetMAC<0>( ( m_screenZFifo[ 0 ] + m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor4 ) );
+			// OTZ  =  MAC0/1000h
+			SetOrderTableZ( m_mac0 / 0x1000 );
+			break;
+
+		case Opcode::MultiplyVectorMatrixVectorAdd:
+			MultiplyVectorMatrixVectorAdd( command );
+			break;
+
+		case Opcode::SquareIR:
+		{
+			// [MAC1, MAC2, MAC3] = [ IR1*IR1, IR2*IR2, IR3*IR3 ] SHR( sf * 12 )
+			SetMAC<1>( int64_t( m_ir123.x ) * int64_t( m_ir123.x ), sf );
+			SetMAC<2>( int64_t( m_ir123.y ) * int64_t( m_ir123.y ), sf );
+			SetMAC<3>( int64_t( m_ir123.z ) * int64_t( m_ir123.z ), sf );
+
+			// [ IR1, IR2, IR3 ] = [ MAC1, MAC2, MAC3 ]; IR1, IR2, IR3 saturated to max 7FFFh
+			// lm flag doesn't matter because result should always be positive
+			CopyMACToIR( true );
+			break;
+		}
+
+		case Opcode::OuterProduct:
+		{
+			// D1,D2,D3 are meant to be the RT11,RT22,RT33 elements of the RT matrix "misused" as vector. lm should be usually zero.
+			const int64_t D1 = m_rotation[ 0 ][ 0 ];
+			const int64_t D2 = m_rotation[ 1 ][ 1 ];
+			const int64_t D3 = m_rotation[ 2 ][ 2 ];
+			SetMAC<1>( ( m_ir123.z * D2 ) - ( m_ir123.y * D3 ), sf ); // IR3*D2-IR2*D3
+			SetMAC<2>( ( m_ir123.x * D3 ) - ( m_ir123.z * D1 ), sf ); // IR1*D3-IR3*D1
+			SetMAC<3>( ( m_ir123.y * D1 ) - ( m_ir123.x * D2 ), sf ); // IR2*D1-IR1*D2
+			CopyMACToIR( lm );
+			break;
+		}
+
+		case Opcode::NormalColorSingle:
+			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorTriple:
+			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<false, false, false>( m_vectors[ 1 ], sf, lm );
+			NormalizeColor<false, false, false>( m_vectors[ 2 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorColorSingle:
+			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorColorTriple:
+			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<true, false, true>( m_vectors[ 1 ], sf, lm );
+			NormalizeColor<true, false, true>( m_vectors[ 2 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorDepthCueSingle:
+			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
+			break;
+
+		case Opcode::NormalColorDepthCueTriple:
+			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
+			NormalizeColor<true, true, true>( m_vectors[ 1 ], sf, lm );
+			NormalizeColor<true, true, true>( m_vectors[ 2 ], sf, lm );
+			break;
+
+		case Opcode::ColorColor:
+			Color<false>( sf, lm );
+			break;
+
+		case Opcode::ColorDepthCue:
+			Color<true>( sf, lm );
+			break;
+
+		case Opcode::DepthCueColorLight:
+			DepthCue<true, false>( m_color, sf, lm );
+			break;
+
+		case Opcode::DepthCueingSingle:
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			break;
+
+		case Opcode::DepthCueingTriple:
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			break;
+
+		case Opcode::InterpolateFarColor:
+		{
+			// [MAC1,MAC2,MAC3] = [IR1,IR2,IR3] SHL 12
+			SetMAC<1>( int64_t( m_ir123.x ) << 12 );
+			SetMAC<2>( int64_t( m_ir123.y ) << 12 );
+			SetMAC<3>( int64_t( m_ir123.z ) << 12 );
+
+			LerpFarColorWithMAC( sf );
+			ShiftMACRight( sf );
+			PushColorFromMAC( lm );
+			break;
+		}
+
+		case Opcode::GeneralInterpolation:
+			GeneralInterpolation<false>( sf, lm );
+			break;
+
+		case Opcode::GeneralInterpolationBase:
+			GeneralInterpolation<true>( sf, lm );
+			break;
+
+		default:
+			dbBreak(); // invalid command
+			break;
+	}
+
+	if ( m_errorFlags & ErrorFlag::ErrorMask )
+		m_errorFlags |= ErrorFlag::Error;
+}
+
 template <size_t Index>
 void GTE::SetMAC( int64_t value, int shiftAmount ) noexcept
 {
@@ -561,167 +722,6 @@ void GTE::PushColorFromMAC( bool lm ) noexcept
 	PushBack( m_colorCodeFifo, color );
 
 	CopyMACToIR( lm );
-}
-
-void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
-{
-	// dbLog( "GTE::ExecuteCommand() -- [%X]", commandValue );
-
-	Command command{ commandValue };
-
-	m_errorFlags = 0;
-
-	const int sf = command.sf ? 12 : 0;
-	const bool lm = command.lm;
-
-	switch ( static_cast<Opcode>( command.opcode ) )
-	{
-		case Opcode::RotateTranslatePerspectiveSingle:
-			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
-			break;
-
-		case Opcode::RotateTranslatePerspectiveTriple:
-			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
-			RotateTranslatePerspectiveTransformation( m_vectors[ 1 ], sf );
-			RotateTranslatePerspectiveTransformation( m_vectors[ 2 ], sf );
-			break;
-
-		case Opcode::NormalClipping:
-		{
-			// MAC0 =   SX0*SY1 + SX1*SY2 + SX2*SY0 - SX0*SY2 - SX1*SY0 - SX2*SY1
-			auto& sxy0 = m_screenXYFifo[ 0 ];
-			auto& sxy1 = m_screenXYFifo[ 1 ];
-			auto& sxy2 = m_screenXYFifo[ 2 ];
-
-			SetMAC<0>(	( ( sxy0.x * sxy1.y ) + ( sxy1.x * sxy2.y ) + ( sxy2.x * sxy0.y ) ) -
-						( ( sxy0.x * sxy2.y ) + ( sxy1.x * sxy0.y ) + ( sxy2.x * sxy1.y ) ) );
-			break;
-		}
-
-		case Opcode::Average3Z:
-			// MAC0 =  ZSF3*(SZ1+SZ2+SZ3)
-			SetMAC<0>( ( m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor3 ) );
-			// OTZ  =  MAC0/1000h
-			SetOrderTableZ( m_mac0 / 0x1000 );
-			break;
-
-		case Opcode::Average4Z:
-			// MAC0 =  ZSF4*(SZ0+SZ1+SZ2+SZ3)
-			SetMAC<0>( ( m_screenZFifo[ 0 ] + m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor4 ) );
-			// OTZ  =  MAC0/1000h
-			SetOrderTableZ( m_mac0 / 0x1000 );
-			break;
-
-		case Opcode::MultiplyVectorMatrixVectorAdd:
-			MultiplyVectorMatrixVectorAdd( command );
-			break;
-
-		case Opcode::SquareIR:
-		{
-			// [MAC1, MAC2, MAC3] = [ IR1*IR1, IR2*IR2, IR3*IR3 ] SHR( sf * 12 )
-			SetMAC<1>( int64_t( m_ir123.x ) * int64_t( m_ir123.x ), sf );
-			SetMAC<2>( int64_t( m_ir123.y ) * int64_t( m_ir123.y ), sf );
-			SetMAC<3>( int64_t( m_ir123.z ) * int64_t( m_ir123.z ), sf );
-
-			// [ IR1, IR2, IR3 ] = [ MAC1, MAC2, MAC3 ]; IR1, IR2, IR3 saturated to max 7FFFh
-			// lm flag doesn't matter because result should always be positive
-			CopyMACToIR( true );
-			break;
-		}
-
-		case Opcode::OuterProduct:
-		{
-			// D1,D2,D3 are meant to be the RT11,RT22,RT33 elements of the RT matrix "misused" as vector. lm should be usually zero.
-			const int64_t D1 = m_rotation[ 0 ][ 0 ];
-			const int64_t D2 = m_rotation[ 1 ][ 1 ];
-			const int64_t D3 = m_rotation[ 2 ][ 2 ];
-			SetMAC<1>( ( m_ir123.z * D2 ) - ( m_ir123.y * D3 ), sf ); // IR3*D2-IR2*D3
-			SetMAC<2>( ( m_ir123.x * D3 ) - ( m_ir123.z * D1 ), sf ); // IR1*D3-IR3*D1
-			SetMAC<3>( ( m_ir123.y * D1 ) - ( m_ir123.x * D2 ), sf ); // IR2*D1-IR1*D2
-			CopyMACToIR( lm );
-			break;
-		}
-
-		case Opcode::NormalColorSingle:
-			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
-			break;
-
-		case Opcode::NormalColorTriple:
-			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
-			NormalizeColor<false, false, false>( m_vectors[ 1 ], sf, lm );
-			NormalizeColor<false, false, false>( m_vectors[ 2 ], sf, lm );
-			break;
-
-		case Opcode::NormalColorColorSingle:
-			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
-			break;
-
-		case Opcode::NormalColorColorTriple:
-			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
-			NormalizeColor<true, false, true>( m_vectors[ 1 ], sf, lm );
-			NormalizeColor<true, false, true>( m_vectors[ 2 ], sf, lm );
-			break;
-
-		case Opcode::NormalColorDepthCueSingle:
-			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
-			break;
-
-		case Opcode::NormalColorDepthCueTriple:
-			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
-			NormalizeColor<true, true, true>( m_vectors[ 1 ], sf, lm );
-			NormalizeColor<true, true, true>( m_vectors[ 2 ], sf, lm );
-			break;
-
-		case Opcode::ColorColor:
-			Color<false>( sf, lm );
-			break;
-
-		case Opcode::ColorDepthCue:
-			Color<true>( sf, lm );
-			break;
-
-		case Opcode::DepthCueColorLight:
-			DepthCue<true, false>( m_color, sf, lm );
-			break;
-
-		case Opcode::DepthCueingSingle:
-			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
-			break;
-
-		case Opcode::DepthCueingTriple:
-			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
-			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
-			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
-			break;
-
-		case Opcode::InterpolateFarColor:
-		{
-			// [MAC1,MAC2,MAC3] = [IR1,IR2,IR3] SHL 12
-			SetMAC<1>( int64_t( m_ir123.x ) << 12 );
-			SetMAC<2>( int64_t( m_ir123.y ) << 12 );
-			SetMAC<3>( int64_t( m_ir123.z ) << 12 );
-
-			LerpFarColorWithMAC( sf );
-			ShiftMACRight( sf );
-			PushColorFromMAC( lm );
-			break;
-		}
-
-		case Opcode::GeneralInterpolation:
-			GeneralInterpolation<false>( sf, lm );
-			break;
-
-		case Opcode::GeneralInterpolationBase:
-			GeneralInterpolation<true>( sf, lm );
-			break;
-
-		default:
-			dbBreak(); // invalid command
-			break;
-	}
-
-	if ( m_errorFlags & ErrorFlag::ErrorMask )
-		m_errorFlags |= ErrorFlag::Error;
 }
 
 void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
