@@ -1,7 +1,5 @@
 #pragma once
 
-#define EMPTY_BLOCK do{}while
-
 // c++20 concepts
 
 #if ( __cplusplus <= 201703L )

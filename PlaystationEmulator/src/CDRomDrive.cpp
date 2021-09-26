@@ -737,9 +737,22 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 
 		case Command::Play:
 		{
-			dbLog( "CDRomDRive::Play" );
+			// TODO
+			dbLog( "CDRomDrive::Play" );
+			const uint8_t param = m_parameterBuffer.Empty() ? 0x00 : m_parameterBuffer.Pop();
+			if ( param == 0x00 )
+			{
+				// play either starts at Setloc position (if there was a pending unprocessed Setloc), or otherwise starts at the current location
+				// (eg. the last point seeked, or the current location of the current song; if it was already playing)
+				dbLog( "\tplay from setloc position or current position" );
+			}
+			else
+			{
+				// For a disk with N songs, Parameters 1..N are starting the selected track. Parameters N+1..99h are restarting the begin of current track
+				dbLog( "\tplay track %X", param );
+			}
+			m_status |= Status::Play;
 			SendResponse();
-			dbBreak(); // TODO
 			break;
 		}
 
@@ -747,7 +760,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		{
 			dbLog( "CDRomDRive::Forward" );
 			SendResponse();
-			dbBreak(); // TODO
+			// TODO
 			break;
 		}
 
@@ -755,7 +768,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		{
 			dbLog( "CDRomDRive::Backward" );
 			SendResponse();
-			dbBreak(); // TODO
+			// TODO
 			break;
 		}
 

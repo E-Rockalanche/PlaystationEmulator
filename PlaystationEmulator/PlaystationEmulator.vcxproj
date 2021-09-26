@@ -186,6 +186,7 @@
     <ClInclude Include="inc\PlaystationEmulator\ControllerPorts.h" />
     <ClInclude Include="inc\PlaystationEmulator\RAM.h" />
     <ClInclude Include="inc\PlaystationEmulator\Renderer.h" />
+    <ClInclude Include="inc\PlaystationEmulator\SPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\Timers.h" />
   </ItemGroup>
   <ItemGroup>
@@ -203,6 +204,7 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\MemoryControl.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\SPU.cpp" />
     <ClCompile Include="src\Timers.cpp" />
   </ItemGroup>
   <ItemGroup>

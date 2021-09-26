@@ -115,10 +115,11 @@ int main( int argc, char** argv )
 	SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 3 );
 
 	dbLog( "creating window" );
+	const char* title = filename.empty() ? "PSX Emulator" : filename.data();
 	int windowWidth = 640;
 	int windowHeight = 480;
 	const auto windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
-	SDL_Window* window = SDL_CreateWindow( "PSX Emulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, windowFlags );
+	SDL_Window* window = SDL_CreateWindow( title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, windowFlags );
 	if ( !window )
 	{
 		PrintSdlError( "failed to create window" );
@@ -180,6 +181,8 @@ int main( int argc, char** argv )
 	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
 	gpu.Reset();
 
+	PSX::Spu spu;
+
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
 	cdRomDrive->Reset();
 
@@ -189,7 +192,7 @@ int main( int argc, char** argv )
 	PSX::ControllerPorts controllerPorts{ interruptControl, cycleScheduler };
 	controllerPorts.Reset();
 
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, *bios };
+	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, spu, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
 	cpu->Reset();
@@ -289,7 +292,6 @@ int main( int argc, char** argv )
 			{
 				hookEXE = false;
 				LoadExecutable( filename.data(), *cpu, *ram );
-				// interruptControl.Reset();
 			}
 
 			cpu->Tick();

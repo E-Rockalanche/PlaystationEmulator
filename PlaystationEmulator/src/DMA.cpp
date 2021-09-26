@@ -208,7 +208,9 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 	// TODO: address might need to be bitwise anded with 0x001ffffc
 
 	const uint32_t totalWords = channel.GetWordCount();
-	dbAssert( totalWords != 0 );
+
+	if ( totalWords == 0 )
+		dbLogWarning( "Dma::DoBlockTransfer() -- transferring 0 words" );
 
 	uint32_t wordCount = totalWords;
 
@@ -220,6 +222,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 			case ChannelIndex::RamOrderTable:
 			{
 				dbAssert( increment == -4 ); // TODO: can it go forward?
+				dbAssert( wordCount > 0 );
 
 				for ( ; wordCount > 1; --wordCount, address += increment )
 					m_ram.Write<uint32_t>( address, address + increment );
@@ -244,6 +247,13 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 				break;
 			}
 
+			case ChannelIndex::Spu:
+			{
+				// TODO
+				dbLog( "ignoring SPU to RAM DMA transfer" );
+				break;
+			}
+
 			default:
 				dbBreakMessage( "unhandled DMA transfer from channel %u to RAM", channelIndex );
 				break;
@@ -259,6 +269,13 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 				for ( ; wordCount > 0; --wordCount, address += increment )
 					m_gpu.WriteGP0( m_ram.Read<uint32_t>( address ) );
 
+				break;
+			}
+
+			case ChannelIndex::Spu:
+			{
+				// TODO
+				dbLog( "ignoring RAM to SPU DMA transfer" );
 				break;
 			}
 

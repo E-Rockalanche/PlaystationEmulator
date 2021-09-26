@@ -6,6 +6,7 @@
 #include "DMA.h"
 #include "DualSerialPort.h"
 #include "GPU.h"
+#include "SPU.h"
 #include "MemoryControl.h"
 #include "ControllerPorts.h"
 #include "RAM.h"
@@ -70,6 +71,7 @@ public:
 		CacheControlSize = 4
 	};
 
+public:
 	MemoryMap(
 		Ram& ram,
 		Scratchpad& scratchpad,
@@ -80,6 +82,7 @@ public:
 		Timers& timers,
 		CDRomDrive& cdRomDrive,
 		Gpu& gpu,
+		Spu& spu,
 		Bios& bios )
 		: m_ram{ ram }
 		, m_scratchpad{ scratchpad }
@@ -90,6 +93,7 @@ public:
 		, m_timers{ timers }
 		, m_cdRomDrive{ cdRomDrive }
 		, m_gpu{ gpu }
+		, m_spu{ spu }
 		, m_bios{ bios }
 	{}
 
@@ -113,7 +117,6 @@ public:
 	}
 
 private:
-
 	// masks help strip region bits from virtual address to make a physical address
 	// KSEG2 doesn't mirror the other regions so it's essentially ignored
 	static constexpr std::array<uint32_t, 8> RegionMasks
@@ -128,6 +131,7 @@ private:
 		0xffffffff, 0xffffffff
 	};
 
+private:
 	template <typename T, bool Read>
 	void Access( uint32_t address, T& value ) const noexcept;
 
@@ -159,6 +163,9 @@ private:
 	template <typename T, bool Read>
 	void AccessControllerPort( uint32_t offset, T& value ) const noexcept;
 
+	template <typename T, bool Read>
+	void AccessSpu( uint32_t offset, T& value ) const noexcept;
+
 	static inline constexpr bool Within( uint32_t address, uint32_t start, uint32_t size ) noexcept
 	{
 		return ( start <= address && address < start + size );
@@ -174,6 +181,7 @@ private:
 	Timers& m_timers;
 	CDRomDrive& m_cdRomDrive;
 	Gpu& m_gpu;
+	Spu& m_spu;
 	Bios& m_bios;
 
 	DualSerialPort* m_dualSerialPort = nullptr;
@@ -240,8 +248,7 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	}
 	else if ( Within( address, SpuStart, SpuSize ) )
 	{
-		if constexpr ( Read )
-			value = 0;
+		AccessSpu<T, Read>( address - SpuStart, value );
 	}
 	else if ( Within( address, CacheControlStart, CacheControlSize ) )
 	{
@@ -295,7 +302,7 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 			// 16bit registers
 			case 4:	value = static_cast<T>( m_controllerPorts.ReadMode() );					break;
 			case 5:	value = static_cast<T>( m_controllerPorts.ReadControl() );				break;
-			case 6:	value = 0;																break;
+			case 6:	value = T( -1 );														break;
 			case 7:	value = static_cast<T>( m_controllerPorts.ReadBaudrateReloadValue() );	break;
 
 			default:
@@ -325,6 +332,41 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 				break;
 		}
 	}
+}
+
+template <typename T, bool Read>
+void MemoryMap::AccessSpu( uint32_t offset, T& value ) const noexcept
+{
+	dbExpects( offset % 2 == 0 );
+
+	if constexpr ( Read )
+	{
+		if constexpr ( sizeof( T ) == 4 )
+		{
+			const uint32_t low = m_spu.Read( offset );
+			const uint32_t high = m_spu.Read( offset + 2 );
+			value = static_cast<T>( low | ( high << 16 ) );
+		}
+		else
+		{
+			value = static_cast<T>( m_spu.Read( offset ) );
+		}
+	}
+	else
+	{
+		if constexpr ( sizeof( T ) == 4 )
+		{
+			m_spu.Write( offset, static_cast<uint16_t>( value ) );
+			m_spu.Write( offset + 2, static_cast<uint16_t>( value >> 16 ) );
+		}
+		else
+		{
+			m_spu.Write( offset, static_cast<uint16_t>( value ) );
+		}
+	}
+
+
+		
 }
 
 }
