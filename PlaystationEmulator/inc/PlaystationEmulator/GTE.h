@@ -306,8 +306,8 @@ private:
 	template <bool MultiplyColorIR, bool ShiftColorLeft16>
 	void DepthCue( ColorRGBC color, int shiftAount, bool lm ) noexcept;
 
-	template <bool Base>
-	void GeneralInterpolation( int shiftAmount, bool lm ) noexcept;
+	uint32_t FastDivide( uint32_t lhs, uint32_t rhs ) noexcept;
+	uint32_t UNRDivide( uint32_t lhs, uint32_t rhs ) noexcept;
 
 private:
 
@@ -333,13 +333,14 @@ private:
 	// TODO: color CRGB code/color FIFOs
 	std::array<ColorRGBC, 3> m_colorCodeFifo{};
 
+	uint32_t m_res1 = 0; // unused register, but it is still read/write-able
+
 	// signed 32 bit
 	int32_t m_mac0 = 0;
 	Vector32 m_mac123{ 0 };
 
 	// count leading zeroes/ones
-	uint32_t m_leadingBitsSource = 0; // R/W
-	uint32_t m_leadingBitsResult = 0; // R
+	int32_t m_leadingBitsSource = 0; // R/W
 
 	// signed 3bit integer 12bit fraction
 	Matrix m_rotation = Matrix( 0 );

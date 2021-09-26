@@ -22,7 +22,7 @@ inline void PushBack( Buffer& buffer, T value )
 }
 
 template <typename T>
-constexpr uint32_t SignExtend16( T value ) noexcept
+constexpr uint32_t SignExtend( T value ) noexcept
 {
 	static_assert( sizeof( T ) == sizeof( int16_t ) );
 	return static_cast<uint32_t>( static_cast<int32_t>( static_cast<int16_t>( value ) ) );
@@ -51,11 +51,12 @@ void GTE::Reset()
 	m_screenZFifo.fill( 0 );
 	m_colorCodeFifo.fill( ColorRGBC() );
 
+	m_res1 = 0;
+
 	m_mac0 = 0;
 	m_mac123 = { 0 };
 
 	m_leadingBitsSource = 0;
-	m_leadingBitsResult = 0;
 
 	m_rotation = Matrix( 0 );
 
@@ -96,7 +97,7 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 
 	auto readVZn = [this]( size_t n ) -> uint32_t
 	{
-		return static_cast<uint16_t>( m_vectors[ n ].z );
+		return SignExtend( m_vectors[ n ].z );
 	};
 
 	auto readMatrixPair = []( const Matrix& matrix, size_t elementOffset ) -> uint32_t
@@ -125,10 +126,10 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 
 		case Register::OrderTableAvgZ:	return m_orderTableZ;
 
-		case Register::IR0:		return SignExtend16( m_ir0 );
-		case Register::IR1:		return SignExtend16( m_ir123.x );
-		case Register::IR2:		return SignExtend16( m_ir123.y );
-		case Register::IR3:		return SignExtend16( m_ir123.z );
+		case Register::IR0:		return SignExtend( m_ir0 );
+		case Register::IR1:		return SignExtend( m_ir123.x );
+		case Register::IR2:		return SignExtend( m_ir123.y );
+		case Register::IR3:		return SignExtend( m_ir123.z );
 
 		case Register::SXY0:	return readScreenXYn( 0 );
 		case Register::SXY1:	return readScreenXYn( 1 );
@@ -144,8 +145,7 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 		case Register::RGB1:	return m_colorCodeFifo[ 1 ].value;
 		case Register::RGB2:	return m_colorCodeFifo[ 2 ].value;
 
-		case Register::Prohibited:
-			return 0;
+		case Register::Prohibited:	return m_res1;
 
 		case Register::MAC0:	return static_cast<uint32_t>( m_mac0 );
 		case Register::MAC1:	return static_cast<uint32_t>( m_mac123.x );
@@ -155,21 +155,31 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 		case Register::ColorConversionInput:
 		case Register::ColorConversionOutput:
 		{
-			const uint32_t r = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 0 ] / 0x80, 0x00, 0x1f ) );
-			const uint32_t g = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 1 ] / 0x80, 0x00, 0x1f ) );
-			const uint32_t b = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 2 ] / 0x80, 0x00, 0x1f ) );
+			const uint32_t r = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 0 ] >> 7, 0x00, 0x1f ) );
+			const uint32_t g = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 1 ] >> 7, 0x00, 0x1f ) );
+			const uint32_t b = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 2 ] >> 7, 0x00, 0x1f ) );
 			return r | ( g << 5 ) | ( b << 10 );
 		}
 
 		case Register::LeadingBitsSource:	return m_leadingBitsSource;
 
-		case Register::LeadingBitsResult:	return m_leadingBitsResult;
+		case Register::LeadingBitsResult:
+		{
+			int result;
+			if ( m_leadingBitsSource >= 0 )
+				result = stdx::countl_zero( m_leadingBitsSource );
+			else
+				result = stdx::countl_one( m_leadingBitsSource );
+
+			dbAssert( result != 0 );
+			return static_cast<uint32_t>( result );
+		}
 
 		case Register::RT11RT12:	return readMatrixPair( m_rotation, 0 );
 		case Register::RT13RT21:	return readMatrixPair( m_rotation, 2 );
 		case Register::RT22RT23:	return readMatrixPair( m_rotation, 4 );
 		case Register::RT31RT32:	return readMatrixPair( m_rotation, 6 );
-		case Register::RT33:		return SignExtend16( m_rotation[ 2 ][ 2 ] );
+		case Register::RT33:		return SignExtend( m_rotation[ 2 ][ 2 ] );
 
 		case Register::TranslationX:	return static_cast<uint32_t>( m_translation.x );
 		case Register::TranslationY:	return static_cast<uint32_t>( m_translation.y );
@@ -179,7 +189,7 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 		case Register::L13L21:	return readMatrixPair( m_lightMatrix, 2 );
 		case Register::L22L23:	return readMatrixPair( m_lightMatrix, 4 );
 		case Register::L31L32:	return readMatrixPair( m_lightMatrix, 6 );
-		case Register::L33:		return SignExtend16( m_lightMatrix[ 2 ][ 2 ] );
+		case Register::L33:		return SignExtend( m_lightMatrix[ 2 ][ 2 ] );
 
 		case Register::BackgroundRed:	return static_cast<uint32_t>( m_backgroundColor.x );
 		case Register::BackgroundGreen:	return static_cast<uint32_t>( m_backgroundColor.y );
@@ -189,7 +199,7 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 		case Register::LR3LG1:	return readMatrixPair( m_colorMatrix, 2 );
 		case Register::LG2LG3:	return readMatrixPair( m_colorMatrix, 4 );
 		case Register::LB1LB2:	return readMatrixPair( m_colorMatrix, 6 );
-		case Register::LB3:		return SignExtend16( m_colorMatrix[ 2 ][ 2 ] );
+		case Register::LB3:		return SignExtend( m_colorMatrix[ 2 ][ 2 ] );
 
 		case Register::FarColorRed:		return static_cast<uint32_t>( m_farColor.x );
 		case Register::FarColorGreen:	return static_cast<uint32_t>( m_farColor.y );
@@ -199,13 +209,13 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 		case Register::ScreenOffsetY:	return static_cast<uint32_t>( m_screenOffset.y );
 
 		// hardware bug: H is sign expanded even though it is unsigned
-		case Register::ProjectionPlaneDistance:		return SignExtend16( m_projectionPlaneDistance );
+		case Register::ProjectionPlaneDistance:		return SignExtend( m_projectionPlaneDistance );
 
-		case Register::DepthQueueA:		return SignExtend16( m_depthQueueParamA ); // TODO: is this sign extended?
+		case Register::DepthQueueA:		return SignExtend( m_depthQueueParamA ); // TODO: is this sign extended?
 		case Register::DepthQueueB:		return static_cast<uint32_t>( m_depthQueueParamB );
 
-		case Register::ZScaleFactor3:	return SignExtend16( m_zScaleFactor3 ); // TODO: is this sign extended?
-		case Register::ZScaleFactor4:	return SignExtend16( m_zScaleFactor4 ); // TODO: is this sign extended?
+		case Register::ZScaleFactor3:	return SignExtend( m_zScaleFactor3 ); // TODO: is this sign extended?
+		case Register::ZScaleFactor4:	return SignExtend( m_zScaleFactor4 ); // TODO: is this sign extended?
 
 		case Register::ErrorFlags:	return m_errorFlags;
 
@@ -280,7 +290,7 @@ void GTE::Write( uint32_t index, uint32_t value ) noexcept
 		case Register::RGB1:	m_colorCodeFifo[ 1 ].value = value;		break;
 		case Register::RGB2:	m_colorCodeFifo[ 2 ].value = value;		break;
 
-		case Register::Prohibited:	break;
+		case Register::Prohibited:	m_res1 = value;	break;
 
 		case Register::MAC0:	m_mac0 = static_cast<int32_t>( value );			break;
 		case Register::MAC1:	m_mac123.x = static_cast<int32_t>( value );		break;
@@ -297,7 +307,7 @@ void GTE::Write( uint32_t index, uint32_t value ) noexcept
 
 		case Register::ColorConversionOutput:	break; // read only
 
-		case Register::LeadingBitsSource:	m_leadingBitsSource = value;	break;
+		case Register::LeadingBitsSource:	m_leadingBitsSource = static_cast<int32_t>( value );	break;
 
 		case Register::LeadingBitsResult:	break; // read only
 
@@ -386,24 +396,42 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			auto& sxy1 = m_screenXYFifo[ 1 ];
 			auto& sxy2 = m_screenXYFifo[ 2 ];
 
-			SetMAC<0>( ( ( sxy0.x * sxy1.y ) + ( sxy1.x * sxy2.y ) + ( sxy2.x * sxy0.y ) ) -
-				( ( sxy0.x * sxy2.y ) + ( sxy1.x * sxy0.y ) + ( sxy2.x * sxy1.y ) ) );
+			SetMAC<0>(
+				int64_t( sxy0.x ) * int64_t( sxy1.y ) +
+				int64_t( sxy1.x ) * int64_t( sxy2.y ) +
+				int64_t( sxy2.x ) * int64_t( sxy0.y ) -
+				int64_t( sxy0.x ) * int64_t( sxy2.y ) -
+				int64_t( sxy1.x ) * int64_t( sxy0.y ) -
+				int64_t( sxy2.x ) * int64_t( sxy1.y ) );
+
 			break;
 		}
 
 		case Opcode::Average3Z:
+		{
 			// MAC0 =  ZSF3*(SZ1+SZ2+SZ3)
-			SetMAC<0>( ( m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor3 ) );
+			const int64_t result = static_cast<int64_t>( m_zScaleFactor3 ) *
+				static_cast<int32_t>( m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] );
+
+			SetMAC<0>( result );
+
 			// OTZ  =  MAC0/1000h
-			SetOrderTableZ( m_mac0 / 0x1000 );
+			SetOrderTableZ( static_cast<int32_t>( result >> 12 ) );
 			break;
+		}
 
 		case Opcode::Average4Z:
+		{
 			// MAC0 =  ZSF4*(SZ0+SZ1+SZ2+SZ3)
-			SetMAC<0>( ( m_screenZFifo[ 0 ] + m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] ) * int64_t( m_zScaleFactor4 ) );
+			const int64_t result = static_cast<int64_t>( m_zScaleFactor4 ) *
+				static_cast<int32_t>( m_screenZFifo[ 0 ] + m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] );
+
+			SetMAC<0>( result );
+
 			// OTZ  =  MAC0/1000h
-			SetOrderTableZ( m_mac0 / 0x1000 );
+			SetOrderTableZ( static_cast<int32_t>( result >> 12 ) );
 			break;
+		}
 
 		case Opcode::MultiplyVectorMatrixVectorAdd:
 			MultiplyVectorMatrixVectorAdd( command );
@@ -478,7 +506,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			break;
 
 		case Opcode::DepthCueingSingle:
-			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			DepthCue<false, true>( m_color, sf, lm );
 			break;
 
 		case Opcode::DepthCueingTriple:
@@ -501,12 +529,22 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 		}
 
 		case Opcode::GeneralInterpolation:
-			GeneralInterpolation<false>( sf, lm );
+		{
+			SetMAC<1>( ( m_ir123[ 0 ] * m_ir0 ), sf );
+			SetMAC<2>( ( m_ir123[ 1 ] * m_ir0 ), sf );
+			SetMAC<3>( ( m_ir123[ 2 ] * m_ir0 ), sf );
+			PushColorFromMAC( lm );
 			break;
+		}
 
 		case Opcode::GeneralInterpolationBase:
-			GeneralInterpolation<true>( sf, lm );
+		{
+			SetMAC<1>( ( m_ir123[ 0 ] * m_ir0 ) + ( int64_t( m_mac123[ 0 ] ) << sf ), sf );
+			SetMAC<2>( ( m_ir123[ 1 ] * m_ir0 ) + ( int64_t( m_mac123[ 1 ] ) << sf ), sf );
+			SetMAC<3>( ( m_ir123[ 2 ] * m_ir0 ) + ( int64_t( m_mac123[ 2 ] ) << sf ), sf );
+			PushColorFromMAC( lm );
 			break;
+		}
 
 		default:
 			dbBreak(); // invalid command
@@ -714,9 +752,9 @@ void GTE::ShiftMACRight( int shiftAmount ) noexcept
 void GTE::PushColorFromMAC( bool lm ) noexcept
 {
 	ColorRGBC color;
-	color.r = TruncateRGB<0>( m_mac123.x / 16 );
-	color.g = TruncateRGB<1>( m_mac123.y / 16 );
-	color.b = TruncateRGB<2>( m_mac123.z / 16 );
+	color.r = TruncateRGB<0>( m_mac123.x >> 4 );
+	color.g = TruncateRGB<1>( m_mac123.y >> 4 );
+	color.b = TruncateRGB<2>( m_mac123.z >> 4 );
 	color.c = m_color.c;
 
 	PushBack( m_colorCodeFifo, color );
@@ -732,26 +770,14 @@ void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, int 
 
 	PushScreenZ( m_mac123.z >> ( 12 - shiftAmount ) );
 
-	// TODO: use Unsigned Newton-Raphson (UNR) algorithm
-	const auto z = m_screenZFifo.back();
-	int64_t temp;
-	if ( z <= m_projectionPlaneDistance / 2 )
-	{
-		temp = 0x1ffff;
-		m_errorFlags |= ErrorFlag::DivideOverflow;
-	}
-	else
-	{
-		temp = ( ( ( m_projectionPlaneDistance * 0x20000 ) / m_screenZFifo.back() ) + 1 ) / 2;
-		dbAssert( temp <= 0x1ffff );
-	}
+	const int64_t temp = FastDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
 
-	const int32_t screenX = static_cast<int32_t>( ( temp * m_ir123.x + m_screenOffset.x ) / 0x10000 );
-	const int32_t screenY = static_cast<int32_t>( ( temp * m_ir123.y + m_screenOffset.y ) / 0x10000 );
+	const int32_t screenX = static_cast<int32_t>( ( temp * m_ir123.x + m_screenOffset.x ) >> 16 );
+	const int32_t screenY = static_cast<int32_t>( ( temp * m_ir123.y + m_screenOffset.y ) >> 16 );
 	PushScreenXY( screenX, screenY );
 
 	SetMAC<0>( temp * m_depthQueueParamA + m_depthQueueParamB );
-	SetIR<0>( m_mac0 / 0x1000, true );
+	SetIR<0>( m_mac0 >> 12, true );
 }
 
 template <bool MultiplyColorIR, bool LerpFarColor, bool ShiftMAC>
@@ -807,29 +833,6 @@ void GTE::DepthCue( ColorRGBC color, int shiftAmount, bool lm ) noexcept
 	PushColorFromMAC( lm );
 }
 
-template <bool Base>
-void GTE::GeneralInterpolation( int shiftAmount, bool lm ) noexcept
-{
-	if constexpr ( Base )
-	{
-		SetMAC<1>( int64_t( m_mac123[ 0 ] ) << shiftAmount );
-		SetMAC<2>( int64_t( m_mac123[ 1 ] ) << shiftAmount );
-		SetMAC<3>( int64_t( m_mac123[ 2 ] ) << shiftAmount );
-	}
-	else
-	{
-		m_mac123.x = 0;
-		m_mac123.y = 0;
-		m_mac123.z = 0;
-	}
-
-	SetMAC<1>( ( m_ir123[ 0 ] * int64_t( m_ir0 ) ) + m_mac123[ 0 ], shiftAmount );
-	SetMAC<2>( ( m_ir123[ 1 ] * int64_t( m_ir0 ) ) + m_mac123[ 1 ], shiftAmount );
-	SetMAC<3>( ( m_ir123[ 2 ] * int64_t( m_ir0 ) ) + m_mac123[ 2 ], shiftAmount );
-
-	PushColorFromMAC( lm );
-}
-
 void GTE::MultiplyVectorMatrixVectorAdd( Command command ) noexcept
 {
 	const int shiftAmount = command.sf ? 12 : 0;
@@ -872,6 +875,60 @@ void GTE::MultiplyVectorMatrixVectorAdd( Command command ) noexcept
 		Transform( *matrix, *vector, *translation, shiftAmount, command.lm );
 	else
 		Transform( *matrix, *vector, shiftAmount, command.lm );
+}
+
+uint32_t GTE::FastDivide( uint32_t lhs, uint32_t rhs ) noexcept
+{
+	if ( rhs * 2 <= lhs )
+	{
+		m_errorFlags |= ErrorFlag::DivideOverflow;
+		return 0x1ffff;
+	}
+
+	return std::min<uint32_t>( ( ( ( lhs * 0x20000 ) / rhs ) + 1 ) / 2, 0x1ffff );
+}
+
+uint32_t GTE::UNRDivide( uint32_t lhs, uint32_t rhs ) noexcept
+{
+	if ( rhs * 2 <= lhs )
+	{
+		m_errorFlags |= ErrorFlag::DivideOverflow;
+		return 0x1ffff;
+	}
+
+	static const std::array<uint8_t, 257> UNRTable
+	{
+		0xFF,0xFD,0xFB,0xF9,0xF7,0xF5,0xF3,0xF1,0xEF,0xEE,0xEC,0xEA,0xE8,0xE6,0xE4,0xE3,
+		0xE1,0xDF,0xDD,0xDC,0xDA,0xD8,0xD6,0xD5,0xD3,0xD1,0xD0,0xCE,0xCD,0xCB,0xC9,0xC8,
+		0xC6,0xC5,0xC3,0xC1,0xC0,0xBE,0xBD,0xBB,0xBA,0xB8,0xB7,0xB5,0xB4,0xB2,0xB1,0xB0,
+		0xAE,0xAD,0xAB,0xAA,0xA9,0xA7,0xA6,0xA4,0xA3,0xA2,0xA0,0x9F,0x9E,0x9C,0x9B,0x9A, // 0x00..0x3F
+		0x99,0x97,0x96,0x95,0x94,0x92,0x91,0x90,0x8F,0x8D,0x8C,0x8B,0x8A,0x89,0x87,0x86,
+		0x85,0x84,0x83,0x82,0x81,0x7F,0x7E,0x7D,0x7C,0x7B,0x7A,0x79,0x78,0x77,0x75,0x74,
+		0x73,0x72,0x71,0x70,0x6F,0x6E,0x6D,0x6C,0x6B,0x6A,0x69,0x68,0x67,0x66,0x65,0x64,
+		0x63,0x62,0x61,0x60,0x5F,0x5E,0x5D,0x5D,0x5C,0x5B,0x5A,0x59,0x58,0x57,0x56,0x55, // 0x40..0x7F
+		0x54,0x53,0x53,0x52,0x51,0x50,0x4F,0x4E,0x4D,0x4D,0x4C,0x4B,0x4A,0x49,0x48,0x48,
+		0x47,0x46,0x45,0x44,0x43,0x43,0x42,0x41,0x40,0x3F,0x3F,0x3E,0x3D,0x3C,0x3C,0x3B,
+		0x3A,0x39,0x39,0x38,0x37,0x36,0x36,0x35,0x34,0x33,0x33,0x32,0x31,0x31,0x30,0x2F,
+		0x2E,0x2E,0x2D,0x2C,0x2C,0x2B,0x2A,0x2A,0x29,0x28,0x28,0x27,0x26,0x26,0x25,0x24, // 0x80..0xBF
+		0x24,0x23,0x22,0x22,0x21,0x20,0x20,0x1F,0x1E,0x1E,0x1D,0x1D,0x1C,0x1B,0x1B,0x1A,
+		0x19,0x19,0x18,0x18,0x17,0x16,0x16,0x15,0x15,0x14,0x14,0x13,0x12,0x12,0x11,0x11,
+		0x10,0x0F,0x0F,0x0E,0x0E,0x0D,0x0D,0x0C,0x0C,0x0B,0x0A,0x0A,0x09,0x09,0x08,0x08,
+		0x07,0x07,0x06,0x06,0x05,0x05,0x04,0x04,0x03,0x03,0x02,0x02,0x01,0x01,0x00,0x00, // 0xC0..0xFF
+		0x00 // < --one extra table entry( for "(d-7FC0h)/80h" = 100h ); -100h
+	};
+
+	int shift = stdx::countl_zero( static_cast<uint16_t>( rhs ) );
+
+	const uint32_t n = lhs << shift;
+	uint32_t d = rhs << shift;
+
+	const uint32_t index = ( d - 0x7fc0 ) >> 7;
+	const uint32_t u = UNRTable[ index ] + 0x101;
+
+	d = ( ( 0x2000080 - ( d * u ) ) >> 8 );
+	d = ( ( 0x0000080 + ( d * u ) ) >> 8 );
+
+	return std::min<uint32_t>( 0x1ffff, ( ( ( n * d ) + 0x8000 ) >> 16 ) );
 }
 
 }

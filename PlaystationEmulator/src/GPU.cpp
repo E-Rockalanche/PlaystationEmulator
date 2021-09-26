@@ -237,10 +237,10 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			static constexpr uint32_t WriteMask = 0x3f;
 			stdx::masked_set( m_status.value, WriteMask, value );
 
-			m_status.textureDisable = ( value >> 11 ) & 1;
+			m_status.textureDisable = stdx::any_of<uint32_t>( value, 1 << 11 );
 
-			m_texturedRectFlipX = ( value >> 12 ) & 1;
-			m_texturedRectFlipY = ( value >> 13 ) & 1;
+			m_texturedRectFlipX = stdx::any_of<uint32_t>( value, 1 << 12 );
+			m_texturedRectFlipY = stdx::any_of<uint32_t>( value, 1 << 13 );
 			break;
 		}
 
@@ -565,7 +565,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		}
 
 		case 0x01: // reset command buffer
-			dbLog( "Gpu::WriteGP1() -- clear command buffer" );
+			// dbLog( "Gpu::WriteGP1() -- clear command buffer" );
 			ClearCommandBuffer();
 			break;
 
@@ -802,7 +802,9 @@ void Gpu::RenderPolygon() noexcept
 
 	// vetex 3 and 4
 
-	for ( size_t i = 2; i < 3u + quad; ++i )
+	const size_t numVertices = 3u + quad;
+
+	for ( size_t i = 2; i < numVertices; ++i )
 	{
 		if ( shaded )
 			vertices[ i ].color = Color{ m_commandBuffer.Pop() };
@@ -812,6 +814,8 @@ void Gpu::RenderPolygon() noexcept
 		if ( textured )
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
+
+	// TODO: check for large polygons
 
 	const bool semiTransparent = command & RenderCommand::SemiTransparency;
 
@@ -831,14 +835,6 @@ void Gpu::RenderRectangle() noexcept
 	const uint32_t command = m_commandBuffer.Pop();
 	dbAssert( static_cast<PrimitiveType>( command >> 29 ) == PrimitiveType::Rectangle );
 
-	// set color
-	const bool noColorBlend = command & RenderCommand::TextureMode;
-	const Color color{ noColorBlend ? 0xffffff : command };
-	for ( auto& v : vertices )
-		v.color = color;
-
-	// const bool semiTransparent = command & RenderCommand::SemiTransparency;
-
 	// set position/dimensions
 	const Position pos{ m_commandBuffer.Pop() };
 	uint32_t width;
@@ -847,6 +843,16 @@ void Gpu::RenderRectangle() noexcept
 	{
 		case RectangleSize::Variable:
 			std::tie( width, height ) = DecodePosition( m_commandBuffer.Pop() );
+			if ( width >= VRamWidth || height >= VRamHeight )
+			{
+				dbLogWarning( "Gpu::RenderRectangle -- ignoring rectangle larger than %ux%u", VRamWidth - 1, VRamHeight - 1 );
+				ClearCommandBuffer();
+				return;
+			}
+
+			if ( width > 256 || height > 256 )
+				dbLogWarning( "Gpu::RenderRectangle -- rectangle texture needs to be tiled [%u, %u]", width, height );
+
 			break;
 
 		case RectangleSize::One:
@@ -870,6 +876,12 @@ void Gpu::RenderRectangle() noexcept
 	vertices[ 1 ].position = Position{ pos.x, pos.y + static_cast<int16_t>( height ) };
 	vertices[ 2 ].position = Position{ pos.x + static_cast<int16_t>( width ), pos.y };
 	vertices[ 3 ].position = Position{ pos.x + static_cast<int16_t>( width ), pos.y + static_cast<int16_t>( height ) };
+
+	// set color
+	const bool noColorBlend = command & RenderCommand::TextureMode;
+	const Color color{ noColorBlend ? 0xffffff : command };
+	for ( auto& v : vertices )
+		v.color = color;
 
 	if ( command & RenderCommand::TextureMapping )
 	{

@@ -247,11 +247,18 @@ int main( int argc, char** argv )
 					
 					switch ( key )
 					{
-						case SDLK_F3:
+						case SDLK_F1:
+							// toggle vram view
+							renderer.EnableVRamView( !renderer.IsVRamViewEnabled() );
+							break;
+
+						case SDLK_F2:
+							// toggle kernel logging
 							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
 							break;
 
-						case SDLK_F4:
+						case SDLK_F3:
+							// toggle trace logging
 							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
 							break;
 					}

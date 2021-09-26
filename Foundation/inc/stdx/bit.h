@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdx/compiler.h>
+#include <stdx/cast.h>
 #include <type_traits>
 
 namespace stdx
@@ -58,6 +59,42 @@ template <typename T, STDX_requires( std::is_integral_v<T> )
 inline constexpr void masked_set( T& value, T mask, T flags ) noexcept
 {
 	value = ( value & ~mask ) | ( flags & mask );
+}
+
+template <typename T>
+inline constexpr size_t bitsizeof() noexcept
+{
+	return sizeof( T ) * 8;
+}
+
+template <typename T>
+inline constexpr size_t bitsizeof( const T& ) noexcept
+{
+	return bitsizeof<T>();
+}
+
+template <typename T>
+inline int countl_zero( T x ) noexcept
+{
+#ifdef _MSC_VER
+	if ( x == 0 )
+		return bitsizeof<T>();
+
+	unsigned long index;
+
+	if constexpr ( sizeof( T ) < 8 )
+		_BitScanReverse( &index, stdx::unsigned_cast( x ) );
+	else
+		_BitScanReverse64( &index, stdx::unsigned_cast( x ) );
+
+	return bitsizeof<T>() - index - 1;
+#endif
+}
+
+template <typename T>
+constexpr int countl_one( T x ) noexcept
+{
+	return countl_zero<T>( ~x );
 }
 
 }

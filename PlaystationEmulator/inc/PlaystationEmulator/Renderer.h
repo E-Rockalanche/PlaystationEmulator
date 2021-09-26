@@ -30,6 +30,9 @@ public:
 
 	bool Initialize( SDL_Window* window );
 
+	void EnableVRamView( bool enable );
+	bool IsVRamViewEnabled() const { return m_viewVRam; }
+
 	void SetOrigin( int32_t x, int32_t y );
 	void SetDisplayStart( uint32_t x, uint32_t y );
 	void SetDisplaySize( uint32_t w, uint32_t h );
@@ -78,6 +81,8 @@ private:
 
 private:
 	SDL_Window* m_window = nullptr;
+
+	bool m_viewVRam = false;
 
 	// VRAM texture used as render target
 	Render::Texture2D m_vramDrawTexture;

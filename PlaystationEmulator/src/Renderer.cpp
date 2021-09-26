@@ -87,6 +87,17 @@ bool Renderer::Initialize( SDL_Window* window )
 	return true;
 }
 
+void Renderer::EnableVRamView( bool enable )
+{
+	if ( !m_viewVRam && enable )
+		SDL_SetWindowSize( m_window, VRamWidth, VRamHeight );
+
+	if ( m_viewVRam && !enable )
+		SDL_SetWindowSize( m_window, m_displayWidth, m_displayHeight );
+
+	m_viewVRam = enable;
+}
+
 void Renderer::SetOrigin( int32_t x, int32_t y )
 {
 	if ( m_uniform.originX != x || m_uniform.originY != y )
@@ -113,7 +124,9 @@ void Renderer::SetDisplaySize( uint32_t w, uint32_t h )
 	{
 		m_displayWidth = w;
 		m_displayHeight = h;
-		SDL_SetWindowSize( m_window, static_cast<int>( w ), static_cast<int>( h ) );
+
+		if ( !m_viewVRam )
+			SDL_SetWindowSize( m_window, w, h );
 	}
 }
 
@@ -403,21 +416,31 @@ void Renderer::RestoreRenderState()
 
 void Renderer::DisplayFrame()
 {
-	m_vramDrawFrameBuffer.Unbind( Render::FrameBufferBinding::Draw );
-	m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Read );
-	dbCheckRenderErrors();
-
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
-	glClear( GL_COLOR_BUFFER_BIT );
-	glViewport( 0, 0, m_displayWidth, m_displayHeight );
 
-	glBlitFramebuffer(
-		// src
-		m_displayX, m_displayY, m_displayX + m_displayWidth, m_displayY + m_displayHeight,
-		// dest (must display upside-down)
-		0, m_displayHeight, m_displayWidth, 0,
-		GL_COLOR_BUFFER_BIT, GL_NEAREST );
+	if ( m_viewVRam )
+	{
+		m_vramDrawFrameBuffer.Unbind();
+		m_noAttributeVAO.Bind();
+		m_fullscreenShader.Bind();
+		m_vramDrawTexture.Bind();
+		glViewport( 0, 0, VRamWidth, VRamHeight );
+		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	}
+	else
+	{
+		m_vramDrawFrameBuffer.Unbind( Render::FrameBufferBinding::Draw );
+		m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Read );
+		glViewport( 0, 0, m_displayWidth, m_displayHeight );
+
+		glBlitFramebuffer(
+			// src
+			m_displayX, m_displayY, m_displayX + m_displayWidth, m_displayY + m_displayHeight,
+			// dest (must display upside-down)
+			0, m_displayHeight, m_displayWidth, 0,
+			GL_COLOR_BUFFER_BIT, GL_NEAREST );
+	}
 
 	dbCheckRenderErrors();
 
