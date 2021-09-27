@@ -868,10 +868,16 @@ void Gpu::RenderRectangle() noexcept
 		case RectangleSize::Variable:
 		{
 			const uint32_t sizeParam = m_commandBuffer.Pop();
+			width = sizeParam & 0xffff;
+			height = sizeParam >> 16;
 
-			// TODO: not sure if size is masked
-			width = ( sizeParam & VRamMaskX );
-			height = ( sizeParam >> 16 ) & VRamMaskY;
+			// TODO: not sure if it is ignored or masked
+			if ( width >= VRamWidth || height >= VRamHeight )
+			{
+				dbLogWarning( "Gpu::RenderRectangle -- ignoring rectangle larger than %ux%u", VRamWidth - 1, VRamHeight - 1 );
+				ClearCommandBuffer();
+				return;
+			}
 
 			if ( width > 256 || height > 256 )
 				dbLogWarning( "Gpu::RenderRectangle -- rectangle texture needs to be tiled [%u, %u]", width, height );
@@ -1048,10 +1054,19 @@ void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uin
 
 	// wrap fill
 
-	const uint32_t width2 = x + width - VRamWidth;
-	const uint32_t height2 = y + height - VRamHeight;
-	width -= width2;
-	height -= height2;
+	uint32_t width2 = 0;
+	if ( x + width > VRamWidth )
+	{
+		width2 = x + width - VRamWidth;
+		width -= width2;
+	}
+
+	uint32_t height2 = 0;
+	if ( y + height > VRamHeight )
+	{
+		height2 = y + height - VRamHeight;
+		height -= height2;
+	}
 
 	m_renderer.FillVRam( x, y, width, height, value );
 
