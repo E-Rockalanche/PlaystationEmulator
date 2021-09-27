@@ -243,13 +243,8 @@ void Renderer::CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight
 	m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Draw );
 	glEnable( GL_SCISSOR_TEST );
 
-	const auto x0 = std::clamp<int>( destX, 0, VRamWidth );
-	const auto y0 = std::clamp<int>( destY, 0, VRamWidth );
-	const auto x1 = std::clamp<int>( destX + destWidth, 0, VRamWidth );
-	const auto y1 = std::clamp<int>( destY + destHeight, 0, VRamWidth );
-
-	m_dirtyArea.Grow( x0, y0 );
-	m_dirtyArea.Grow( x1, y1 );
+	m_dirtyArea.Grow( destX, destY );
+	m_dirtyArea.Grow( destX + destWidth, destY + destHeight );
 }
 
 void Renderer::CheckDrawMode( uint16_t drawMode, uint16_t clut )

@@ -14,9 +14,32 @@ namespace PSX
 namespace
 {
 
-constexpr std::pair<uint32_t, uint32_t> DecodePosition( uint32_t gpuParam ) noexcept
+constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
 {
-	return { static_cast<uint32_t>( gpuParam & 0xffff ), static_cast<uint32_t>( gpuParam >> 16 ) };
+	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0;
+	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & 0x1ff;
+	return { x, y };
+}
+
+constexpr std::pair<uint16_t, uint16_t> DecodeFillSize( uint32_t gpuParam ) noexcept
+{
+	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & 0x3ff ) + 0x0f ) & ~0x0f;
+	const uint16_t h = static_cast<uint16_t>( gpuParam >> 16 ) & 0x1ff;
+	return { w, h };
+}
+
+constexpr std::pair<uint16_t, uint16_t> DecodeCopyPosition( uint32_t gpuParam ) noexcept
+{
+	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3ff;
+	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & 0x1ff;
+	return { x, y };
+}
+
+constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noexcept
+{
+	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) - 1 ) & 0x3ff ) + 1;
+	const uint16_t h = ( ( static_cast<uint16_t>( gpuParam >> 16 ) - 1 ) & 0x1ff ) + 1;
+	return { w, h };
 }
 
 struct RenderCommand
@@ -184,8 +207,8 @@ void Gpu::SetupVRamCopy() noexcept
 	m_vramCopyState.emplace();
 
 	m_commandBuffer.Pop(); // pop command
-	std::tie( m_vramCopyState->left, m_vramCopyState->top ) = DecodePosition( m_commandBuffer.Pop() );
-	std::tie( m_vramCopyState->width, m_vramCopyState->height ) = DecodePosition( m_commandBuffer.Pop() );
+	std::tie( m_vramCopyState->left, m_vramCopyState->top ) = DecodeCopyPosition( m_commandBuffer.Pop() );
+	std::tie( m_vramCopyState->width, m_vramCopyState->height ) = DecodeCopySize( m_commandBuffer.Pop() );
 }
 
 void Gpu::FinishVRamTransfer() noexcept
@@ -695,16 +718,17 @@ void Gpu::FillRectangle() noexcept
 	// not affected by mask settings
 
 	const Color color{ m_commandBuffer.Pop() };
-	auto[ x, y ] = DecodePosition( m_commandBuffer.Pop() );
-	auto[ width, height ] = DecodePosition( m_commandBuffer.Pop() );
+	auto[ x, y ] = DecodeFillPosition( m_commandBuffer.Pop() );
+	auto[ width, height ] = DecodeFillSize( m_commandBuffer.Pop() );
 
 	dbLog( "Gpu::FillRectangle() -- pos: %u,%u size: %u,%u", x, y, width, height );
 
-	// TODO: figure out the real conversion of RGB8 to RGB555
-	auto convertComponent = []( uint8_t c ) { return static_cast<uint16_t>( ( c * 0x1f ) / 0xff ); }; // scale to new maximum
-	const uint16_t pixel = convertComponent( color.r ) | ( convertComponent( color.g ) << 5 ) | ( convertComponent( color.b ) << 10 );
-
-	FillVRam( x, y, width, height, pixel );
+	if ( width > 0 && height > 0 )
+	{
+		// TODO: figure out the real conversion of RGB8 to RGB555
+		const uint16_t pixel = ( color.r >> 3 ) | ( ( color.g >> 3 ) << 5 ) | ( ( color.b >> 3 ) << 10 );
+		FillVRam( x, y, width, height, pixel );
+	}
 
 	ClearCommandBuffer();
 }
@@ -714,9 +738,9 @@ void Gpu::CopyRectangle() noexcept
 	// affected by mask settings
 
 	m_commandBuffer.Pop(); // pop command
-	auto[ srcX, srcY ] = DecodePosition( m_commandBuffer.Pop() );
-	auto[ destX, destY ] = DecodePosition( m_commandBuffer.Pop() );
-	auto[ width, height ] = DecodePosition( m_commandBuffer.Pop() );
+	auto[ srcX, srcY ] = DecodeCopyPosition( m_commandBuffer.Pop() );
+	auto[ destX, destY ] = DecodeCopyPosition( m_commandBuffer.Pop() );
+	auto[ width, height ] = DecodeCopySize( m_commandBuffer.Pop() );
 
 	dbLog( "Gpu::CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
 
@@ -842,18 +866,18 @@ void Gpu::RenderRectangle() noexcept
 	switch ( static_cast<RectangleSize>( ( command >> 27 ) & 0x3 ) )
 	{
 		case RectangleSize::Variable:
-			std::tie( width, height ) = DecodePosition( m_commandBuffer.Pop() );
-			if ( width >= VRamWidth || height >= VRamHeight )
-			{
-				dbLogWarning( "Gpu::RenderRectangle -- ignoring rectangle larger than %ux%u", VRamWidth - 1, VRamHeight - 1 );
-				ClearCommandBuffer();
-				return;
-			}
+		{
+			const uint32_t sizeParam = m_commandBuffer.Pop();
+
+			// TODO: not sure if size is masked
+			width = ( sizeParam & VRamMaskX );
+			height = ( sizeParam >> 16 ) & VRamMaskY;
 
 			if ( width > 256 || height > 256 )
 				dbLogWarning( "Gpu::RenderRectangle -- rectangle texture needs to be tiled [%u, %u]", width, height );
 
 			break;
+		}
 
 		case RectangleSize::One:
 			width = height = 1;
@@ -1017,26 +1041,43 @@ uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 
 void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint16_t value )
 {
-	if ( x >= VRamWidth || y >= VRamHeight )
-		return;
+	dbExpects( x < VRamWidth );
+	dbExpects( y < VRamHeight );
+	dbExpects( width > 0 );
+	dbExpects( height > 0 );
 
-	width = std::min( width, VRamWidth - x );
-	height = std::min( height, VRamHeight - y );
+	// wrap fill
+
+	const uint32_t width2 = x + width - VRamWidth;
+	const uint32_t height2 = y + height - VRamHeight;
+	width -= width2;
+	height -= height2;
 
 	m_renderer.FillVRam( x, y, width, height, value );
+
+	if ( width2 > 0 )
+		m_renderer.FillVRam( 0, y, width2, height, value );
+
+	if ( height2 > 0 )
+		m_renderer.FillVRam( x, 0, width, height2, value );
+
+	if ( width2 > 0 && height2 > 0 )
+		m_renderer.FillVRam( 0, 0, width2, height2, value );
 }
 
 void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height )
 {
-	if ( srcX >= VRamWidth || srcY >= VRamHeight || destX >= VRamWidth || destY >= VRamHeight )
-		return;
+	dbExpects( srcX < VRamWidth );
+	dbExpects( srcY < VRamHeight );
+	dbExpects( destX < VRamWidth );
+	dbExpects( destY < VRamHeight );
+	dbExpects( width > 0 );
+	dbExpects( height > 0 );
 
-	/*
-	const auto checkMask = m_status.GetCheckMask();
-	const auto setMask = m_status.GetSetMask();
-	*/
+	// TODO wrap copy
 
-	// TODO, check mask bits
+	// TODO: check mask bits
+
 	m_renderer.CopyVRam( srcX, srcY, width, height, destX, destY, width, height );
 }
 
