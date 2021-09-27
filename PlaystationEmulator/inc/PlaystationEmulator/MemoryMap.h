@@ -58,6 +58,9 @@ public:
 		GpuStart = 0x1f801810,
 		GpuSize = 8,
 
+		MdecStart = 0x1F801820,
+		MdecSize = 8,
+
 		SpuStart = 0x1f801c00,
 		SpuSize = 1024,
 
@@ -238,13 +241,27 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	else if ( Within( address, CdRomStart, CdRomSize ) )
 	{
 		if constexpr ( Read )
-			value = m_cdRomDrive.Read( address - CdRomStart );
+		{
+			const uint32_t offset = address - CdRomStart;
+			if ( offset == 2 )
+				value = m_cdRomDrive.ReadDataFifo<T>();
+			else
+				value = m_cdRomDrive.Read( offset );
+		}
 		else
+		{
 			m_cdRomDrive.Write( address - CdRomStart, static_cast<uint8_t>( value ) );
+		}
 	}
 	else if ( Within( address, GpuStart, GpuSize ) )
 	{
 		AccessComponent32<T, Read>( m_gpu, address - GpuStart, value );
+	}
+	else if ( Within( address, MdecStart, MdecSize ) )
+	{
+		// TODO
+		if constexpr ( Read )
+			value = 0;
 	}
 	else if ( Within( address, SpuStart, SpuSize ) )
 	{

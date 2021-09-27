@@ -219,6 +219,13 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		dbLog( "\twriting %X bytes to %X", totalWords, address );
 		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
+			case ChannelIndex::MacroblockDecoderOut:
+			{
+				// TODO
+				dbLog( "ignoring MDEC-OUT to RAM DMA transfer" );
+				break;
+			}
+
 			case ChannelIndex::RamOrderTable:
 			{
 				dbAssert( increment == -4 ); // TODO: can it go forward?
@@ -264,6 +271,13 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		dbLog( "\treading %X bytes from %X", totalWords, address );
 		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
+			case ChannelIndex::MacroblockDecoderIn:
+			{
+				// TODO
+				dbLog( "ignoring RAM to MDEC-IN DMA transfer" );
+				break;
+			}
+
 			case ChannelIndex::Gpu:
 			{
 				for ( ; wordCount > 0; --wordCount, address += increment )

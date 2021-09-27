@@ -171,7 +171,7 @@ uint8_t CDRomDrive::Read( uint32_t registerIndex ) noexcept
 		}
 
 		case 2: // data FIFO (all indices) 8 or 16 bit
-			dbBreak(); // use ReadDataFifo() function
+			dbBreakMessage( "CDRomDrive::Read() -- use ReadDataFifo() to read variable amount of data" );
 			return 0;
 
 		case 3:

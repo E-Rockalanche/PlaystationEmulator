@@ -20,8 +20,8 @@ class Dma
 public:
 	enum class ChannelIndex
 	{
-		MediaDecoderInput,
-		MediaDecoderOutput,
+		MacroblockDecoderIn,
+		MacroblockDecoderOut,
 		Gpu,
 		CdRom,
 		Spu,
