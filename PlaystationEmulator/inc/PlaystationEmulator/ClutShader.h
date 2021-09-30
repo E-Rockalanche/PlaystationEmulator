@@ -12,7 +12,7 @@ in vec3 v_color;
 in int v_clut;
 in int v_drawMode;
 
-out vec4 BlendColor;
+out vec3 BlendColor;
 out vec2 TexCoord;
 flat out ivec2 TexPageBase;
 flat out ivec2 ClutBase;
@@ -34,7 +34,7 @@ void main()
 	// calculate CLUT offset
 	ClutBase = ivec2( ( v_clut & 0x3f ) * 16, v_clut >> 6 );
 
-	BlendColor = vec4( v_color, 1.0 );
+	BlendColor = v_color;
 	TexCoord = v_texCoord;
 
 	// send other texpage info to fragment shader
@@ -45,7 +45,7 @@ void main()
 const char* const ClutFragmentShader = R"glsl(
 #version 330 core
 
-in vec4 BlendColor;
+in vec3 BlendColor;
 in vec2 TexCoord;
 flat in ivec2 TexPageBase;
 flat in ivec2 ClutBase;
@@ -54,6 +54,7 @@ flat in int DrawMode;
 out vec4 FragColor;
 
 uniform float u_alpha;
+uniform bool u_semiTransparent;
 uniform ivec2 u_texWindowMask;
 uniform ivec2 u_texWindowOffset;
 uniform sampler2D u_vram;
@@ -69,7 +70,7 @@ int SampleVRam( ivec2 pos )
 	int red = FloatTo5bit( c.r );
 	int green = FloatTo5bit( c.g );
 	int blue = FloatTo5bit( c.b );
-	int maskBit = int( round( c.a ) );
+	int maskBit = int( ceil( c.a ) );
 	return ( maskBit << 15 ) | ( blue << 10 ) | ( green << 5 ) | red;
 }
 
@@ -115,6 +116,7 @@ vec4 LookupTexel()
 	else
 	{
 		color = texelFetch( u_vram, TexPageBase + texCoord, 0 ); // get 16bit color directly
+		color.a = ceil( color.a );
 	}
 
 	return color;
@@ -123,29 +125,31 @@ vec4 LookupTexel()
 void main()
 {
 	vec4 color;
+	bool semiTransparent = u_semiTransparent;
 
 	if ( bool( DrawMode & ( 1 << 11 ) ) )
 	{
 		// texture disabled
-		color = BlendColor;
+		color = vec4( BlendColor, 0.0 );
 	}
 	else
 	{
 		// texture enabled
-		color = LookupTexel() * BlendColor * 2.0;
+		color = LookupTexel();
+
+		if ( color == vec4( 0.0 ) )
+			discard; // all zeroes is transparent
+
+		color.rgb *= BlendColor.rgb * 2.0;
+		semiTransparent = semiTransparent && ( color.a > 0.0 );
 	}
 
-	if ( color == vec4( 0.0 ) )
-		discard; // all zeroes is transparent
-
-	// select alpha based on semi transparency flag. Unfortunately this doesn't ignore the blend func & equation
-	float alpha;
-	if ( color.a == 1.0 )
-		alpha = u_alpha;
+	if ( semiTransparent )
+		color.a = u_alpha;
 	else
-		alpha = 1.0;
+		color.a = 1.0; // blending might be enabled
 
-	FragColor = vec4( color.rgb, alpha );
+	FragColor = color;
 }
 )glsl";
 

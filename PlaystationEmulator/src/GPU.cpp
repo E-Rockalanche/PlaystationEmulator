@@ -317,10 +317,13 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 		case 0xe6: // mask bit setting
 		{
-			dbLog( "Gpu::GP0_Command() -- set mask bits [%X]", value );
+			const bool setMask = value & 0x01;
+			const bool checkMask = value & 0x02;
+			dbLog( "Gpu::GP0_Command() -- set mask bits [set:%i check:%i]", setMask, checkMask );
 
-			m_status.setMaskOnDraw = value & 1;
-			m_status.checkMaskOnDraw = ( value >> 1 ) & 1;
+			m_status.setMaskOnDraw = setMask;
+			m_status.checkMaskOnDraw = checkMask;
+			m_renderer.SetMaskBits( setMask, checkMask );
 			break;
 		}
 
@@ -534,18 +537,13 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 			m_vramCopyState = std::nullopt;
 
-			m_status.texturePageBaseX = 0;
-			m_status.texturePageBaseY = 0;
-			m_status.semiTransparency = 0;
-			m_status.texturePageColors = 0;
-			m_status.dither = false;
-			m_status.drawToDisplayArea = false;
-			m_status.textureDisable = false;
-			m_status.interruptRequest = false;
-			m_status.displayDisable = true;
-			m_status.dmaDirection = static_cast<uint32_t>( DmaDirection::Off );
-			m_status.setMaskOnDraw = false;
-			m_status.checkMaskOnDraw = false;
+			m_status.value = 0x14802000;
+			m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
+
+			m_horDisplayRange1 = 0x200;
+			m_horDisplayRange2 = 0x200 + 256 * 10;
+			m_verDisplayRange1 = 0x10;
+			m_verDisplayRange2 = 0x10 + 240;
 
 			m_texturedRectFlipX = false;
 			m_texturedRectFlipY = false;
@@ -565,15 +563,6 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_drawOffsetX = 0;
 			m_drawOffsetY = 0;
 			m_renderer.SetOrigin( 0, 0 );
-
-			m_horDisplayRange1 = 0x200;
-			m_horDisplayRange2 = 0x200 + 256 * 10;
-			m_verDisplayRange1 = 0x10;
-			m_verDisplayRange2 = 0x10 + 240;
-
-			m_displayAreaStartX = 0;
-			m_displayAreaStartY = 0;
-			m_renderer.SetDisplayStart( 0, 0 );
 
 			ClearCommandBuffer();
 
@@ -631,11 +620,14 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x08: // display mode
 		{
+			// set resolution, video mode, color depth, interlacing, reverse flag
+
 			dbLog( "Gpu::WriteGP1() -- set display mode [%X]", value );
 
-			static constexpr uint32_t WriteMask = 0x3f << 17;
-			Status newStatus;
-			newStatus.value = ( m_status.value & ~WriteMask ) | ( ( value << 17 ) & WriteMask );
+			Status newStatus = m_status;
+
+			// bits 0-5 same as GPUSTAT bits 17-22
+			stdx::masked_set<uint32_t>( newStatus.value, 0x3f << 17, value << 17 );
 			newStatus.horizontalResolution2 = ( value >> 6 ) & 1;
 			newStatus.reverseFlag = ( value >> 7 ) & 1;
 

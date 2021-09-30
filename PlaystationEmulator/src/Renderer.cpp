@@ -59,6 +59,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_originLoc = m_clutShader.GetUniformLocation( "u_origin" );
 	m_displaySizeLoc = m_clutShader.GetUniformLocation( "u_displaySize" );
 	m_alphaLoc = m_clutShader.GetUniformLocation( "u_alpha" );
+	m_semiTransparentLoc = m_clutShader.GetUniformLocation( "u_semiTransparent" );
 	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 
@@ -166,7 +167,7 @@ void Renderer::SetSemiTransparency( SemiTransparency semiTransparency )
 {
 	if ( m_semiTransparency != semiTransparency )
 	{
-		if ( m_semiTransparencyEnabled )
+		if ( m_uniform.semiTransparent )
 			DrawBatch();
 
 		m_semiTransparency = semiTransparency;
@@ -174,12 +175,20 @@ void Renderer::SetSemiTransparency( SemiTransparency semiTransparency )
 	}
 }
 
+void Renderer::SetMaskBits( bool setMask, bool checkMask )
+{
+	// TODO: stencil
+	(void)setMask;
+	(void)checkMask;
+}
+
 void Renderer::SetSemiTransparencyEnabled( bool enabled )
 {
-	if ( m_semiTransparencyEnabled != enabled )
+	if ( m_uniform.semiTransparent != enabled )
 	{
 		DrawBatch();
-		m_semiTransparencyEnabled = enabled;
+		m_uniform.semiTransparent = enabled;
+		glUniform1i( m_semiTransparentLoc, enabled );
 		UpdateBlendMode();
 	}
 }
@@ -295,7 +304,7 @@ void Renderer::UpdateScissorRect()
 
 void Renderer::UpdateBlendMode()
 {
-	if ( m_semiTransparencyEnabled )
+	if ( m_uniform.semiTransparent )
 	{
 		glEnable( GL_BLEND );
 		switch ( m_semiTransparency )

@@ -38,6 +38,7 @@ public:
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 	void SetSemiTransparency( SemiTransparency semiTransparency );
+	void SetMaskBits( bool setMask, bool checkMask );
 
 	// update vram with pixel buffer
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
@@ -104,6 +105,7 @@ private:
 	GLint m_originLoc = -1;
 	GLint m_displaySizeLoc = -1;
 	GLint m_alphaLoc = -1;
+	GLint m_semiTransparentLoc = -1;
 	GLint m_texWindowMask = -1;
 	GLint m_texWindowOffset = -1;
 
@@ -131,6 +133,7 @@ private:
 		uint32_t texWindowOffsetY = 0;
 
 		float alpha = 1.0f;
+		bool semiTransparent = false;
 	};
 
 	Uniform m_uniform;
@@ -142,7 +145,6 @@ private:
 	uint16_t m_lastClut = 0;
 
 	SemiTransparency m_semiTransparency{};
-	bool m_semiTransparencyEnabled = false;
 };
 
 }
