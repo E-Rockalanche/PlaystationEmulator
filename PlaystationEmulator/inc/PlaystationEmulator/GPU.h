@@ -41,55 +41,6 @@ constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
 class Gpu
 {
 public:
-
-	union Status
-	{
-		Status() : value{ 0 } {}
-
-		struct
-		{
-			uint32_t texturePageBaseX : 4; // N*64
-			uint32_t texturePageBaseY : 1; // N*256
-			uint32_t semiTransparency : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
-			uint32_t texturePageColors : 2; // 0=4bit, 1=8bit, 2=15bit
-			uint32_t dither : 1; // 0=Off/strip LSBs, 1=Dither Enabled
-			uint32_t drawToDisplayArea : 1;
-			uint32_t setMaskOnDraw : 1;
-			uint32_t checkMaskOnDraw : 1;
-			uint32_t interlaceField : 1;
-			uint32_t reverseFlag : 1;
-			uint32_t textureDisable : 1;
-
-			uint32_t horizontalResolution2 : 1; // 0=256/320/512/640, 1=368
-			uint32_t horizontalResolution1 : 2; // 0=256, 1=320, 2=512, 3=640
-			uint32_t verticalResolution : 1; // 0=240, 1=480, when VerticalInterlace=1
-			uint32_t videoMode : 1; // 0=NTSC/60Hz, 1=PAL/50Hz
-			uint32_t displayAreaColorDepth : 1; // 0=15bit, 1=24bit
-			uint32_t verticalInterlace : 1;
-			uint32_t displayDisable : 1;
-			uint32_t interruptRequest : 1;
-			uint32_t dmaRequest : 1;
-			uint32_t readyToReceiveCommand : 1;
-			uint32_t readyToSendVRamToCpu : 1;
-			uint32_t readyToReceiveDmaBlock : 1;
-			uint32_t dmaDirection : 2; // 0=Off, 1=?, 2=CPUtoGP0, 3=GPUREADtoCPU
-			uint32_t drawingEvenOdd : 1; // 0=Even or Vblank, 1=Odd
-		};
-
-		uint32_t value;
-
-		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
-		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
-
-		uint16_t GetDrawMode() const noexcept // used for textured primitives
-		{
-			return static_cast<uint16_t>( ( value & 0x3ff ) | ( textureDisable << 11 ) );
-		}
-
-		SemiTransparency GetSemiTransparency() const noexcept { return static_cast<SemiTransparency>( semiTransparency ); }
-	};
-	static_assert( sizeof( Status ) == 4 );
-
 	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, CycleScheduler& cycleScheduler );
 
 	void Reset();
@@ -126,16 +77,62 @@ public:
 	void UpdateTimers( uint32_t cpuTicks ) noexcept;
 	uint32_t GetCpuCyclesUntilEvent() const noexcept;
 
-	bool GetDisplayFrame() noexcept
-	{
-		return std::exchange( m_displayFrame, false );
-	}
+	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
+	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
 
 private:
+	union Status
+	{
+		Status() : value{ 0 } {}
+
+		struct
+		{
+			uint32_t texturePageBaseX : 4; // N*64
+			uint32_t texturePageBaseY : 1; // N*256
+			uint32_t semiTransparency : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
+			uint32_t texturePageColors : 2; // 0=4bit, 1=8bit, 2=15bit
+			uint32_t dither : 1; // 0=Off/strip LSBs, 1=Dither Enabled
+			uint32_t drawToDisplayArea : 1;
+			uint32_t setMaskOnDraw : 1;
+			uint32_t checkMaskOnDraw : 1;
+			uint32_t interlaceField : 1;
+			uint32_t reverseFlag : 1;
+			uint32_t textureDisable : 1;
+
+			uint32_t horizontalResolution2 : 1; // 0=256/320/512/640, 1=368
+			uint32_t horizontalResolution1 : 2; // 0=256, 1=320, 2=512, 3=640
+			uint32_t verticalResolution : 1; // 0=240, 1=480, when VerticalInterlace=1
+			uint32_t videoMode : 1; // 0=NTSC/60Hz, 1=PAL/50Hz
+			uint32_t displayAreaColorDepth : 1; // 0=15bit, 1=24bit
+			uint32_t verticalInterlace : 1;
+			uint32_t displayDisable : 1;
+			uint32_t interruptRequest : 1;
+			uint32_t dmaRequest : 1;
+			uint32_t readyToReceiveCommand : 1;
+			uint32_t readyToSendVRamToCpu : 1;
+			uint32_t readyToReceiveDmaBlock : 1;
+			uint32_t dmaDirection : 2; // 0=Off, 1=?, 2=CPUtoGP0, 3=GPUREADtoCPU
+			uint32_t drawingEvenOdd : 1; // 0=Even or Vblank, 1=Odd
+		};
+
+		uint32_t value;
+
+		uint16_t GetDrawMode() const noexcept { return value & 0x1ff; } // texture disable flag only works on new GPUs and dev machines?
+
+		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
+		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
+
+		SemiTransparency GetSemiTransparency() const noexcept { return static_cast<SemiTransparency>( semiTransparency ); }
+	};
+	static_assert( sizeof( Status ) == 4 );
+
 	using GP0Function = void( Gpu::* )( uint32_t ) noexcept;
 	using GpuReadFunction = uint32_t( Gpu::* )( ) noexcept;
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
+	static constexpr uint16_t DisableTextureBit = 1u << 11;
+
+private:
 	void WriteGP1( uint32_t value ) noexcept;
 
 	uint32_t GpuStatus() noexcept;

@@ -55,11 +55,6 @@ struct RenderCommand
 		Shading = 1u << 28, // polygon/line only
 		PrimitiveTypeMask = 0x7u << 29
 	};
-
-	static constexpr uint32_t GetVertices( uint32_t command )
-	{
-		return ( command & NumVertices ) ? 4 : 3;
-	}
 };
 
 enum class RectangleSize
@@ -257,8 +252,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 		{
 			dbLog( "Gpu::GP0_Command() -- set draw mode [%X]", value );
 
-			static constexpr uint32_t WriteMask = 0x3f;
-			stdx::masked_set( m_status.value, WriteMask, value );
+			// bits 0-10 same as GPUSTAT
+			stdx::masked_set<uint32_t>( m_status.value, 0x7ff, value );
 
 			m_status.textureDisable = stdx::any_of<uint32_t>( value, 1 << 11 );
 
@@ -819,7 +814,7 @@ void Gpu::RenderPolygon() noexcept
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
 
-		const auto drawMode = static_cast<uint16_t>( value >> 16 );
+		const uint16_t drawMode = static_cast<uint16_t>( value >> 16 ) & ~DisableTextureBit; // ignore texture disable
 		for ( auto& v : vertices )
 			v.drawMode = drawMode;
 	}

@@ -231,6 +231,9 @@ int main( int argc, char** argv )
 	bool hookEXE = stdx::ends_with( filename, ".exe" );
 
 	bool quit = false;
+	bool paused = false;
+	bool stepFrame = false;
+
 	while ( !quit )
 	{
 		const uint32_t frameStart = SDL_GetTicks();
@@ -251,18 +254,34 @@ int main( int argc, char** argv )
 					switch ( key )
 					{
 						case SDLK_F1:
-							// toggle vram view
-							renderer.EnableVRamView( !renderer.IsVRamViewEnabled() );
+							paused = !paused;
 							break;
 
 						case SDLK_F2:
-							// toggle kernel logging
-							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
+							stepFrame = true;
 							break;
 
 						case SDLK_F3:
 							// toggle trace logging
 							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
+							break;
+
+						case SDLK_F4:
+							// toggle kernel logging
+							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
+							break;
+
+						case SDLK_F5:
+							// save state
+							break;
+
+						case SDLK_F6:
+							// toggle vram view
+							renderer.EnableVRamView( !renderer.IsVRamViewEnabled() );
+							break;
+
+						case SDLK_F9:
+							// load state
 							break;
 					}
 
@@ -286,19 +305,24 @@ int main( int argc, char** argv )
 
 		static constexpr uint32_t HookAddress = 0x80030000;
 
-		while ( !gpu.GetDisplayFrame() )
+		if ( !paused || stepFrame )
 		{
-			if ( hookEXE && cpu->GetPC() == HookAddress )
-			{
-				hookEXE = false;
-				LoadExecutable( filename.data(), *cpu, *ram );
-			}
+			stepFrame = false;
 
-			cpu->Tick();
+			// run frame
+			while ( !gpu.GetDisplayFrame() )
+			{
+				if ( hookEXE && cpu->GetPC() == HookAddress )
+				{
+					hookEXE = false;
+					LoadExecutable( filename.data(), *cpu, *ram );
+				}
+
+				cpu->Tick();
+			}
 		}
 
-		renderer.DrawBatch();
-
+		gpu.ResetDisplayFrame();
 		renderer.DisplayFrame();
 
 		const uint32_t elapsed = SDL_GetTicks() - frameStart;

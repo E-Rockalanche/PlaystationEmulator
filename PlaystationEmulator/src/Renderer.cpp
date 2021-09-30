@@ -189,6 +189,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	dbExpects( left + width <= VRamWidth );
 	dbExpects( top + height <= VRamHeight );
 
+	// TODO: check draw mode areas
 	DrawBatch();
 
 	m_vramDrawTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
@@ -199,6 +200,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 
 void Renderer::ReadVRam( uint16_t* vram )
 {
+	// TODO: check dirty area
 	DrawBatch();
 
 	glReadPixels( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
@@ -206,6 +208,7 @@ void Renderer::ReadVRam( uint16_t* vram )
 
 void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint16_t color )
 {
+	// TODO: check draw mode areas
 	DrawBatch();
 
 	auto toFloat = []( uint16_t c ) { return ( c & 31 ) / 31.0f; };
@@ -227,6 +230,7 @@ void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 
 void Renderer::CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight, GLint destX, GLint destY, GLint destWidth, GLint destHeight )
 {
+	// TODO: check draw mode areas
 	DrawBatch();
 
 	if ( m_dirtyArea.Intersects( Rect( srcX, srcX + srcWidth, srcY, srcY + srcHeight ) ) )
@@ -258,18 +262,27 @@ void Renderer::CheckDrawMode( uint16_t drawMode, uint16_t clut )
 	if ( stdx::any_of<uint16_t>( drawMode, 1 << 11 ) )
 		return; // textures are disabled
 
-	const auto texBaseX = ( drawMode & 0xf ) * TexturePageBaseXMult;
-	const auto texBaseY = ( ( drawMode >> 4 ) & 1 ) * TexturePageBaseYMult;
-	const Rect texRect( texBaseX, texBaseY, TexturePageWidth, TexturePageHeight );
-
 	const auto colorMode = ( drawMode >> 7 ) & 0x3;
+	dbAssert( colorMode < 3 );
 
-	const auto clutBaseX = ( clut & 0x3f ) * ClutBaseXMult;
-	const auto clutBaseY = ( ( clut >> 6 ) & 0x1ff ) * ClutBaseYMult;
-	const Rect clutRect( clutBaseX, clutBaseY, ClutWidth, ClutHeight );
+	const int texBaseX = ( drawMode & 0xf ) * TexturePageBaseXMult;
+	const int texBaseY = ( ( drawMode >> 4 ) & 1 ) * TexturePageBaseYMult;
+	const int texSize = 64 << colorMode;
+	const Rect texRect( texBaseX, texBaseY, texSize, texSize );
 
-	if ( m_dirtyArea.Intersects( texRect ) || ( colorMode == 2 && m_dirtyArea.Intersects( clutRect ) ) )
+	if ( m_dirtyArea.Intersects( texRect ) )
+	{
 		UpdateReadTexture();
+	}
+	else if ( colorMode < 2 )
+	{
+		const int clutBaseX = ( clut & 0x3f ) * ClutBaseXMult;
+		const int clutBaseY = ( ( clut >> 6 ) & 0x1ff ) * ClutBaseYMult;
+		const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+
+		if ( m_dirtyArea.Intersects( clutRect ) )
+			UpdateReadTexture();
+	}
 }
 
 void Renderer::UpdateScissorRect()
@@ -345,6 +358,8 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 	}
 
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
+
+	m_renderedPrimitive = true;
 }
 
 void Renderer::PushQuad( const Vertex vertices[ 4 ], bool semiTransparent )
@@ -411,6 +426,8 @@ void Renderer::RestoreRenderState()
 
 void Renderer::DisplayFrame()
 {
+	DrawBatch();
+
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
 
@@ -442,6 +459,8 @@ void Renderer::DisplayFrame()
 	SDL_GL_SwapWindow( m_window );
 
 	RestoreRenderState();
+
+	m_renderedPrimitive = false;
 }
 
 }

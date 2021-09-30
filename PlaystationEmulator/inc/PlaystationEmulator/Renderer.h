@@ -25,7 +25,6 @@ namespace PSX
 class Renderer
 {
 public:
-
 	using Rect = Math::Rectangle<int>;
 
 	bool Initialize( SDL_Window* window );
@@ -53,9 +52,9 @@ public:
 	void PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent );
 	void PushQuad( const Vertex vertices[ 4 ], bool semiTransparent );
 
-	void DrawBatch();
-
 	void DisplayFrame();
+
+	bool DidRenderPrimitive() const noexcept { return m_renderedPrimitive; }
 
 private:
 	// update read texture with dirty area of draw texture
@@ -79,10 +78,13 @@ private:
 
 	void SetSemiTransparencyEnabled( bool enabled );
 
+	void DrawBatch();
+
 private:
 	SDL_Window* m_window = nullptr;
 
 	bool m_viewVRam = false;
+	bool m_renderedPrimitive = false;
 
 	// VRAM texture used as render target
 	Render::Texture2D m_vramDrawTexture;

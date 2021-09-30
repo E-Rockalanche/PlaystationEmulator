@@ -60,7 +60,7 @@ uniform sampler2D u_vram;
 
 int FloatTo5bit( float value )
 {
-	return int( round( value * 31 ) );
+	return int( round( value * 31.0 ) );
 }
 
 int SampleVRam( ivec2 pos )
@@ -98,14 +98,12 @@ vec4 LookupTexel()
 {
 	vec4 color;
 
-	// texCord counted in color depth mode
-	ivec2 texCoord = ivec2( int( round( TexCoord.x ) ), int( round( TexCoord.y ) ) );
+	ivec2 texCoord = ivec2( int( round( TexCoord.x ) ) & 0xff, int( round( TexCoord.y ) ) & 0xff );
 
 	texCoord.x = ( texCoord.x & ~( u_texWindowMask.x * 8 ) ) | ( ( u_texWindowOffset.x & u_texWindowMask.x ) * 8 );
 	texCoord.y = ( texCoord.y & ~( u_texWindowMask.y * 8 ) ) | ( ( u_texWindowOffset.y & u_texWindowMask.y ) * 8 );
 
 	int colorMode = ( DrawMode >> 7 ) & 0x3;
-
 	if ( colorMode == 0 )
 	{
 		color = SampleClut( SampleIndex4( texCoord ) ); // get 4bit index
