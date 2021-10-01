@@ -873,7 +873,9 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 		case Command::Stop:
 		{
 			dbLog( "CDRomDrive::Stop -- second response" );
-			dbBreak(); // TODO
+
+			m_motorOn = false;
+			m_cdrom->Seek( 0 ); // seek to beginning of track 1
 
 			stdx::reset_bits<uint8_t>( m_status, Status::Error );
 			SendSecondResponse();
