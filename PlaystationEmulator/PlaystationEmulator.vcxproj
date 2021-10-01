@@ -169,6 +169,7 @@
     <ClInclude Include="inc\PlaystationEmulator\Controller.h" />
     <ClInclude Include="inc\PlaystationEmulator\CycleScheduler.h" />
     <ClInclude Include="inc\PlaystationEmulator\DualSerialPort.h" />
+    <ClInclude Include="inc\PlaystationEmulator\EventManager.h" />
     <ClInclude Include="inc\PlaystationEmulator\FifoBuffer.h" />
     <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
     <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
@@ -198,6 +199,7 @@
     <ClCompile Include="src\CPU.cpp" />
     <ClCompile Include="src\CycleScheduler.cpp" />
     <ClCompile Include="src\DMA.cpp" />
+    <ClCompile Include="src\EventManager.cpp" />
     <ClCompile Include="src\GTE.cpp" />
     <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />
