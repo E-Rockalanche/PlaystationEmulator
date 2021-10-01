@@ -11,13 +11,14 @@
 namespace PSX
 {
 
-class CycleScheduler;
+class Event;
+class EventManager;
 class InterruptControl;
 
 class CDRomDrive
 {
 public:
-	CDRomDrive( InterruptControl& interruptControl, CycleScheduler& cycleScheduler );
+	CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager );
 
 	void Reset();
 
@@ -233,7 +234,8 @@ private:
 
 private:
 	InterruptControl& m_interruptControl;
-	CycleScheduler& m_cycleScheduler;
+	Event* m_firstResponseEvent = nullptr;
+	Event* m_secondResponseEvent = nullptr;
 
 	std::unique_ptr<CDRom> m_cdrom;
 
@@ -245,8 +247,6 @@ private:
 	// timing
 	Command m_pendingCommand = Command::Invalid;
 	Command m_secondResponseCommand = Command::Invalid;
-	uint32_t m_cyclesUntilCommand = 0;
-	uint32_t m_cyclesUntilSecondResponse = 0;
 
 	uint8_t m_status = 0;
 

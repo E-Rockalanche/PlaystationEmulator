@@ -1,6 +1,6 @@
 #include "CDRomDrive.h"
 
-#include "CycleScheduler.h"
+#include "EventManager.h"
 #include "InterruptControl.h"
 
 namespace PSX
@@ -83,13 +83,11 @@ enum class TestFunction : uint8_t
 
 } // namespace
 
-CDRomDrive::CDRomDrive( InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
+CDRomDrive::CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
-	, m_cycleScheduler{ cycleScheduler }
 {
-	m_cycleScheduler.Register(
-		[this]( uint32_t cycles ) { AddCycles( cycles ); },
-		[this] { return GetCyclesUntilCommand(); } );
+	m_firstResponseEvent = eventManager.CreateEvent( "CDRomDrive first response", [this]( auto ) { ExecuteCommand( m_pendingCommand ); } );
+	m_secondResponseEvent = eventManager.CreateEvent( "CDRomDrive second response", [this]( auto ) { ExecuteSecondResponse( m_secondResponseCommand ); } );
 }
 
 void CDRomDrive::Reset()
@@ -101,8 +99,6 @@ void CDRomDrive::Reset()
 
 	m_pendingCommand = Command::Invalid;
 	m_secondResponseCommand = Command::Invalid;
-	m_cyclesUntilCommand = InfiniteCycles;
-	m_cyclesUntilSecondResponse = InfiniteCycles;
 
 	m_status = 0;
 
@@ -212,9 +208,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 			{
 				case 0: // command register
 					dbLog( "CDRomDrive::Write() -- send command [%X]", value );
-					m_cycleScheduler.UpdateEarly();
 					SendCommand( static_cast<Command>( value ) );
-					m_cycleScheduler.ScheduleNextUpdate();
 					break;
 
 				case 1: // sound map data out
@@ -241,10 +235,8 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 
 				case 1: // interrupt enable
 					dbLog( "CDRomDrive::Write() -- interrupt enable [%X]", value );
-					m_cycleScheduler.UpdateEarly();
 					m_interruptEnable = value;
 					CheckInterrupt();
-					m_cycleScheduler.ScheduleNextUpdate();
 					break;
 
 				case 2: // left-cd-out to left-spu-input
@@ -279,8 +271,6 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 				case 1: // ack interrupt flags
 				{
 					dbLog( "CDRomDrive::Write() -- interrupt flag [%X]", value );
-					m_cycleScheduler.UpdateEarly();
-
 					m_interruptFlags = m_interruptFlags & ~value;
 
 					if ( value & InterruptFlag::ResetParameterFifo )
@@ -297,9 +287,6 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 							CheckPendingCommand();
 						}
 					}
-
-					m_cycleScheduler.ScheduleNextUpdate();
-
 					break;
 				}
 
@@ -322,43 +309,6 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 	}
 }
 
-void CDRomDrive::AddCycles( uint32_t cycles ) noexcept
-{
-	auto updateCycles = []( uint32_t& cyclesUntilEvent, uint32_t currentCycles )
-	{
-		if ( cyclesUntilEvent == InfiniteCycles )
-			return false;
-
-		dbAssert( currentCycles <= cyclesUntilEvent );
-		cyclesUntilEvent -= currentCycles;
-
-		if ( cyclesUntilEvent == 0 )
-		{
-			cyclesUntilEvent = InfiniteCycles;
-			return true;
-		}
-
-		return false;
-	};
-
-	if ( updateCycles( m_cyclesUntilSecondResponse, cycles ) )
-	{
-		const auto command = std::exchange( m_secondResponseCommand, Command::Invalid );
-		ExecuteSecondResponse( command );
-	}
-
-	if ( updateCycles( m_cyclesUntilCommand, cycles ) )
-	{
-		const auto command = std::exchange( m_pendingCommand, Command::Invalid );
-		ExecuteCommand( command );
-	}
-}
-
-uint32_t CDRomDrive::GetCyclesUntilCommand() const noexcept
-{
-	return static_cast<uint32_t>( std::min( m_cyclesUntilCommand, m_cyclesUntilSecondResponse ) );
-}
-
 void CDRomDrive::SendCommand( Command command ) noexcept
 {
 	if ( CommandTransferBusy() )
@@ -370,7 +320,7 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 	{
 		dbLogWarning( "CDRomDrive::SendCommand() -- cancelling second response [%X]", m_secondResponseCommand );
 		m_secondResponseCommand = Command::Invalid;
-		m_cyclesUntilSecondResponse = InfiniteCycles;
+		m_secondResponseEvent->Cancel();
 	}
 
 	m_pendingCommand = command;
@@ -379,20 +329,19 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 
 void CDRomDrive::QueueSecondResponse( Command command, int32_t ticks = 0x0004a00 ) noexcept // default ticks value is placeholder
 {
-	dbExpects( m_cycleScheduler.IsUpdating() ); // this should only get called in a cycle update callback
 	dbExpects( ticks > 0 );
 	// dbExpects( m_secondResponseCommand == Command::Invalid );
 	// dbExpects( m_cyclesUntilSecondResponse == InfiniteCycles );
 
 	m_secondResponseCommand = command;
-	m_cyclesUntilSecondResponse = ticks;
+	m_secondResponseEvent->Schedule( ticks, false );
 }
 
 void CDRomDrive::CheckPendingCommand() noexcept
 {
 	// latest command doesn't send until the interrupt are cleared
 	if ( m_pendingCommand != Command::Invalid && m_interruptFlags == 0 )
-		m_cyclesUntilCommand = GetFirstResponseCycles( m_pendingCommand );
+		m_firstResponseEvent->Schedule( GetFirstResponseCycles( m_pendingCommand ) );
 }
 
 void CDRomDrive::CheckInterrupt() noexcept
@@ -416,8 +365,8 @@ void CDRomDrive::AbortCommands() noexcept
 {
 	m_pendingCommand = Command::Invalid;
 	m_secondResponseCommand = Command::Invalid;
-	m_cyclesUntilCommand = InfiniteCycles;
-	m_cyclesUntilSecondResponse = InfiniteCycles;
+	m_firstResponseEvent->Cancel();
+	m_secondResponseEvent->Cancel();
 }
 
 #define COMMAND_CASE( command ) case Command::command:	command();	break
@@ -520,7 +469,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 				case Command::ReadS:
 				case Command::Play:
 					m_secondResponseCommand = Command::Invalid;
-					m_cyclesUntilSecondResponse = InfiniteCycles;
+					m_secondResponseEvent->Cancel();
 					break;
 			}
 
