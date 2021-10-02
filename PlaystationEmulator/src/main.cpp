@@ -175,7 +175,7 @@ int main( int argc, char** argv )
 
 	PSX::InterruptControl interruptControl;
 
-	PSX::Timers timers{ interruptControl, cycleScheduler };
+	PSX::Timers timers{ interruptControl, eventManager };
 
 	PSX::Gpu gpu{ timers, interruptControl, renderer, eventManager };
 

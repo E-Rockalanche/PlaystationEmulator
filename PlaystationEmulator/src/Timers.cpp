@@ -1,5 +1,8 @@
 #include "Timers.h"
 
+#include "EventManager.h"
+#include "InterruptControl.h"
+
 namespace PSX
 {
 
@@ -123,22 +126,20 @@ void Timer::UpdatePaused() noexcept
 uint32_t Timer::GetTicksUntilIrq() const noexcept
 {
 	dbExpects( m_counter <= 0xffff );
+	dbExpects( CanTriggerIrq() );
 
 	auto minTicks = std::numeric_limits<uint32_t>::max();
 
-	if ( !m_paused )
+	if ( m_mode.irqOnTarget )
 	{
-		if ( m_mode.irqOnTarget )
-		{
-			const auto ticks = ( m_counter < m_target ) ? ( m_target - m_counter ) : ( ( 0xffff - m_counter ) + m_target );
-			minTicks = std::min( minTicks, ticks );
-		}
+		const auto ticks = ( m_counter < m_target ) ? ( m_target - m_counter ) : ( ( 0xffff - m_counter ) + m_target );
+		minTicks = std::min( minTicks, ticks );
+	}
 
-		if ( m_mode.irqOnMax )
-		{
-			const auto ticks = 0xffffu - m_counter;
-			minTicks = std::min( minTicks, ticks );
-		}
+	if ( m_mode.irqOnMax )
+	{
+		const auto ticks = 0xffffu - m_counter;
+		minTicks = std::min( minTicks, ticks );
 	}
 
 	return minTicks;
@@ -234,6 +235,12 @@ void Timer::PauseAtTarget() noexcept
 	m_paused = true;
 }
 
+Timers::Timers( InterruptControl& interruptControl, EventManager& eventManager )
+	: m_interruptControl{ interruptControl }
+{
+	m_timerEvent = eventManager.CreateEvent( "Timers event", [this]( cycles_t cycles ) { AddCycles( cycles ); } );
+}
+
 void Timers::Reset()
 {
 	for ( auto& timer : m_timers )
@@ -252,9 +259,9 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 
 	if ( registerIndex < 3 )
 	{
-		m_cycleScheduler.UpdateEarly();
+		m_timerEvent->UpdateEarly();
 		const auto value = m_timers[ timerIndex ].Read( registerIndex );
-		m_cycleScheduler.ScheduleNextUpdate();
+		ScheduleNextIrq();
 		return value;
 	}
 	else
@@ -274,9 +281,9 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 
 	if ( registerIndex < 3 )
 	{
-		m_cycleScheduler.UpdateEarly();
+		m_timerEvent->UpdateEarly();
 		m_timers[ timerIndex ].Write( registerIndex, static_cast<uint16_t>( value ) );
-		m_cycleScheduler.ScheduleNextUpdate();
+		ScheduleNextIrq();
 	}
 	else
 	{
@@ -284,7 +291,7 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	}
 }
 
-void Timers::AddCycles( uint32_t cycles ) noexcept
+void Timers::AddCycles( cycles_t cycles ) noexcept
 {
 	dbExpects( cycles > 0 );
 
@@ -334,38 +341,45 @@ void Timers::AddCycles( uint32_t cycles ) noexcept
 			}
 		}
 	}
+
+	ScheduleNextIrq();
 }
 
-uint32_t Timers::GetCyclesUntilIrq() const noexcept
+void Timers::ScheduleNextIrq() noexcept
 {
-	uint32_t minCycles = std::numeric_limits<uint32_t>::max();
+	cycles_t minCycles = InfiniteCycles;
 
-	auto& dotTimer = m_timers[ 0 ];
-	if ( dotTimer.GetClockSource() % 2 == 0 )
+	auto& timer0 = m_timers[ 0 ];
+	if ( timer0.CanTriggerIrq() && timer0.GetClockSource() % 2 == 0 )
 	{
-		minCycles = std::min( minCycles, dotTimer.GetTicksUntilIrq() );
+		minCycles = std::min( minCycles, static_cast<cycles_t>( timer0.GetTicksUntilIrq() ) );
 	}
 
-	auto& hblankTimer = m_timers[ 0 ];
-	if ( hblankTimer.GetClockSource() % 2 == 0 )
+	auto& timer1 = m_timers[ 0 ];
+	if ( timer1.CanTriggerIrq() && timer1.GetClockSource() % 2 == 0 )
 	{
-		minCycles = std::min( minCycles, hblankTimer.GetTicksUntilIrq() );
+		minCycles = std::min( minCycles, static_cast<cycles_t>( timer1.GetTicksUntilIrq() ) );
 	}
 
-	auto& cpuTimer = m_timers[ 2 ];
-	if ( cpuTimer.GetClockSource() & 0x2 )
+	auto& timer2 = m_timers[ 2 ];
+	if ( timer2.CanTriggerIrq() )
 	{
-		const auto rawCycles = cpuTimer.GetTicksUntilIrq();
-		if ( rawCycles != std::numeric_limits<uint32_t>::max() )
-			minCycles = std::min( minCycles, rawCycles * 8 - m_cyclesDiv8Remainder );
-	}
-	else
-	{
-		minCycles = std::min( minCycles, cpuTimer.GetTicksUntilIrq() );
+		if ( timer2.GetClockSource() & 0x2 )
+		{
+			const auto rawCycles = timer2.GetTicksUntilIrq();
+			if ( rawCycles != std::numeric_limits<uint32_t>::max() )
+				minCycles = std::min( minCycles, static_cast<cycles_t>( rawCycles * 8 - m_cyclesDiv8Remainder ) );
+		}
+		else
+		{
+			minCycles = std::min( minCycles, static_cast<cycles_t>( timer2.GetTicksUntilIrq() ) );
+		}
 	}
 
 	dbAssert( minCycles > 0 );
-	return minCycles;
+
+	if ( minCycles != InfiniteCycles )
+		m_timerEvent->Schedule( minCycles );
 }
 
 }

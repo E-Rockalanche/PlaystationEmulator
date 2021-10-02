@@ -1,7 +1,6 @@
 #pragma once
 
-#include "CycleScheduler.h"
-#include "InterruptControl.h"
+#include "Defs.h"
 
 #include <stdx/assert.h>
 #include <stdx/bit.h>
@@ -85,6 +84,11 @@ public:
 	bool GetPaused() const noexcept { return m_paused; }
 	void PauseAtTarget() noexcept; // timer2 only
 
+	bool CanTriggerIrq() const noexcept
+	{
+		return !m_paused && ( m_mode.irqOnTarget || m_mode.irqOnMax );
+	}
+
 	uint32_t Read( uint32_t index ) noexcept;
 
 	void Write( uint32_t index, uint16_t value ) noexcept;
@@ -117,14 +121,7 @@ private:
 class Timers
 {
 public:
-	Timers( InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
-		: m_interruptControl{ interruptControl }
-		, m_cycleScheduler{ cycleScheduler }
-	{
-		m_cycleScheduler.Register(
-			[this]( uint32_t cycles ) { AddCycles( cycles ); },
-			[this] { return GetCyclesUntilIrq(); } );
-	}
+	Timers( InterruptControl& interruptControl, EventManager& eventManager );
 
 	void Reset();
 
@@ -136,12 +133,12 @@ public:
 	uint32_t Read( uint32_t offset ) noexcept;
 	void Write( uint32_t offset, uint32_t value ) noexcept;
 
-	void AddCycles( uint32_t cycles ) noexcept;
-	uint32_t GetCyclesUntilIrq() const noexcept;
+	void AddCycles( cycles_t cycles ) noexcept;
+	void ScheduleNextIrq() noexcept;
 
 private:
 	InterruptControl& m_interruptControl;
-	CycleScheduler& m_cycleScheduler;
+	Event* m_timerEvent = nullptr;
 
 	std::array<Timer, 3> m_timers{ Timer( 0 ), Timer( 1 ), Timer( 2 ) };
 
