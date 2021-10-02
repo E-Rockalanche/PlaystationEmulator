@@ -115,11 +115,11 @@ int main( int argc, char** argv )
 	SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 3 );
 
 	dbLog( "creating window" );
-	const char* title = filename.empty() ? "PSX Emulator" : filename.data();
+	const std::string windowTitle = filename.empty() ? "PSX Emulator" : filename.data();
 	int windowWidth = 640;
 	int windowHeight = 480;
 	const auto windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
-	SDL_Window* window = SDL_CreateWindow( title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, windowFlags );
+	SDL_Window* window = SDL_CreateWindow( windowTitle.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, windowFlags );
 	if ( !window )
 	{
 		PrintSdlError( "failed to create window" );
@@ -234,6 +234,9 @@ int main( int argc, char** argv )
 	bool paused = false;
 	bool stepFrame = false;
 
+	float avgFPS = 60.0f;
+	static constexpr float AvgFpsSmoothing = 1.0f / 10.0f;
+
 	while ( !quit )
 	{
 		const uint32_t frameStart = SDL_GetTicks();
@@ -303,6 +306,14 @@ int main( int argc, char** argv )
 			}
 		}
 
+		// add fps to window title
+		{
+			static constexpr size_t BufferSize = 1024;
+			char cbuf[ BufferSize ];
+			std::snprintf( cbuf, BufferSize, "%s - fps:%.1f", windowTitle.c_str(), avgFPS );
+			SDL_SetWindowTitle( window, cbuf );
+		}
+
 		static constexpr uint32_t HookAddress = 0x80030000;
 
 		if ( !paused || stepFrame )
@@ -326,8 +337,11 @@ int main( int argc, char** argv )
 		renderer.DisplayFrame();
 
 		const uint32_t elapsed = SDL_GetTicks() - frameStart;
-
 		const auto TargetMilliseconds = static_cast<uint32_t>( 1000.0f / gpu.GetRefreshRate() );
+
+		const float curFPS = 1000.0f / elapsed;
+		avgFPS = avgFPS * AvgFpsSmoothing + curFPS * ( 1.0f - AvgFpsSmoothing );
+
 		if ( elapsed < TargetMilliseconds )
 			SDL_Delay( TargetMilliseconds - elapsed );
 	}
