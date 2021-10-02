@@ -3,11 +3,14 @@
 #include <stdx/assert.h>
 
 #include <cstdint>
+#include <limits>
 
 namespace PSX
 {
 
 using cycles_t = int;
+
+constexpr cycles_t InfiniteCycles = std::numeric_limits<cycles_t>::max();
 
 class Event;
 class EventManager;
@@ -19,6 +22,7 @@ class Cpu;
 class Dma;
 class Gpu;
 class Gte;
+class InterruptControl;
 class MemoryControl;
 class Renderer;
 class Spu;
