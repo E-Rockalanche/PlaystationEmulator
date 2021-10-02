@@ -167,38 +167,29 @@ int main( int argc, char** argv )
 	auto scratchpad = std::make_unique<PSX::Scratchpad>();
 	scratchpad->Fill( 0xfe );
 
-	PSX::CycleScheduler cycleScheduler; // being replaced with event manager
-	cycleScheduler.Reset();
+	PSX::CycleScheduler cycleScheduler; // TODO: replace with event manager everywhere
 
 	PSX::EventManager eventManager;
 
 	PSX::MemoryControl memControl;
-	memControl.Reset();
 
 	PSX::InterruptControl interruptControl;
-	interruptControl.Reset();
 
 	PSX::Timers timers{ interruptControl, cycleScheduler };
-	timers.Reset();
 
 	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
-	gpu.Reset();
 
 	PSX::Spu spu;
 
 	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, eventManager );
-	cdRomDrive->Reset();
 
 	PSX::Dma dma{ *ram, gpu, *cdRomDrive, interruptControl, eventManager };
-	dma.Reset();
 
 	PSX::ControllerPorts controllerPorts{ interruptControl, cycleScheduler };
-	controllerPorts.Reset();
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, spu, *bios };
 
 	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
-	cpu->Reset();
 
 	// controller mapping
 	PSX::Controller controller;
@@ -229,9 +220,17 @@ int main( int argc, char** argv )
 			cdRomDrive->SetCDRom( std::move( cdrom ) );
 	}
 
-	cycleScheduler.ScheduleNextUpdate();
-
 	bool hookEXE = stdx::ends_with( filename, ".exe" );
+
+	cycleScheduler.Reset();
+	memControl.Reset();
+	interruptControl.Reset();
+	timers.Reset();
+	gpu.Reset();
+	cdRomDrive->Reset();
+	dma.Reset();
+	controllerPorts.Reset();
+	cpu->Reset();
 
 	bool quit = false;
 	bool paused = false;
