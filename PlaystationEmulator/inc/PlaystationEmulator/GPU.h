@@ -14,7 +14,10 @@
 namespace PSX
 {
 
-class CycleScheduler;
+using cycles_t = int;
+
+class Event;
+class EventManager;
 class Renderer;
 class Timers;
 class InterruptControl;
@@ -41,7 +44,7 @@ constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
 class Gpu
 {
 public:
-	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, CycleScheduler& cycleScheduler );
+	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager );
 
 	void Reset();
 
@@ -74,8 +77,8 @@ public:
 	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
 	float GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
 
-	void UpdateTimers( uint32_t cpuTicks ) noexcept;
-	uint32_t GetCpuCyclesUntilEvent() const noexcept;
+	void UpdateCycles( cycles_t cpuCycles ) noexcept;
+	cycles_t GetCpuCyclesUntilEvent() const noexcept;
 
 	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
 	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
@@ -209,7 +212,7 @@ private:
 	Timers& m_timers;
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
-	CycleScheduler& m_cycleScheduler;
+	Event* m_clockEvent = nullptr;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;
@@ -259,7 +262,8 @@ private:
 	float m_dotTimerFraction = 0.0f;
 	bool m_hblank = false;
 	bool m_vblank = false;
-	mutable uint32_t m_cachedCyclesUntilNextEvent = 0;
+
+	mutable cycles_t m_cachedCyclesUntilNextEvent = 0;
 
 	bool m_displayFrame = false;
 

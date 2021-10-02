@@ -1,6 +1,6 @@
 #include "GPU.h"
 
-#include "CycleScheduler.h"
+#include "EventManager.h"
 #include "InterruptControl.h"
 #include "Renderer.h"
 #include "Timers.h"
@@ -105,16 +105,13 @@ struct Color
 }
 
 
-Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, CycleScheduler& cycleScheduler )
+Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
 	: m_timers{ timers }
 	, m_interruptControl{ interruptControl }
 	, m_renderer{ renderer }
-	, m_cycleScheduler{ cycleScheduler }
 	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
-	m_cycleScheduler.Register(
-		[this]( uint32_t cycles ) { UpdateTimers( cycles ); },
-		[this] { return GetCpuCyclesUntilEvent(); } );
+	m_clockEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles ) { UpdateCycles( cpuCycles ); } );
 }
 
 void Gpu::Reset()
@@ -634,10 +631,12 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			// update cycles and renderer if the new status is different
 			if ( newStatus.value != m_status.value )
 			{
-				m_cycleScheduler.UpdateEarly();
+				m_clockEvent->UpdateEarly();
+
 				m_status.value = newStatus.value;
-				m_cycleScheduler.ScheduleNextUpdate();
 				m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+
+				m_clockEvent->Schedule( GetCpuCyclesUntilEvent() );
 			}
 			break;
 		}
@@ -689,14 +688,12 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 uint32_t Gpu::GpuStatus() noexcept
 {
 	// update timers if it could affect the even/odd bit
-	const auto dotAfterCycles = m_currentDot + m_cycleScheduler.GetCycles() * GetDotsPerVideoCycle();
+	const auto dotAfterCycles = m_currentDot + m_clockEvent->GetPendingCycles() * GetDotsPerVideoCycle();
 	if ( dotAfterCycles >= GetDotsPerScanline() )
 	{
-		m_cycleScheduler.UpdateEarly();
-		m_cycleScheduler.ScheduleNextUpdate();
+		m_clockEvent->UpdateEarly();
 	}
 
-	// no logging since GpuStatus is called very often
 	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
 }
 
@@ -926,11 +923,11 @@ void Gpu::RenderRectangle() noexcept
 	ClearCommandBuffer();
 }
 
-void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
+void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 {
-	dbExpects( cpuTicks <= m_cachedCyclesUntilNextEvent );
+	dbExpects( cpuCycles <= m_cachedCyclesUntilNextEvent );
 
-	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuTicks ) );
+	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuCycles ) );
 	const float dots = gpuTicks * GetDotsPerVideoCycle();
 
 	auto& dotTimer = m_timers[ 0 ];
@@ -986,9 +983,11 @@ void Gpu::UpdateTimers( uint32_t cpuTicks ) noexcept
 			m_status.drawingEvenOdd ^= 1;
 	}
 	m_vblank = vblank;
+
+	m_clockEvent->Schedule( GetCpuCyclesUntilEvent() );
 }
 
-uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
+cycles_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 {
 	float gpuTicks = std::numeric_limits<float>::max();
 
@@ -1024,7 +1023,7 @@ uint32_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 	}
 
-	const auto cpuCycles = static_cast<uint32_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
+	const auto cpuCycles = static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
 	dbAssert( cpuCycles > 0 );
 
 	m_cachedCyclesUntilNextEvent = cpuCycles;
