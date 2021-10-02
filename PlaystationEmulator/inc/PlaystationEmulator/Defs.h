@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 
 namespace PSX
 {
@@ -27,5 +28,7 @@ class MemoryControl;
 class Renderer;
 class Spu;
 class Timers;
+
+using EventHandle = std::unique_ptr<Event>;
 
 }

@@ -122,6 +122,7 @@ class Timers
 {
 public:
 	Timers( InterruptControl& interruptControl, EventManager& eventManager );
+	~Timers();
 
 	void Reset();
 
@@ -138,7 +139,7 @@ public:
 
 private:
 	InterruptControl& m_interruptControl;
-	Event* m_timerEvent = nullptr;
+	EventHandle m_timerEvent;
 
 	std::array<Timer, 3> m_timers{ Timer( 0 ), Timer( 1 ), Timer( 2 ) };
 

@@ -3,41 +3,48 @@
 namespace PSX
 {
 
-void Event::UpdateEarly()
+Event::~Event()
 {
-	if ( m_enabled )
-	{
-		m_pendingCycles += m_manager.GetPendingCycles();
-
-		dbAssert( m_pendingCycles < m_cyclesUntilEvent ); // event should not be ready
-
-		if ( m_pendingCycles > 0 )
-		{
-			Update( m_pendingCycles );
-
-			m_manager.ScheduleNextEvent();
-		}
-	}
+	m_manager.RemoveEvent( this );
 }
 
-void Event::Schedule( cycles_t cyclesFromNow, bool resetPendingCycles )
+void Event::UpdateEarly()
 {
-	m_cyclesUntilEvent = m_manager.GetPendingCycles() + cyclesFromNow;
-	m_enabled = true;
+	if ( !m_active )
+		return;
 
-	if ( resetPendingCycles )
-		m_pendingCycles = 0;
+	const cycles_t updateCycles = m_pendingCycles + m_manager.GetPendingCycles();
 
+	dbAssert( updateCycles < m_cyclesUntilEvent ); // event should not be ready if it is updating early
+
+	if ( updateCycles > 0 )
+		m_manager.UpdateEvent( this, updateCycles );
+}
+
+void Event::Schedule( cycles_t cyclesFromNow )
+{
+	dbExpects( cyclesFromNow > 0 ); // cannot schedule event to happen immediately
+
+	if ( !m_active )
+	{
+		// timer just started, so we must delay by the manager's current pending cycles
+		m_pendingCycles = -m_manager.GetPendingCycles();
+		m_active = true;
+	}
+
+	m_cyclesUntilEvent = cyclesFromNow;
 	m_manager.ScheduleNextEvent();
 }
 
 void Event::Cancel()
 {
-	if ( m_enabled )
+	if ( m_active )
 	{
+		dbLog( "Event::Cancel -- [%s]", m_name.c_str() );
+
 		m_pendingCycles = 0;
 		m_cyclesUntilEvent = 0;
-		m_enabled = false;
+		m_active = false;
 
 		m_manager.ScheduleNextEvent();
 	}
@@ -45,42 +52,37 @@ void Event::Cancel()
 
 cycles_t Event::GetPendingCycles() const noexcept
 {
+	dbExpects( m_active );
 	return m_pendingCycles + m_manager.GetPendingCycles();
-}
-
-void Event::TriggerEvent()
-{
-	dbExpects( m_pendingCycles >= m_cyclesUntilEvent );
-
-	// disable and trigger event
-	m_enabled = false;
-	Update( m_cyclesUntilEvent );
-
-	// if event was not rescheduled, reset pending cycles
-	if ( !m_enabled )
-		m_pendingCycles = 0;
 }
 
 void Event::Update( cycles_t cycles )
 {
+	dbExpects( m_active );
 	dbExpects( cycles > 0 );
-	dbExpects( cycles <= m_cyclesUntilEvent );
-	dbExpects( cycles <= m_pendingCycles );
+	dbExpects( m_manager.IsUpdating() );
+
 	m_cyclesUntilEvent -= cycles;
 	m_pendingCycles -= cycles;
 	m_onUpdate( cycles );
+
+	// if event was not re-scheduled, disable it
+	if ( m_cyclesUntilEvent == 0 )
+	{
+		m_pendingCycles = 0;
+		m_active = false;
+	}
 }
 
 EventManager::~EventManager()
 {
-	for ( Event* event : m_events )
-		delete event;
+	dbAssert( m_events.empty() );
 }
 
-Event* EventManager::CreateEvent( std::string name, EventUpdateCallback onUpdate )
+EventHandle EventManager::CreateEvent( std::string name, EventUpdateCallback onUpdate )
 {
-	Event* event = new Event( *this, std::move( name ), std::move( onUpdate ) );
-	m_events.push_back( event );
+	EventHandle event( new Event( *this, std::move( name ), std::move( onUpdate ) ) );
+	m_events.push_back( event.get() );
 	return event;
 }
 
@@ -95,6 +97,8 @@ Event* EventManager::FindEvent( std::string_view name )
 
 void EventManager::Reset()
 {
+	dbLog( "EventManager::Reset" );
+
 	m_pendingCycles = 0;
 	m_cyclesUntilNextEvent = 0;
 	m_nextEvent = nullptr;
@@ -105,7 +109,12 @@ void EventManager::Reset()
 
 void EventManager::UpdateNextEvent()
 {
-	// add any pending cycles to events
+	dbAssert( m_nextEvent ); // an event should have been scheduled
+
+	dbLog( "EventManager::UpdateNextEvent -- [%s]", m_nextEvent->GetName().c_str() );
+
+	dbAssert( m_nextEvent->IsActive() );
+
 	if ( m_pendingCycles > 0 )
 	{
 		for ( Event* event : m_events )
@@ -114,30 +123,52 @@ void EventManager::UpdateNextEvent()
 		m_pendingCycles = 0;
 	}
 
-	dbAssert( m_nextEvent );
-	std::exchange( m_nextEvent, nullptr )->TriggerEvent();
+	dbExpects( m_nextEvent->GetRemainingCycles() <= 0 );
+	UpdateEvent( m_nextEvent, m_nextEvent->m_cyclesUntilEvent );
+}
 
-	// schedule next event if update did not
-	if ( m_nextEvent == nullptr )
-		ScheduleNextEvent();
+void EventManager::UpdateEvent( Event* event, cycles_t cycles )
+{
+	dbExpects( cycles > 0 );
+	dbExpects( event );
+	dbExpects( event->IsActive() );
+
+	m_updating = true;
+	event->Update( cycles );
+	m_updating = false;
+
+	ScheduleNextEvent();
 }
 
 void EventManager::ScheduleNextEvent()
 {
+	if ( m_updating )
+		return;
+
 	// find next event
 	auto it = std::min_element( m_events.begin(), m_events.end(), []( const Event* lhs, const Event* rhs )
 		{
-			if ( lhs->IsEnabled() != rhs->IsEnabled() )
-				return lhs->IsEnabled();
+			if ( lhs->IsActive() != rhs->IsActive() )
+				return lhs->IsActive();
 
-			return lhs->GetRemainingCycles() < rhs->GetRemainingCycles();
+			return lhs->GetLocalRemainingCycles() < rhs->GetLocalRemainingCycles();
 		} );
 	dbAssert( it != m_events.end() );
 
 	m_nextEvent = *it;
-	dbAssert( m_nextEvent->IsEnabled() );
+	dbAssert( m_nextEvent->IsActive() );
 
-	m_cyclesUntilNextEvent = m_nextEvent->GetRemainingCycles(); // will be negative if next event is late
+	m_cyclesUntilNextEvent = m_nextEvent->GetLocalRemainingCycles();
+}
+
+void EventManager::RemoveEvent( Event* event )
+{
+	dbExpects( event );
+	dbLog( "EventManager::RemoveEvent -- [%s]", event->GetName().c_str() );
+
+	auto it = std::find( m_events.begin(), m_events.end(), event );
+	dbAssert( it != m_events.end() );
+	m_events.erase( it );
 }
 
 }

@@ -61,11 +61,12 @@ public:
 				uint32_t : 3;
 				uint32_t startTrigger : 1; // cleared on dma begin
 				uint32_t pause : 1;
-				uint32_t : 2;
+				uint32_t unknown : 1;
+				uint32_t : 1;
 			};
 			uint32_t value;
 
-			static constexpr uint32_t WriteMask = 0x31770702;
+			static constexpr uint32_t WriteMask = 0x71770703;
 		};
 		static_assert( sizeof( Control ) == 4 );
 

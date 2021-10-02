@@ -36,6 +36,7 @@ class Gpu
 {
 public:
 	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager );
+	~Gpu();
 
 	void Reset();
 
@@ -67,9 +68,6 @@ public:
 
 	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
 	float GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
-
-	void UpdateCycles( cycles_t cpuCycles ) noexcept;
-	cycles_t GetCpuCyclesUntilEvent() const noexcept;
 
 	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
 	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
@@ -199,11 +197,14 @@ private:
 	// affected by mask settings
 	void CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height );
 
+	void UpdateCycles( cycles_t cpuCycles ) noexcept;
+	void ScheduleNextEvent() noexcept;
+
 private:
 	Timers& m_timers;
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
-	Event* m_clockEvent = nullptr;
+	EventHandle m_clockEvent;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;

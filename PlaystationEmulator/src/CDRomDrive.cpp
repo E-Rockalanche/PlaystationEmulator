@@ -86,9 +86,18 @@ enum class TestFunction : uint8_t
 CDRomDrive::CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
 {
-	m_firstResponseEvent = eventManager.CreateEvent( "CDRomDrive first response", [this]( auto ) { ExecuteCommand( m_pendingCommand ); } );
-	m_secondResponseEvent = eventManager.CreateEvent( "CDRomDrive second response", [this]( auto ) { ExecuteSecondResponse( m_secondResponseCommand ); } );
+	m_firstResponseEvent = eventManager.CreateEvent( "CDRomDrive first response", [this]( auto )
+		{
+			ExecuteCommand( std::exchange( m_pendingCommand, Command::Invalid ) );
+		} );
+
+	m_secondResponseEvent = eventManager.CreateEvent( "CDRomDrive second response", [this]( auto )
+		{
+			ExecuteSecondResponse( std::exchange( m_secondResponseCommand, Command::Invalid ) );
+		} );
 }
+
+CDRomDrive::~CDRomDrive() = default;
 
 void CDRomDrive::Reset()
 {
@@ -313,12 +322,13 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 {
 	if ( CommandTransferBusy() )
 	{
-		dbLogWarning( "CDRomDrive::SendCommand() -- command transfer is busy" );
+		dbLogWarning( "CDRomDrive::SendCommand() -- Command transfer is busy. Canceling first response" );
+		m_firstResponseEvent->Cancel();
 	}
 
 	if ( m_secondResponseCommand != Command::Invalid )
 	{
-		dbLogWarning( "CDRomDrive::SendCommand() -- cancelling second response [%X]", m_secondResponseCommand );
+		dbLogWarning( "CDRomDrive::SendCommand() -- Canceling second response [%X]", m_secondResponseCommand );
 		m_secondResponseCommand = Command::Invalid;
 		m_secondResponseEvent->Cancel();
 	}
@@ -341,7 +351,7 @@ void CDRomDrive::CheckPendingCommand() noexcept
 {
 	// latest command doesn't send until the interrupt are cleared
 	if ( m_pendingCommand != Command::Invalid && m_interruptFlags == 0 )
-		m_firstResponseEvent->Schedule( GetFirstResponseCycles( m_pendingCommand ), true );
+		m_firstResponseEvent->Schedule( GetFirstResponseCycles( m_pendingCommand ) );
 }
 
 void CDRomDrive::CheckInterrupt() noexcept

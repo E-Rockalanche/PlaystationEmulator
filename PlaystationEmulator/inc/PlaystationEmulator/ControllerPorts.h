@@ -85,6 +85,7 @@ public:
 	};
 
 	ControllerPorts( InterruptControl& interruptControl, EventManager& eventManager );
+	~ControllerPorts();
 
 	void Reset();
 
@@ -191,7 +192,7 @@ private:
 
 private:
 	InterruptControl& m_interruptControl;
-	Event* m_communicateEvent = nullptr;
+	EventHandle m_communicateEvent;
 
 	uint32_t m_status = 0;
 	uint32_t m_baudrateTimer = 0;

@@ -13,6 +13,8 @@ ControllerPorts::ControllerPorts( InterruptControl& interruptControl, EventManag
 	m_communicateEvent = eventManager.CreateEvent( "ControllerPorts communicate event", [this]( cycles_t cycles ) { UpdateCycles( cycles ); } );
 }
 
+ControllerPorts::~ControllerPorts() = default;
+
 void ControllerPorts::Reset()
 {
 	m_status = 0;

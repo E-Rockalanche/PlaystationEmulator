@@ -14,6 +14,7 @@ class CDRomDrive
 {
 public:
 	CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager );
+	~CDRomDrive();
 
 	void Reset();
 
@@ -229,8 +230,8 @@ private:
 
 private:
 	InterruptControl& m_interruptControl;
-	Event* m_firstResponseEvent = nullptr;
-	Event* m_secondResponseEvent = nullptr;
+	EventHandle m_firstResponseEvent;
+	EventHandle m_secondResponseEvent;
 
 	std::unique_ptr<CDRom> m_cdrom;
 

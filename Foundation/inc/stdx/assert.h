@@ -41,14 +41,6 @@ inline void LogError( const Args&... args )
 #define dbLogError( ... )	LogError( __VA_ARGS__ )
 #define dbLogWarning( ... )	LogWarning( __VA_ARGS__ )
 
-#else
-
-#define dbLog( ... ) EMPTY_BLOCK
-#define dbLogError( ... ) EMPTY_BLOCK
-#define dbLogWarning( ... ) EMPTY_BLOCK
-
-#endif
-
 #define dbBreak() __debugbreak()
 
 #define dbBreakMessage( ... )	\
@@ -90,3 +82,18 @@ inline void LogError( const Args&... args )
 		dbBreak();	\
 	}	\
 	MULTI_LINE_MACRO_END
+
+#else
+
+#define dbLog( ... ) EMPTY_BLOCK
+#define dbLogError( ... ) EMPTY_BLOCK
+#define dbLogWarning( ... ) EMPTY_BLOCK
+
+#define dbBreak() EMPTY_BLOCK
+#define dbBreakMessage( ... ) EMPTY_BLOCK
+#define dbAssert( condition ) EMPTY_BLOCK
+#define dbAssertMessage( condition, ... ) EMPTY_BLOCK
+#define dbExpects( condition ) EMPTY_BLOCK
+#define dbEnsures( condition ) EMPTY_BLOCK
+
+#endif

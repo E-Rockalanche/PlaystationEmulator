@@ -126,7 +126,7 @@ void Timer::UpdatePaused() noexcept
 uint32_t Timer::GetTicksUntilIrq() const noexcept
 {
 	dbExpects( m_counter <= 0xffff );
-	dbExpects( CanTriggerIrq() );
+	dbExpects( !m_paused );
 
 	auto minTicks = std::numeric_limits<uint32_t>::max();
 
@@ -240,6 +240,8 @@ Timers::Timers( InterruptControl& interruptControl, EventManager& eventManager )
 {
 	m_timerEvent = eventManager.CreateEvent( "Timers event", [this]( cycles_t cycles ) { AddCycles( cycles ); } );
 }
+
+Timers::~Timers() = default;
 
 void Timers::Reset()
 {

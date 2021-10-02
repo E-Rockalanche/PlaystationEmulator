@@ -114,6 +114,8 @@ Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer
 	m_clockEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles ) { UpdateCycles( cpuCycles ); } );
 }
 
+Gpu::~Gpu() = default;
+
 void Gpu::Reset()
 {
 	// reset buffer, remaining words, command function, and gp0 mode
@@ -172,6 +174,8 @@ void Gpu::Reset()
 	m_vramCopyState = std::nullopt;
 
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+
+	ScheduleNextEvent();
 }
 
 void Gpu::ClearCommandBuffer() noexcept
@@ -636,7 +640,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 				m_status.value = newStatus.value;
 				m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 
-				m_clockEvent->Schedule( GetCpuCyclesUntilEvent() );
+				ScheduleNextEvent();
 			}
 			break;
 		}
@@ -984,10 +988,10 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	}
 	m_vblank = vblank;
 
-	m_clockEvent->Schedule( GetCpuCyclesUntilEvent() );
+	ScheduleNextEvent();
 }
 
-cycles_t Gpu::GetCpuCyclesUntilEvent() const noexcept
+void Gpu::ScheduleNextEvent() noexcept
 {
 	float gpuTicks = std::numeric_limits<float>::max();
 
@@ -1023,12 +1027,12 @@ cycles_t Gpu::GetCpuCyclesUntilEvent() const noexcept
 		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 	}
 
-	const auto cpuCycles = static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
-	dbAssert( cpuCycles > 0 );
+	// because of floating point preceision, we are often 1 cycle short. Adding one cycle should hardly affect anything
+	const auto cpuCycles = static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) ) + 1;
 
 	m_cachedCyclesUntilNextEvent = cpuCycles;
 
-	return cpuCycles;
+	m_clockEvent->Schedule( cpuCycles );
 }
 
 void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint16_t value )
