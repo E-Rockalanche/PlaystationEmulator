@@ -43,6 +43,11 @@ void Event::Cancel()
 	}
 }
 
+cycles_t Event::GetPendingCycles() const noexcept
+{
+	return m_pendingCycles + m_manager.GetPendingCycles();
+}
+
 void Event::TriggerEvent()
 {
 	dbExpects( m_pendingCycles >= m_cyclesUntilEvent );
@@ -133,11 +138,6 @@ void EventManager::ScheduleNextEvent()
 	dbAssert( m_nextEvent->IsEnabled() );
 
 	m_cyclesUntilNextEvent = m_nextEvent->GetRemainingCycles(); // will be negative if next event is late
-}
-
-void EventManager::RemoveEvent( const Event* event )
-{
-	m_events.erase( std::find( m_events.begin(), m_events.end(), event ) );
 }
 
 }

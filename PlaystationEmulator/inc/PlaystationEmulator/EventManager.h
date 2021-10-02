@@ -11,7 +11,7 @@
 namespace PSX
 {
 
-using cycles_t = int32_t;
+using cycles_t = int;
 
 using EventUpdateCallback = std::function<void( cycles_t )>;
 
@@ -34,11 +34,13 @@ public:
 	// Check if event is currently enabled
 	bool IsEnabled() const noexcept { return m_enabled; }
 
+	// Get pending cycles to apply (includes pending cycles in event manager)
+	cycles_t GetPendingCycles() const noexcept;
+
 	// Get remaining cycles until event triggers (will be negative if event is late)
 	cycles_t GetRemainingCycles() const noexcept
 	{
-		dbExpects( m_enabled );
-		return m_cyclesUntilEvent - m_pendingCycles;
+		return m_cyclesUntilEvent - GetPendingCycles();
 	}
 
 	const std::string& GetName() const noexcept { return m_name; }
@@ -99,8 +101,6 @@ private:
 	void UpdateNextEvent();
 
 	void ScheduleNextEvent();
-
-	void RemoveEvent( const Event* event );
 
 private:
 	cycles_t m_cyclesUntilNextEvent = 0;
