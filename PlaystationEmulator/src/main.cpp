@@ -167,8 +167,6 @@ int main( int argc, char** argv )
 	auto scratchpad = std::make_unique<PSX::Scratchpad>();
 	scratchpad->Fill( 0xfe );
 
-	PSX::CycleScheduler cycleScheduler; // TODO: replace with event manager everywhere
-
 	PSX::EventManager eventManager;
 
 	PSX::MemoryControl memControl;

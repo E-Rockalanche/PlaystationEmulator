@@ -90,9 +90,6 @@
     <ClInclude Include="inc\PlaystationEmulator\EventManager.h">
       <Filter>inc</Filter>
     </ClInclude>
-    <ClInclude Include="inc\PlaystationEmulator\CycleScheduler.h">
-      <Filter>inc</Filter>
-    </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\Defs.h">
       <Filter>inc</Filter>
     </ClInclude>
@@ -126,9 +123,6 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\CDRomDrive.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\CycleScheduler.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\MemoryControl.cpp">
