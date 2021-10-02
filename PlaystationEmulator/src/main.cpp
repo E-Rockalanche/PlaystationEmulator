@@ -1,7 +1,6 @@
 #include "BIOS.h"
 #include "CDRomDrive.h"
 #include "CPU.h"
-#include "CycleScheduler.h"
 #include "DMA.h"
 #include "EventManager.h"
 #include "File.h"
@@ -183,11 +182,11 @@ int main( int argc, char** argv )
 
 	PSX::Dma dma{ *ram, gpu, *cdRomDrive, interruptControl, eventManager };
 
-	PSX::ControllerPorts controllerPorts{ interruptControl, cycleScheduler };
+	PSX::ControllerPorts controllerPorts{ interruptControl, eventManager };
 
 	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, spu, *bios };
 
-	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
+	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, eventManager );
 
 	// controller mapping
 	PSX::Controller controller;
@@ -220,7 +219,7 @@ int main( int argc, char** argv )
 
 	bool hookEXE = stdx::ends_with( filename, ".exe" );
 
-	cycleScheduler.Reset();
+	eventManager.Reset();
 	memControl.Reset();
 	interruptControl.Reset();
 	timers.Reset();

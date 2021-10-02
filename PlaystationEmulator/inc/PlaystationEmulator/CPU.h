@@ -24,13 +24,13 @@ public:
 	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
 	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
 
-	MipsR3000Cpu( MemoryMap& memoryMap, Ram& ram, Bios& bios, Scratchpad& scratchpad, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
+	MipsR3000Cpu( MemoryMap& memoryMap, Ram& ram, Bios& bios, Scratchpad& scratchpad, InterruptControl& interruptControl, EventManager& eventManager )
 		: m_memoryMap{ memoryMap }
 		, m_ram{ ram }
 		, m_bios{ bios }
 		, m_scratchpad{ scratchpad }
 		, m_interruptControl{ interruptControl }
-		, m_cycleScheduler{ cycleScheduler }
+		, m_eventManager{ eventManager }
 		, m_cop0{ interruptControl }
 	{}
 
@@ -465,8 +465,7 @@ private:
 	Bios& m_bios;
 	Scratchpad& m_scratchpad;
 	InterruptControl& m_interruptControl;
-
-	CycleScheduler& m_cycleScheduler;
+	EventManager& m_eventManager;
 
 	Cop0 m_cop0;
 	GTE m_gte;

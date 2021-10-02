@@ -1,6 +1,6 @@
 #include "CPU.h"
 
-#include "CycleScheduler.h"
+#include "EventManager.h"
 #include "MemoryMap.h"
 
 #include <stdx/assert.h>
@@ -58,7 +58,7 @@ void MipsR3000Cpu::Tick() noexcept
 	m_registers.Update();
 
 	// on average: 1 cycle to execute instruction, 1 cycle for memory load
-	m_cycleScheduler.AddCycles( 1 ); // TODO: more accurate CPU timing
+	m_eventManager.AddCycles( 1 ); // TODO: more accurate CPU timing
 }
 
 
