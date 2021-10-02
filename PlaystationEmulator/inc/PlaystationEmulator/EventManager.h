@@ -22,8 +22,8 @@ public:
 	// Call update callback early with current accumulated cycles
 	void UpdateEarly();
 
-	// Schedule event to occur some cycles in the future
-	void Schedule( cycles_t cyclesFromNow, bool resetPendingCycles = true );
+	// Schedule event to occur some cycles in the future. Should reset pending cycles if called outside update callback
+	void Schedule( cycles_t cyclesFromNow, bool resetPendingCycles = false );
 
 	// Cancel/disable event and reset pending cycles
 	void Cancel();
