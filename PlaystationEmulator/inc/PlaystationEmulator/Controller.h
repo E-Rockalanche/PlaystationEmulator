@@ -1,9 +1,8 @@
 #pragma once
 
-#include <stdx/assert.h>
-#include <stdx/bit.h>
+#include "Defs.h"
 
-#include <cstdint>
+#include <stdx/bit.h>
 
 namespace PSX
 {

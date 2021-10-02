@@ -1,26 +1,17 @@
 #pragma once
 
+#include "Defs.h"
+
 #include "FifoBuffer.h"
 #include "GpuDefs.h"
 
 #include <Math/Rectangle.h>
 
-#include <stdx/assert.h>
-
-#include <cstdint>
 #include <memory>
 #include <optional>
 
 namespace PSX
 {
-
-using cycles_t = int;
-
-class Event;
-class EventManager;
-class Renderer;
-class Timers;
-class InterruptControl;
 
 static constexpr float CpuClockSpeed = 44100 * 0x300; // Hz
 static constexpr float VideoClockSpeed = CpuClockSpeed * 11 / 7; // Hz

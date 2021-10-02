@@ -10,8 +10,6 @@
 namespace PSX
 {
 
-class InterruptControl;
-
 class Cop0
 {
 public:

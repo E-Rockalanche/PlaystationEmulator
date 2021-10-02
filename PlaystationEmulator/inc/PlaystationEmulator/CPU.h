@@ -1,21 +1,17 @@
 #pragma once
 
+#include "Defs.h"
+
 #include "Cop0.h"
 #include "GTE.h"
 #include "Instruction.h"
 #include "MemoryMap.h"
 
-#include <stdx/assert.h>
-
 #include <array>
-#include <cstdint>
 #include <optional>
 
 namespace PSX
 {
-
-class CycleScheduler;
-class InterruptControl;
 
 class MipsR3000Cpu
 {

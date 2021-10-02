@@ -5,6 +5,7 @@
 #include <Math/Vector.h>
 
 #include <array>
+#include <cstdint>
 
 namespace PSX
 {

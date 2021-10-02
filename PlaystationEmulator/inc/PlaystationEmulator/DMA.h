@@ -1,20 +1,15 @@
 #pragma once
 
+#include "Defs.h"
+
 #include "RAM.h"
 
 #include <stdx/assert.h>
 
 #include <array>
-#include <cstdint>
 
 namespace PSX
 {
-
-class CDRomDrive;
-class Event;
-class EventManager;
-class Gpu;
-class InterruptControl;
 
 class Dma
 {

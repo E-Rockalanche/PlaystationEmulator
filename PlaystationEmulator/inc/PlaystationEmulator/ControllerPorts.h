@@ -1,17 +1,13 @@
 #pragma once
 
+#include "Defs.h"
+
 #include "FifoBuffer.h"
 
 #include <stdx/bit.h>
 
-#include <cstdint>
-
 namespace PSX
 {
-
-class Controller;
-class CycleScheduler;
-class InterruptControl;
 
 class ControllerPorts
 {

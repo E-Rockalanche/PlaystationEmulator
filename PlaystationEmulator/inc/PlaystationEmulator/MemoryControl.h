@@ -1,7 +1,5 @@
 #pragma once
 
-// https://problemkaputt.de/psx-spx.htm#memorycontrol
-
 #include <stdx/assert.h>
 
 #include <array>

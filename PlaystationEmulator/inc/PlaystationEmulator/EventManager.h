@@ -1,17 +1,14 @@
 #pragma once
 
-#include <stdx/assert.h>
+#include "Defs.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <string>
 #include <string_view>
 #include <functional>
 
 namespace PSX
 {
-
-using cycles_t = int;
 
 using EventUpdateCallback = std::function<void( cycles_t )>;
 

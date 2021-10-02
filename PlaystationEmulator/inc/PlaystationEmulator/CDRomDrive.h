@@ -1,19 +1,14 @@
 #pragma once
 
+#include "Defs.h"
+
 #include "CDRom.h"
 #include "FifoBuffer.h"
 
-#include <stdx/assert.h>
 #include <stdx/bit.h>
-
-#include <cstdint>
 
 namespace PSX
 {
-
-class Event;
-class EventManager;
-class InterruptControl;
 
 class CDRomDrive
 {
