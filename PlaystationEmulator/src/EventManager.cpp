@@ -66,6 +66,12 @@ void Event::Update( cycles_t cycles )
 	m_onUpdate( cycles );
 }
 
+EventManager::~EventManager()
+{
+	for ( Event* event : m_events )
+		delete event;
+}
+
 Event* EventManager::CreateEvent( std::string name, EventUpdateCallback onUpdate )
 {
 	Event* event = new Event( *this, std::move( name ), std::move( onUpdate ) );
@@ -80,6 +86,16 @@ Event* EventManager::FindEvent( std::string_view name )
 			return event;
 
 	return nullptr;
+}
+
+void EventManager::Reset()
+{
+	m_pendingCycles = 0;
+	m_cyclesUntilNextEvent = 0;
+	m_nextEvent = nullptr;
+
+	for ( Event* event : m_events )
+		event->Cancel();
 }
 
 void EventManager::UpdateNextEvent()

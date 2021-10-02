@@ -15,14 +15,13 @@ using cycles_t = int32_t;
 
 using EventUpdateCallback = std::function<void( cycles_t )>;
 
+class EventManager;
+
 class Event
 {
 	friend class EventManager;
 
 public:
-	// Destroy event and remove from manager
-	~Event();
-
 	// Call update callback early with current accumulated cycles
 	void UpdateEarly();
 
@@ -76,6 +75,9 @@ class EventManager
 	friend class Event;
 
 public:
+	EventManager() = default;
+	~EventManager();
+
 	Event* CreateEvent( std::string name, EventUpdateCallback onUpdate );
 
 	Event* FindEvent( std::string_view name );
@@ -89,6 +91,8 @@ public:
 	}
 
 	cycles_t GetPendingCycles() const noexcept { return m_pendingCycles; }
+
+	void Reset();
 
 private:
 	// add pending cycles to events and update next event
