@@ -334,14 +334,14 @@ void CDRomDrive::QueueSecondResponse( Command command, int32_t ticks = 0x0004a00
 	// dbExpects( m_cyclesUntilSecondResponse == InfiniteCycles );
 
 	m_secondResponseCommand = command;
-	m_secondResponseEvent->Schedule( ticks, false );
+	m_secondResponseEvent->Schedule( ticks );
 }
 
 void CDRomDrive::CheckPendingCommand() noexcept
 {
 	// latest command doesn't send until the interrupt are cleared
 	if ( m_pendingCommand != Command::Invalid && m_interruptFlags == 0 )
-		m_firstResponseEvent->Schedule( GetFirstResponseCycles( m_pendingCommand ) );
+		m_firstResponseEvent->Schedule( GetFirstResponseCycles( m_pendingCommand ), true );
 }
 
 void CDRomDrive::CheckInterrupt() noexcept
