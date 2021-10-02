@@ -1,7 +1,7 @@
 #include "DMA.h"
 
 #include "CDRomDrive.h"
-#include "CycleScheduler.h"
+#include "EventManager.h"
 #include "GPU.h"
 #include "InterruptControl.h"
 
@@ -13,8 +13,9 @@ namespace PSX
 void Dma::Channel::Reset()
 {
 	m_baseAddress = 0;
-	m_blockControl = 0;
-	m_channelControl = 0;
+	m_blockSize = 0;
+	m_blockCount = 0;
+	m_control.value = 0;
 }
 
 uint32_t Dma::Channel::Read( uint32_t index ) const noexcept
@@ -23,13 +24,15 @@ uint32_t Dma::Channel::Read( uint32_t index ) const noexcept
 	switch ( index )
 	{
 		case Register::BaseAddress:		return m_baseAddress;
-		case Register::BlockControl:	return m_blockControl;
-		case Register::ChannelControl:	return m_channelControl;
-
-		default:
-			dbBreak();	
-			return 0;
+		case Register::BlockControl:	return m_blockSize | ( m_blockCount << 16 );
+		case Register::ChannelControl:	return m_control.value;
+		case Register::Unused:
+			dbLogWarning( "Dma::Channel::Read -- reading from unused register" );
+			return 0; // alway zero
 	}
+
+	dbBreak();
+	return uint32_t( -1 );
 }
 
 void Dma::Channel::Write( uint32_t index, uint32_t value ) noexcept
@@ -42,14 +45,16 @@ void Dma::Channel::Write( uint32_t index, uint32_t value ) noexcept
 			break;
 
 		case Register::BlockControl:
-			m_blockControl = value;
-
-		case Register::ChannelControl:
-			m_channelControl = value & ChannelControl::WriteMask;
+			m_blockSize = static_cast<uint16_t>( value );
+			m_blockCount = static_cast<uint16_t>( value >> 16 );
 			break;
 
-		default:
-			dbBreak();
+		case Register::ChannelControl:
+			m_control.value = value & Control::WriteMask;
+			break;
+
+		case Register::Unused:
+			dbLogWarning( "Dma::Channel::Write -- writing to unused register" );
 			break;
 	}
 }
@@ -70,7 +75,6 @@ uint32_t Dma::Channel::GetWordCount() const noexcept
 	}
 }
 
-
 void Dma::Reset()
 {
 	for ( auto& channel : m_channels )
@@ -83,22 +87,31 @@ void Dma::Reset()
 uint32_t Dma::Read( uint32_t index ) const noexcept
 {
 	dbExpects( index < 32 );
-	switch ( index )
+	switch ( static_cast<Register>( index ) )
 	{
-		default:	return m_channels[ index / 4 ].Read( index % 4 );
-		case 28:	return m_controlRegister;
-		case 29:	return m_interruptRegister | GetIrqMasterFlag() * InterruptRegister::IrqMasterFlag;
+		default:
+			return m_channels[ index / 4 ].Read( index % 4 );
 
-		// unused registers? garbage data?
-		case 30:	return 0x7ffac68b;
-		case 31:	return 0x00fffff7;
+		case Register::Control:
+			return m_controlRegister;
+
+		case Register::Interrupt:
+			return m_interruptRegister | ( GetIrqMasterFlag() ? InterruptRegister::IrqMasterFlag : 0 );
+
+		case Register::Unknown1:
+			dbLogWarning( "Dma::Read -- reading from unused register" );
+			return 0x7ffac68b;
+
+		case Register::Unknown2:
+			dbLogWarning( "Dma::Read -- reading from unused register" );
+			return 0x00fffff7;
 	}
 }
 
 void Dma::Write( uint32_t index, uint32_t value ) noexcept
 {
 	dbExpects( index < 32 );
-	switch ( index )
+	switch ( static_cast<Register>( index ) )
 	{
 		default:
 		{
@@ -106,7 +119,7 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 			const uint32_t registerIndex = index % 4;
 			auto& channel = m_channels[ channelIndex ];
 			channel.Write( registerIndex, value );
-			if ( registerIndex == Channel::Register::ChannelControl && channel.Active() )
+			if ( ( registerIndex == Channel::Register::ChannelControl ) && channel.Active() )
 			{
 				switch ( channel.GetSyncMode() )
 				{
@@ -120,7 +133,7 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 						break;
 
 					default:
-						dbBreakMessage( "invalid sync mode" );
+						dbLogWarning( "Dma::Write -- channel %u has unused sync mode", channelIndex );
 						break;
 				}
 			}
@@ -128,11 +141,11 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 			break;
 		}
 
-		case 28:
+		case Register::Control:
 			m_controlRegister = value;
 			break;
 
-		case 29:
+		case Register::Interrupt:
 		{
 			bool oldMasterIRQ = GetIrqMasterFlag();
 
@@ -146,9 +159,9 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 			break;
 		}
 
-		case 30:
-		case 31:
-			dbBreak();
+		case Register::Unknown1:
+		case Register::Unknown2:
+			dbLogWarning( "Dma::Write -- writing to unused register" );
 			break;
 	}
 }
@@ -178,14 +191,14 @@ void Dma::FinishTransfer( uint32_t channelIndex ) noexcept
 {
 	m_channels[ channelIndex ].SetTransferComplete();
 
-	const uint32_t enableMask = InterruptRegister::IrqMasterEnable | ( 1 << ( channelIndex + 16 ) );
+	const uint32_t enableMask = InterruptRegister::IrqMasterEnable | ( 1u << ( channelIndex + 16 ) );
 	if ( stdx::all_of( m_interruptRegister, enableMask ) )
 	{
 		// trigger IRQ on 0 to 1 of master flag
 		if ( !GetIrqMasterFlag() )
 			m_interruptControl.SetInterrupt( Interrupt::Dma );
 
-		m_interruptRegister |= ( 1 << ( channelIndex + 24 ) );
+		m_interruptRegister |= ( 1u << ( channelIndex + 24 ) );
 	}
 }
 
@@ -219,7 +232,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		dbLog( "\twriting %X bytes to %X", totalWords, address );
 		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
-			case ChannelIndex::MacroblockDecoderOut:
+			case ChannelIndex::MDecOut:
 			{
 				// TODO
 				dbLog( "ignoring MDEC-OUT to RAM DMA transfer" );
@@ -271,7 +284,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		dbLog( "\treading %X bytes from %X", totalWords, address );
 		switch ( static_cast<ChannelIndex>( channelIndex ) )
 		{
-			case ChannelIndex::MacroblockDecoderIn:
+			case ChannelIndex::MDecIn:
 			{
 				// TODO
 				dbLog( "ignoring RAM to MDEC-IN DMA transfer" );
@@ -304,7 +317,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 	FinishTransfer( channelIndex );
 
-	m_cycleScheduler.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalWords ) );
+	m_eventManager.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalWords ) );
 }
 
 void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
@@ -344,7 +357,7 @@ void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
 	// base address is updated at end of transfer
 	channel.SetBaseAddress( 0x00ffffff );
 
-	m_cycleScheduler.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalCount ) );
+	m_eventManager.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalCount ) );
 
 	FinishTransfer( channelIndex );
 }

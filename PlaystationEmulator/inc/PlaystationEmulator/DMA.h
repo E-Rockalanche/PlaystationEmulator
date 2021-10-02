@@ -11,7 +11,8 @@ namespace PSX
 {
 
 class CDRomDrive;
-class CycleScheduler;
+class Event;
+class EventManager;
 class Gpu;
 class InterruptControl;
 
@@ -20,8 +21,8 @@ class Dma
 public:
 	enum class ChannelIndex
 	{
-		MacroblockDecoderIn,
-		MacroblockDecoderOut,
+		MDecIn,
+		MDecOut,
 		Gpu,
 		CdRom,
 		Spu,
@@ -45,25 +46,33 @@ public:
 
 		static constexpr uint32_t BaseAddressMask = 0x00ffffff;
 
-		struct ChannelControl
+		union Control
 		{
-			enum : uint32_t
-			{
-				TransferDirection = 1u << 0,
-				MemoryAddressStep = 1u << 1,
-				ChoppingEnable = 1u << 8,
-				SyncModeMask = 0x3u << 9,
-				ChoppingDmaWindowSize = 0x7u << 16,
-				ChoppingCpuWindowSize = 0x7u << 20,
-				StartBusy = 1u << 24, // cleared on DMA completion
-				StartTrigger = 1u << 28, // cleared on DMA begin
-				Pause = 1u << 29,
-				Unknown = 1u << 30,
+			Control() : value{ 0 } {}
 
-				WriteMask = TransferDirection | MemoryAddressStep | ChoppingEnable | SyncModeMask | ChoppingDmaWindowSize |
-							ChoppingCpuWindowSize | StartBusy | StartTrigger | Pause | Unknown,
+			struct
+			{
+				uint32_t transferDirection : 1;
+				uint32_t memoryAddressStep : 1;
+				uint32_t : 6;
+				uint32_t choppingEnable : 1;
+				uint32_t syncMode : 2;
+				uint32_t : 5;
+				uint32_t choppingDmaWindowSize : 3;
+				uint32_t : 1;
+				uint32_t choppingCpuWindowSize : 3;
+				uint32_t : 1;
+				uint32_t startBusy : 1; // cleared on dma completion
+				uint32_t : 3;
+				uint32_t startTrigger : 1; // cleared on dma begin
+				uint32_t pause : 1;
+				uint32_t : 2;
 			};
+			uint32_t value;
+
+			static constexpr uint32_t WriteMask = 0x31770702;
 		};
+		static_assert( sizeof( Control ) == 4 );
 
 		enum class TransferDirection : uint32_t
 		{
@@ -86,11 +95,6 @@ public:
 		};
 
 	public:
-		Channel()
-		{
-			Reset();
-		}
-
 		void Reset();
 
 		uint32_t Read( uint32_t index ) const noexcept;
@@ -108,63 +112,67 @@ public:
 
 		uint32_t GetBaseAddress() const noexcept { return m_baseAddress; }
 
-		// block control register
-
-		uint32_t GetBlockSize() const noexcept
-		{
-			const uint32_t blockSize = m_blockControl & 0x0000ffff;
-			return blockSize != 0 ? blockSize : 0x00010000;
-		}
-
-		uint32_t GetBlockCount() const noexcept { return static_cast<uint16_t>( m_blockControl >> 16 ); }
-
-		// control register
-
-		TransferDirection GetTransferDirection() const noexcept
-		{
-			return static_cast<TransferDirection>( m_channelControl & ChannelControl::TransferDirection );
-		}
-
-		MemoryAddressStep GetMemoryAddressStep() const noexcept
-		{
-			return static_cast<MemoryAddressStep>( ( m_channelControl & ChannelControl::MemoryAddressStep ) >> 1 );
-		}
-
-		bool GetChoppingEnable() const noexcept { return m_channelControl & ChannelControl::ChoppingEnable; }
-
-		SyncMode GetSyncMode() const noexcept
-		{
-			return static_cast<SyncMode>( ( m_channelControl & ChannelControl::SyncModeMask ) >> 9 );
-		}
-
-		uint32_t GetChoppingDmaWindowSize() const noexcept
-		{
-			return ( m_channelControl & ChannelControl::ChoppingDmaWindowSize ) >> 16;
-		}
-
-		uint32_t GetChoppingCpuWindowSize() const noexcept
-		{
-			return ( m_channelControl & ChannelControl::ChoppingCpuWindowSize ) >> 20;
-		}
-
-		bool GetStartBusy() const noexcept { return m_channelControl & ChannelControl::StartBusy; }
-
-		bool GetStartTrigger() const noexcept { return m_channelControl & ChannelControl::StartTrigger; }
-
-		void SetTransferComplete() noexcept
-		{
-			m_channelControl &= ~( ChannelControl::StartBusy | ChannelControl::StartTrigger );
-		}
-
 		void SetBaseAddress( uint32_t address )
 		{
 			m_baseAddress = address & BaseAddressMask;
 		}
 
+		// block control register
+
+		uint32_t GetBlockSize() const noexcept
+		{
+			return ( m_blockSize != 0 ) ? static_cast<uint32_t>( m_blockSize ) : 0x00010000u;
+		}
+
+		uint32_t GetBlockCount() const noexcept { return m_blockCount; }
+
+		// control register
+
+		TransferDirection GetTransferDirection() const noexcept
+		{
+			return static_cast<TransferDirection>( m_control.transferDirection );
+		}
+
+		MemoryAddressStep GetMemoryAddressStep() const noexcept
+		{
+			return static_cast<MemoryAddressStep>( m_control.memoryAddressStep );
+		}
+
+		bool GetChoppingEnable() const noexcept
+		{
+			return m_control.choppingEnable;
+		}
+
+		SyncMode GetSyncMode() const noexcept
+		{
+			return static_cast<SyncMode>( m_control.syncMode );
+		}
+
+		uint32_t GetChoppingDmaWindowSize() const noexcept
+		{
+			return m_control.choppingDmaWindowSize;
+		}
+
+		uint32_t GetChoppingCpuWindowSize() const noexcept
+		{
+			return m_control.choppingCpuWindowSize;
+		}
+
+		bool GetStartBusy() const noexcept { return m_control.startBusy; }
+
+		bool GetStartTrigger() const noexcept { return m_control.startTrigger; }
+
+		void SetTransferComplete() noexcept
+		{
+			m_control.startBusy = false;
+			m_control.startTrigger = false;
+		}
+
 	private:
 		uint32_t m_baseAddress = 0;
-		uint32_t m_blockControl = 0;
-		uint32_t m_channelControl = 0;
+		uint16_t m_blockSize = 0;
+		uint16_t m_blockCount = 0;
+		Control m_control;
 	};
 
 	static constexpr uint32_t ControlRegisterResetValue = 0x07654321;
@@ -182,12 +190,12 @@ public:
 	};
 
 public:
-	Dma( Ram& ram, Gpu& gpu, CDRomDrive& cdromDRive, InterruptControl& interruptControl, CycleScheduler& cycleScheduler )
+	Dma( Ram& ram, Gpu& gpu, CDRomDrive& cdromDRive, InterruptControl& interruptControl, EventManager& eventManager )
 		: m_ram{ ram }
 		, m_gpu{ gpu }
 		, m_cdromDrive{ cdromDRive }
 		, m_interruptControl{ interruptControl }
-		, m_cycleScheduler{ cycleScheduler }
+		, m_eventManager{ eventManager }
 	{
 		Reset();
 	}
@@ -207,16 +215,28 @@ public:
 	uint32_t GetChannelPriority( uint32_t channel ) const noexcept
 	{
 		dbExpects( channel < 7 );
-		return ( m_controlRegister >> ( channel * 4 ) ) & 0x03;
+		return ( m_controlRegister >> ( channel * 4 ) ) & 0x03u;
 	}
 
 	bool GetChannelMasterEnable( uint32_t channel ) const noexcept
 	{
 		dbExpects( channel < 7 );
-		return m_controlRegister & ( 1 << ( 3 + channel * 4 ) );
+		return m_controlRegister & ( 1u << ( 3 + channel * 4 ) );
 	}
 
 	// interrupt register
+
+private:
+	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
+
+	enum class Register
+	{
+		// DMA0-DMA6
+		Control = ( 0x1F8010F0 - 0x1F801080 ) / 4,
+		Interrupt,
+		Unknown1,
+		Unknown2,
+	};
 
 private:
 	void FinishTransfer( uint32_t channelIndex ) noexcept;
@@ -237,13 +257,11 @@ private:
 	static uint32_t GetCyclesForTransfer( ChannelIndex channel, uint32_t words ) noexcept;
 
 private:
-	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
-
 	Ram& m_ram;
 	Gpu& m_gpu;
 	CDRomDrive& m_cdromDrive;
 	InterruptControl& m_interruptControl;
-	CycleScheduler& m_cycleScheduler;
+	EventManager& m_eventManager;
 
 	std::array<Channel, 7> m_channels;
 

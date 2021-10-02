@@ -3,6 +3,7 @@
 #include "CPU.h"
 #include "CycleScheduler.h"
 #include "DMA.h"
+#include "EventManager.h"
 #include "File.h"
 #include "GPU.h"
 #include "InterruptControl.h"
@@ -166,14 +167,16 @@ int main( int argc, char** argv )
 	auto scratchpad = std::make_unique<PSX::Scratchpad>();
 	scratchpad->Fill( 0xfe );
 
+	PSX::CycleScheduler cycleScheduler; // being replaced with event manager
+	cycleScheduler.Reset();
+
+	PSX::EventManager eventManager;
+
 	PSX::MemoryControl memControl;
 	memControl.Reset();
 
 	PSX::InterruptControl interruptControl;
 	interruptControl.Reset();
-
-	PSX::CycleScheduler cycleScheduler;
-	cycleScheduler.Reset();
 
 	PSX::Timers timers{ interruptControl, cycleScheduler };
 	timers.Reset();
@@ -183,10 +186,10 @@ int main( int argc, char** argv )
 
 	PSX::Spu spu;
 
-	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
+	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, eventManager );
 	cdRomDrive->Reset();
 
-	PSX::Dma dma{ *ram, gpu, *cdRomDrive, interruptControl, cycleScheduler };
+	PSX::Dma dma{ *ram, gpu, *cdRomDrive, interruptControl, eventManager };
 	dma.Reset();
 
 	PSX::ControllerPorts controllerPorts{ interruptControl, cycleScheduler };
