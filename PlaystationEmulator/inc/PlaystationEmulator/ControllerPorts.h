@@ -84,7 +84,7 @@ public:
 		};
 	};
 
-	ControllerPorts( InterruptControl& interruptControl, CycleScheduler& cycleScheduler );
+	ControllerPorts( InterruptControl& interruptControl, EventManager& eventManager );
 
 	void Reset();
 
@@ -186,17 +186,12 @@ private:
 
 	void UpdateCycles( uint32_t cycles );
 
-	uint32_t GetCyclesUntilEvent() const noexcept
-	{
-		return ( m_state == State::Idle ) ? std::numeric_limits<uint32_t>::max() : m_cyclesUntilEvent;
-	}
-
 	// TEMP until the cycles shceduler is improved
 	void UpdateCyclesBeforeRead() const noexcept;
 
 private:
 	InterruptControl& m_interruptControl;
-	CycleScheduler& m_cycleScheduler;
+	Event* m_communicateEvent = nullptr;
 
 	uint32_t m_status = 0;
 	uint32_t m_baudrateTimer = 0;
