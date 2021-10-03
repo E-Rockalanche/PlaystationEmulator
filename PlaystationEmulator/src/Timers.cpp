@@ -198,9 +198,8 @@ void Timer::PauseAtTarget() noexcept
 	m_paused = true;
 }
 
-Timers::Timers( InterruptControl& interruptControl, Gpu& gpu, EventManager& eventManager )
+Timers::Timers( InterruptControl& interruptControl, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
-	, m_gpu{ gpu }
 {
 	m_timerEvent = eventManager.CreateEvent( "Timer event", [this]( cycles_t cycles ) { AddCycles( cycles ); } );
 }
@@ -221,7 +220,7 @@ void Timers::UpdateEventsEarly( uint32_t timerIndex )
 	{
 		auto& timer = m_timers[ timerIndex ];
 		if ( timer.GetSyncEnable() || !timer.IsUsingSystemClock() )
-			m_gpu.UpdateClockEventEarly();
+			m_gpu->UpdateClockEventEarly();
 	}
 
 	m_timerEvent->UpdateEarly();
@@ -302,7 +301,7 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	if ( timer.IsUsingSystemClock() || timerIndex == 2 )
 		ScheduleNextIrq();
 	else
-		m_gpu.ScheduleNextEvent();
+		m_gpu->ScheduleNextEvent();
 }
 
 void Timers::AddCycles( cycles_t cycles ) noexcept

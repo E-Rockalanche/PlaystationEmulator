@@ -70,13 +70,13 @@ int main( int argc, char** argv )
 
 	dbCheckRenderErrors();
 
-	PSX::Playstation playstationCore;
-	if ( !playstationCore.Initialize( window, "bios.bin" ) )
+	auto playstationCore = std::make_unique<PSX::Playstation>();
+	if ( !playstationCore->Initialize( window, "bios.bin" ) )
 		return 1;
 
 	// controller mapping
 	PSX::Controller controller;
-	playstationCore.SetController( 0, &controller );
+	playstationCore->SetController( 0, &controller );
 
 	stdx::flat_unordered_map<SDL_Keycode, PSX::Button> controllerMapping
 	{
@@ -97,19 +97,9 @@ int main( int argc, char** argv )
 	};
 
 	if ( stdx::ends_with( filename, ".bin" ) )
-		playstationCore.LoadRom( filename.data() );
+		playstationCore->LoadRom( filename.data() );
 	else if ( stdx::ends_with( filename, ".exe" ) )
-		playstationCore.HookExe( filename.data() );
-
-	eventManager.Reset();
-	memControl.Reset();
-	interruptControl.Reset();
-	timers.Reset();
-	gpu.Reset();
-	cdRomDrive->Reset();
-	dma.Reset();
-	controllerPorts.Reset();
-	cpu->Reset();
+		playstationCore->HookExe( filename.data() );
 
 	bool quit = false;
 	bool paused = false;
@@ -161,7 +151,7 @@ int main( int argc, char** argv )
 
 						case SDLK_F6:
 							// toggle vram view
-							playstationCore.GetRenderer().EnableVRamView( !playstationCore.GetRenderer().IsVRamViewEnabled() );
+							playstationCore->GetRenderer().EnableVRamView( !playstationCore->GetRenderer().IsVRamViewEnabled() );
 							break;
 
 						case SDLK_F9:
@@ -201,14 +191,14 @@ int main( int argc, char** argv )
 		{
 			stepFrame = false;
 
-			playstationCore.RunFrame();
+			playstationCore->RunFrame();
 		}
 		else
 		{
-			playstationCore.GetRenderer().DisplayFrame();
+			playstationCore->GetRenderer().DisplayFrame();
 		}
 
-		const auto refreshRate = playstationCore.GetRefreshRate();
+		const auto refreshRate = playstationCore->GetRefreshRate();
 		const float targetMilliseconds = 1000.0f / refreshRate;
 
 		const uint32_t curTicks = SDL_GetTicks();
@@ -221,9 +211,9 @@ int main( int argc, char** argv )
 
 		const float curFps = std::min<float>( 1000.0f / elapsed, refreshRate );
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
-
-		Log( "FPS: %.1f", curFps );
 	}
+
+	playstationCore.reset();
 
 	SDL_GL_DeleteContext( glContext );
 	SDL_DestroyWindow( window );

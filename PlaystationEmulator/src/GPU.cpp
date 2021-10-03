@@ -105,9 +105,8 @@ struct Color
 }
 
 
-Gpu::Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
-	: m_timers{ timers }
-	, m_interruptControl{ interruptControl }
+Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
+	: m_interruptControl{ interruptControl }
 	, m_renderer{ renderer }
 	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
@@ -939,7 +938,7 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuCycles ) );
 	const float dots = gpuTicks * GetDotsPerVideoCycle();
 
-	auto& dotTimer = m_timers[ 0 ];
+	auto& dotTimer = m_timers->GetTimer( 0 );
 	if ( !dotTimer.IsUsingSystemClock() )
 	{
 		m_dotTimerFraction += dots;
@@ -964,7 +963,7 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	if ( dotTimer.GetSyncEnable() )
 		dotTimer.UpdateBlank( hblank );
 
-	auto& hblankTimer = m_timers[ 1 ];
+	auto& hblankTimer = m_timers->GetTimer( 1 );
 	if ( !hblankTimer.IsUsingSystemClock() )
 	{
 		const uint32_t lines = static_cast<uint32_t>( dots / dotsPerScanline );
@@ -1004,7 +1003,7 @@ void Gpu::ScheduleNextEvent()
 
 	const float dotsPerCycle = GetDotsPerVideoCycle();
 
-	auto& dotTimer = m_timers[ 0 ];
+	auto& dotTimer = m_timers->GetTimer( 0 );
 	if ( dotTimer.GetSyncEnable() ) // dot timer synchronizes with hblanks
 	{
 		const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / dotsPerCycle;
@@ -1012,7 +1011,7 @@ void Gpu::ScheduleNextEvent()
 		gpuTicks = std::min( gpuTicks, ticksUntilHblankChange );
 	}
 
-	if ( !dotTimer.GetPaused() && dotTimer.GetClockSource() % 2 )
+	if ( !dotTimer.IsUsingSystemClock() && !dotTimer.GetPaused() )
 	{
 		const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / dotsPerCycle;
 
@@ -1023,8 +1022,8 @@ void Gpu::ScheduleNextEvent()
 	const float ticksUntilVblankChange = linesUntilVblankChange * GetVideoCyclesPerScanline() - m_currentDot / dotsPerCycle;
 	gpuTicks = std::min( gpuTicks, ticksUntilVblankChange );
 
-	auto& hblankTimer = m_timers[ 1 ];
-	if ( !hblankTimer.GetPaused() && hblankTimer.GetClockSource() % 2 )
+	auto& hblankTimer = m_timers->GetTimer( 1 );
+	if ( !hblankTimer.IsUsingSystemClock() && !hblankTimer.GetPaused() )
 	{
 		const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / dotsPerCycle;
 		const float ticksUntilIrq = hblankTimer.GetTicksUntilIrq() * GetVideoCyclesPerScanline() - ticksUntilHblank;

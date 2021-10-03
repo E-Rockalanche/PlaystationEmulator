@@ -6,12 +6,12 @@
 #include <limits>
 #include <memory>
 
+struct SDL_Window;
+
 namespace PSX
 {
 
 using cycles_t = int;
-
-struct SDL_Window;
 
 constexpr cycles_t InfiniteCycles = std::numeric_limits<cycles_t>::max();
 

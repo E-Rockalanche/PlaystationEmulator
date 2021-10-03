@@ -122,12 +122,14 @@ private:
 class Timers
 {
 public:
-	Timers( InterruptControl& interruptControl, Gpu& gpu, EventManager& eventManager );
+	Timers( InterruptControl& interruptControl, EventManager& eventManager );
 	~Timers();
+
+	void SetGpu( Gpu& gpu ) { m_gpu = &gpu; }
 
 	void Reset();
 
-	Timer& operator[]( size_t index ) noexcept
+	Timer& GetTimer( size_t index ) noexcept
 	{
 		return m_timers[ index ];
 	}
@@ -151,7 +153,7 @@ private:
 
 private:
 	InterruptControl& m_interruptControl;
-	Gpu& m_gpu;
+	Gpu* m_gpu = nullptr; // circular dependency
 	EventHandle m_timerEvent;
 
 	std::array<Timer, 3> m_timers{ Timer( 0 ), Timer( 1 ), Timer( 2 ) };

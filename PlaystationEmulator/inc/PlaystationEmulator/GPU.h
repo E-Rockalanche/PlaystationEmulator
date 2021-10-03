@@ -35,8 +35,10 @@ constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
 class Gpu
 {
 public:
-	Gpu( Timers& timers, InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager );
+	Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager );
 	~Gpu();
+
+	void SetTimers( Timers& timers ) { m_timers = &timers; }
 
 	void Reset();
 
@@ -203,9 +205,9 @@ private:
 	void UpdateCycles( cycles_t cpuCycles ) noexcept;
 
 private:
-	Timers& m_timers;
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
+	Timers* m_timers = nullptr; // circular dependency
 	EventHandle m_clockEvent;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;

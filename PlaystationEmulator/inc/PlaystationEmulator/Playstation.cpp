@@ -6,8 +6,8 @@
 #include "Controller.h"
 #include "ControllerPorts.h"
 #include "CPU.h"
-#include "CycleScheduler.h"
 #include "DMA.h"
+#include "EventManager.h"
 #include "File.h"
 #include "GPU.h"
 #include "MemoryControl.h"
@@ -42,22 +42,26 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 
 	m_memoryControl = std::make_unique<MemoryControl>();
 	m_interruptControl = std::make_unique<InterruptControl>();
-	m_cycleScheduler = std::make_unique<CycleScheduler>();
+	m_eventManager = std::make_unique<EventManager>();
 	m_spu = std::make_unique<Spu>();
 
-	m_timers = std::make_unique<Timers>( *m_interruptControl, *m_cycleScheduler );
+	m_timers = std::make_unique<Timers>( *m_interruptControl, *m_eventManager );
 
-	m_gpu = std::make_unique<Gpu>( *m_timers, *m_interruptControl, *m_renderer, *m_cycleScheduler );
+	m_gpu = std::make_unique<Gpu>( *m_interruptControl, *m_renderer, *m_eventManager );
 
-	m_cdromDrive = std::make_unique<CDRomDrive>( *m_interruptControl, *m_cycleScheduler );
+	m_cdromDrive = std::make_unique<CDRomDrive>( *m_interruptControl, *m_eventManager );
 
-	m_dma = std::make_unique<Dma>( *m_ram, *m_gpu, *m_cdromDrive, *m_interruptControl, *m_cycleScheduler );
+	m_dma = std::make_unique<Dma>( *m_ram, *m_gpu, *m_cdromDrive, *m_interruptControl, *m_eventManager );
 
-	m_controllerPorts = std::make_unique<ControllerPorts>( *m_interruptControl, *m_cycleScheduler );
+	m_controllerPorts = std::make_unique<ControllerPorts>( *m_interruptControl, *m_eventManager );
 
 	m_memoryMap = std::make_unique<MemoryMap>( *m_ram, *m_scratchpad, *m_memoryControl, *m_controllerPorts, *m_interruptControl, *m_dma, *m_timers, *m_cdromDrive, *m_gpu, *m_spu, *m_bios );
 
-	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_ram, *m_bios, *m_scratchpad, *m_interruptControl, *m_cycleScheduler );
+	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_ram, *m_bios, *m_scratchpad, *m_interruptControl, *m_eventManager );
+
+	// resolve circular dependancy
+	m_timers->SetGpu( *m_gpu );
+	m_gpu->SetTimers( *m_timers );
 
 	Reset();
 
@@ -69,16 +73,14 @@ void Playstation::Reset()
 	m_cdromDrive->Reset();
 	m_controllerPorts->Reset();
 	m_cpu->Reset();
-	m_cycleScheduler->Reset();
+	m_eventManager->Reset();
 	m_dma->Reset();
-	m_gpu->Reset();
 	m_interruptControl->Reset();
 	m_memoryControl->Reset();
 	m_renderer->Reset();
 	m_spu->Reset();
 	m_timers->Reset();
-
-	m_cycleScheduler->ScheduleNextUpdate();
+	m_gpu->Reset(); // must go after timers reset so it can schedule event
 }
 
 void Playstation::SetController( size_t slot, Controller* controller )
