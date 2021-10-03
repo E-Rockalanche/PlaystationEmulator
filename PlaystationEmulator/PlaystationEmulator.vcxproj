@@ -168,6 +168,7 @@
     <ClInclude Include="inc\PlaystationEmulator\ClutShader.h" />
     <ClInclude Include="inc\PlaystationEmulator\Controller.h" />
     <ClInclude Include="inc\PlaystationEmulator\CycleScheduler.h" />
+    <ClInclude Include="inc\PlaystationEmulator\Defs.h" />
     <ClInclude Include="inc\PlaystationEmulator\DualSerialPort.h" />
     <ClInclude Include="inc\PlaystationEmulator\FifoBuffer.h" />
     <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
