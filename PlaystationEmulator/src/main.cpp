@@ -1,18 +1,6 @@
-#include "BIOS.h"
-#include "CDRomDrive.h"
-#include "CPU.h"
-#include "CycleScheduler.h"
-#include "DMA.h"
-#include "File.h"
-#include "GPU.h"
-#include "InterruptControl.h"
-#include "MemoryControl.h"
-#include "MemoryMap.h"
+#include "Playstation.h"
 #include "Controller.h"
-#include "ControllerPorts.h"
-#include "RAM.h"
 #include "Renderer.h"
-#include "Timers.h"
 
 #include <Render/Error.h>
 
@@ -22,6 +10,7 @@
 #include <stdx/flat_unordered_map.h>
 #include <stdx/string.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -81,58 +70,13 @@ int main( int argc, char** argv )
 
 	dbCheckRenderErrors();
 
-	PSX::Renderer renderer;
-	if ( !renderer.Initialize( window ) )
+	PSX::Playstation playstationCore;
+	if ( !playstationCore.Initialize( window, "bios.bin" ) )
 		return 1;
-	
-	auto bios = std::make_unique<PSX::Bios>();
-	bios->Fill( 0xfe );
-	if ( !PSX::LoadBios( "bios.bin", *bios ) )
-	{
-		std::cout << "could not find BIOS" << std::endl;
-		return 1;
-	}
-
-	auto ram = std::make_unique<PSX::Ram>();
-	ram->Fill( 0xfe );
-
-	auto scratchpad = std::make_unique<PSX::Scratchpad>();
-	scratchpad->Fill( 0xfe );
-
-	PSX::MemoryControl memControl;
-	memControl.Reset();
-
-	PSX::InterruptControl interruptControl;
-	interruptControl.Reset();
-
-	PSX::CycleScheduler cycleScheduler;
-	cycleScheduler.Reset();
-
-	PSX::Timers timers{ interruptControl, cycleScheduler };
-	timers.Reset();
-
-	PSX::Gpu gpu{ timers, interruptControl, renderer, cycleScheduler };
-	gpu.Reset();
-
-	PSX::Spu spu;
-
-	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, cycleScheduler );
-	cdRomDrive->Reset();
-
-	PSX::Dma dma{ *ram, gpu, *cdRomDrive, interruptControl, cycleScheduler };
-	dma.Reset();
-
-	PSX::ControllerPorts controllerPorts{ interruptControl, cycleScheduler };
-	controllerPorts.Reset();
-
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, spu, *bios };
-
-	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, cycleScheduler );
-	cpu->Reset();
 
 	// controller mapping
 	PSX::Controller controller;
-	controllerPorts.SetController( 0, &controller );
+	playstationCore.SetController( 0, &controller );
 
 	stdx::flat_unordered_map<SDL_Keycode, PSX::Button> controllerMapping
 	{
@@ -153,15 +97,9 @@ int main( int argc, char** argv )
 	};
 
 	if ( stdx::ends_with( filename, ".bin" ) )
-	{
-		auto cdrom = std::make_unique<PSX::CDRom>();
-		if ( cdrom->Open( filename.data() ) )
-			cdRomDrive->SetCDRom( std::move( cdrom ) );
-	}
-
-	cycleScheduler.ScheduleNextUpdate();
-
-	bool hookEXE = stdx::ends_with( filename, ".exe" );
+		playstationCore.LoadRom( filename.data() );
+	else if ( stdx::ends_with( filename, ".exe" ) )
+		playstationCore.HookExe( filename.data() );
 
 	bool quit = false;
 	bool paused = false;
@@ -199,12 +137,12 @@ int main( int argc, char** argv )
 
 						case SDLK_F3:
 							// toggle trace logging
-							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
+							// cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
 							break;
 
 						case SDLK_F4:
 							// toggle kernel logging
-							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
+							// cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
 							break;
 
 						case SDLK_F5:
@@ -213,7 +151,7 @@ int main( int argc, char** argv )
 
 						case SDLK_F6:
 							// toggle vram view
-							renderer.EnableVRamView( !renderer.IsVRamViewEnabled() );
+							playstationCore.GetRenderer().EnableVRamView( !playstationCore.GetRenderer().IsVRamViewEnabled() );
 							break;
 
 						case SDLK_F9:
@@ -253,23 +191,14 @@ int main( int argc, char** argv )
 		{
 			stepFrame = false;
 
-			// run frame
-			while ( !gpu.GetDisplayFrame() )
-			{
-				if ( hookEXE && cpu->GetPC() == HookAddress )
-				{
-					hookEXE = false;
-					LoadExecutable( filename.data(), *cpu, *ram );
-				}
-
-				cpu->Tick();
-			}
+			playstationCore.RunFrame();
+		}
+		else
+		{
+			playstationCore.GetRenderer().DisplayFrame();
 		}
 
-		gpu.ResetDisplayFrame();
-		renderer.DisplayFrame();
-
-		const auto refreshRate = gpu.GetRefreshRate();
+		const auto refreshRate = playstationCore.GetRefreshRate();
 		const float targetMilliseconds = 1000.0f / refreshRate;
 
 		const uint32_t curTicks = SDL_GetTicks();
@@ -280,8 +209,10 @@ int main( int argc, char** argv )
 
 		ticks = curTicks;
 
-		const float curFps = std::min( 1000.0f / elapsed, refreshRate );
+		const float curFps = std::min<float>( 1000.0f / elapsed, refreshRate );
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
+
+		Log( "FPS: %.1f", curFps );
 	}
 
 	SDL_GL_DeleteContext( glContext );

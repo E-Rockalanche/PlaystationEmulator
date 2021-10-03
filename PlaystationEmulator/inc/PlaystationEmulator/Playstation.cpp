@@ -38,7 +38,7 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 	}
 
 	m_ram = std::make_unique<Ram>();
-	m_scratchpad = std::unique_ptr<Scratchpad>();
+	m_scratchpad = std::make_unique<Scratchpad>();
 
 	m_memoryControl = std::make_unique<MemoryControl>();
 	m_interruptControl = std::make_unique<InterruptControl>();
@@ -103,6 +103,23 @@ void Playstation::RunFrame()
 
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
+}
+
+void Playstation::LoadRom( const char* filename )
+{
+	auto cdrom = std::make_unique<PSX::CDRom>();
+	if ( cdrom->Open( filename ) )
+		m_cdromDrive->SetCDRom( std::move( cdrom ) );
+}
+
+void Playstation::HookExe( const char* filename )
+{
+	m_exeFilename = filename;
+}
+
+float Playstation::GetRefreshRate() const
+{
+	return m_gpu->GetRefreshRate();
 }
 
 }

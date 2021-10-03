@@ -21,7 +21,11 @@ public:
 
 	void RunFrame();
 
+	void LoadRom( const char* filename );
+
 	void HookExe( const char* filename );
+
+	float GetRefreshRate() const;
 
 public:
 	Bios&				GetBios()				{ dbAssert( m_bios ); return *m_bios; }
