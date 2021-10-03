@@ -192,6 +192,7 @@
     <ClInclude Include="inc\PlaystationEmulator\Timers.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="inc\PlaystationEmulator\Playstation.cpp" />
     <ClCompile Include="src\BIOS.cpp" />
     <ClCompile Include="src\CDRomDrive.cpp" />
     <ClCompile Include="src\Controller.cpp" />
@@ -200,6 +201,7 @@
     <ClCompile Include="src\CPU.cpp" />
     <ClCompile Include="src\CycleScheduler.cpp" />
     <ClCompile Include="src\DMA.cpp" />
+    <ClCompile Include="src\File.cpp" />
     <ClCompile Include="src\GTE.cpp" />
     <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />

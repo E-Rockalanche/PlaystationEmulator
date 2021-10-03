@@ -146,5 +146,11 @@
     <ClCompile Include="src\SPU.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="inc\PlaystationEmulator\Playstation.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\File.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

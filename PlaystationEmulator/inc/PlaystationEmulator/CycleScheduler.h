@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Defs.h"
+
 #include <stdx/assert.h>
 
 #include <algorithm>
@@ -10,14 +12,12 @@
 namespace PSX
 {
 
-constexpr uint32_t InfiniteCycles = std::numeric_limits<uint32_t>::max();
-
 class CycleScheduler
 {
 public:
 
-	using UpdateFunction = std::function<void( uint32_t )>;
-	using GetCyclesFunction = std::function<uint32_t()>;
+	using UpdateFunction = std::function<void( cycles_t )>;
+	using GetCyclesFunction = std::function<cycles_t()>;
 
 	void Register( UpdateFunction update, GetCyclesFunction getCycles )
 	{
@@ -33,7 +33,7 @@ public:
 	}
 
 	// add any amount of cycles to trigger one or more events
-	void AddCycles( uint32_t cycles ) noexcept;
+	void AddCycles( cycles_t cycles ) noexcept;
 
 	// update cycles early (typically called before accessing registers that could alter the result)
 	void UpdateEarly() noexcept
@@ -48,13 +48,13 @@ public:
 	// calculates cycles until next event
 	void ScheduleNextUpdate() noexcept;
 
-	uint32_t GetCycles() const noexcept
+	cycles_t GetCycles() const noexcept
 	{
 		dbExpects( !m_inUpdate ); // unsafe to get cycles while updating
 		return m_cycles;
 	}
 
-	uint32_t GetCyclesUntilEvent() const noexcept
+	cycles_t GetCyclesUntilEvent() const noexcept
 	{
 		dbExpects( !m_inUpdate ); // unsafe to get cycles while updating
 		return m_cyclesUntilEvent;
@@ -63,7 +63,7 @@ public:
 	bool IsUpdating() const noexcept { return m_inUpdate; }
 
 private:
-	void UpdateCycles( uint32_t cycles ) noexcept;
+	void UpdateCycles( cycles_t cycles ) noexcept;
 
 private:
 	struct Subscription
@@ -74,8 +74,8 @@ private:
 
 	std::vector<Subscription> m_subscriptions;
 
-	uint32_t m_cycles = 0;
-	uint32_t m_cyclesUntilEvent = 0;
+	cycles_t m_cycles = 0;
+	cycles_t m_cyclesUntilEvent = 0;
 
 	bool m_inUpdate = false;
 };

@@ -5,7 +5,7 @@
 namespace PSX
 {
 
-void CycleScheduler::AddCycles( uint32_t cycles ) noexcept
+void CycleScheduler::AddCycles( cycles_t cycles ) noexcept
 {
 	dbExpects( !m_inUpdate ); // unsafe to add cycles while updating
 
@@ -22,7 +22,7 @@ void CycleScheduler::AddCycles( uint32_t cycles ) noexcept
 	}
 }
 
-void CycleScheduler::UpdateCycles( uint32_t cycles ) noexcept
+void CycleScheduler::UpdateCycles( cycles_t cycles ) noexcept
 {
 	dbExpects( !m_inUpdate ); // cannot recursively call UpdateCycles()
 	dbExpects( cycles > 0 );
@@ -40,7 +40,7 @@ void CycleScheduler::ScheduleNextUpdate() noexcept
 {
 	dbExpects( !m_inUpdate ); // unsafe to schedule update while updating
 
-	m_cyclesUntilEvent = std::numeric_limits<uint32_t>::max();
+	m_cyclesUntilEvent = std::numeric_limits<cycles_t>::max();
 	for ( const auto& subscription : m_subscriptions )
 		m_cyclesUntilEvent = ( std::min )( m_cyclesUntilEvent, subscription.getCycles() );
 }
