@@ -234,13 +234,13 @@ int main( int argc, char** argv )
 	bool paused = false;
 	bool stepFrame = false;
 
-	float avgFPS = 60.0f;
-	static constexpr float AvgFpsSmoothing = 1.0f / 10.0f;
+	float avgFps = 0.0f;
+	static constexpr float FpsSmoothing = 0.9f;
+
+	uint32_t ticks = SDL_GetTicks();
 
 	while ( !quit )
 	{
-		const uint32_t frameStart = SDL_GetTicks();
-
 		SDL_Event event;
 		while ( SDL_PollEvent( &event ) )
 		{
@@ -306,11 +306,11 @@ int main( int argc, char** argv )
 			}
 		}
 
-		// add fps to window title
+		// add averageFps to window title
 		{
 			static constexpr size_t BufferSize = 1024;
 			char cbuf[ BufferSize ];
-			std::snprintf( cbuf, BufferSize, "%s - fps:%.1f", windowTitle.c_str(), avgFPS );
+			std::snprintf( cbuf, BufferSize, "%s - averageFps:%.1f", windowTitle.c_str(), avgFps );
 			SDL_SetWindowTitle( window, cbuf );
 		}
 
@@ -336,14 +336,19 @@ int main( int argc, char** argv )
 		gpu.ResetDisplayFrame();
 		renderer.DisplayFrame();
 
-		const uint32_t elapsed = SDL_GetTicks() - frameStart;
-		const auto TargetMilliseconds = static_cast<uint32_t>( 1000.0f / gpu.GetRefreshRate() );
+		const auto refreshRate = gpu.GetRefreshRate();
+		const float targetMilliseconds = 1000.0f / refreshRate;
 
-		const float curFPS = 1000.0f / elapsed;
-		avgFPS = avgFPS * AvgFpsSmoothing + curFPS * ( 1.0f - AvgFpsSmoothing );
+		const uint32_t curTicks = SDL_GetTicks();
+		const uint32_t elapsed = curTicks - ticks;
 
-		if ( elapsed < TargetMilliseconds )
-			SDL_Delay( TargetMilliseconds - elapsed );
+		if ( elapsed < targetMilliseconds )
+			SDL_Delay( static_cast<uint32_t>( targetMilliseconds - elapsed ) );
+
+		ticks = curTicks;
+
+		const float curFps = std::min( 1000.0f / elapsed, refreshRate );
+		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
 	}
 
 	SDL_GL_DeleteContext( glContext );
