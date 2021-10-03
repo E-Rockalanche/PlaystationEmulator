@@ -2,79 +2,49 @@
 
 #include "EventManager.h"
 #include "InterruptControl.h"
+#include "GPU.h"
 
 namespace PSX
 {
 
-uint32_t Timer::Read( uint32_t index ) noexcept
+void Timer::Reset()
 {
-	dbExpects( index < 3 );
-	switch ( index )
-	{
-		case 0:
-			// Timer2 counter is read a LOT
-			// dbLog( "Timer%u::Read() -- counter [%X]", m_index, m_counter );
-			return m_counter;
-
-		case 1:
-		{
-			dbLog( "Timer%u::Read() -- mode [%X]", m_index, m_mode.value );
-			const uint32_t value = m_mode.value;
-			m_mode.reachedTarget = false;
-			m_mode.reachedMax = false;
-			return value;
-		}
-
-		case 2:
-			dbLog( "Timer%u::Read() -- target [%X]", m_index, m_target );
-			return m_target;
-
-		default:
-			dbBreak();
-			return 0;
-	}
+	m_counter = 0;
+	m_mode.value = 0;
+	m_mode.noInterruptRequest = true;
+	m_target = 0;
+	m_irq = false;
+	m_paused = false;
+	m_inBlank = false;
+	m_useSystemClock = true;
 }
 
-void Timer::Write( uint32_t index, uint16_t value ) noexcept
+uint32_t Timer::ReadMode() noexcept
 {
-	dbExpects( index < 3 );
-	switch ( index )
-	{
-		case 0:
-			dbLog( "Timer%u::Write() -- counter [%X]", m_index, value );
-			m_counter = value;
-			// TODO: this can trigger an IRQ?
-			break;
+	const uint32_t value = m_mode.value;
+	m_mode.reachedTarget = false;
+	m_mode.reachedMax = false;
+	return value;
+}
 
-		case 1:
-		{
-			dbLog( "Timer%u::Write() -- mode [%X]", m_index, value );
-			static constexpr uint32_t WriteMask = 0b1110001111111111;
-			stdx::masked_set<uint32_t>( m_mode.value, WriteMask, value );
+void Timer::SetMode( uint32_t mode ) noexcept
+{
+	static constexpr uint32_t WriteMask = 0b1110001111111111;
+	stdx::masked_set<uint32_t>( m_mode.value, WriteMask, mode );
 
-			// reset IRQ on write
-			m_irq = false;
+	// reset IRQ on write
+	m_irq = false;
 
-			// reset counter on write
-			m_counter = 0;
+	// reset counter on write
+	m_counter = 0;
 
-			// In Toggle mode, Bit10 is set after writing to the Mode register, and becomes inverted on each IRQ
-			if ( m_mode.irqToggle )
-				m_mode.noInterruptRequest = true;
+	// In Toggle mode, Bit10 is set after writing to the Mode register, and becomes inverted on each IRQ
+	if ( m_mode.irqToggle )
+		m_mode.noInterruptRequest = true;
 
-			UpdatePaused();
+	UpdatePaused();
 
-			// TODO: this can trigger an IRQ?
-			break;
-		}
-
-		case 2:
-			dbLog( "Timer%u::Write() -- target [%X]", m_index, value );
-			m_target = value;
-
-			// TODO: this can trigger an IRQ?
-			break;
-	}
+	// TODO: this can trigger an IRQ?
 }
 
 void Timer::UpdateBlank( bool blanked ) noexcept
@@ -165,13 +135,6 @@ bool Timer::Update( uint32_t ticks ) noexcept
 		m_mode.reachedTarget = true;
 		irq |= m_mode.irqOnTarget;
 
-		/*
-		// TODO: does counter continue if target is 0?
-		if ( m_mode.resetCounter )
-			m_counter = ( m_target > 0 ) ? ( m_counter % m_target ) : 0;
-		*/
-
-		// duckstation does this
 		if ( m_mode.resetCounter && m_target > 0 )
 			m_counter %= m_target;
 	}
@@ -235,10 +198,11 @@ void Timer::PauseAtTarget() noexcept
 	m_paused = true;
 }
 
-Timers::Timers( InterruptControl& interruptControl, EventManager& eventManager )
+Timers::Timers( InterruptControl& interruptControl, Gpu& gpu, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
+	, m_gpu{ gpu }
 {
-	m_timerEvent = eventManager.CreateEvent( "Timers event", [this]( cycles_t cycles ) { AddCycles( cycles ); } );
+	m_timerEvent = eventManager.CreateEvent( "Timer event", [this]( cycles_t cycles ) { AddCycles( cycles ); } );
 }
 
 Timers::~Timers() = default;
@@ -251,94 +215,138 @@ void Timers::Reset()
 	m_cyclesDiv8Remainder = 0;
 }
 
+void Timers::UpdateEventsEarly( uint32_t timerIndex )
+{
+	if ( timerIndex < 2 )
+	{
+		auto& timer = m_timers[ timerIndex ];
+		if ( timer.GetSyncEnable() || !timer.IsUsingSystemClock() )
+			m_gpu.UpdateClockEventEarly();
+	}
+
+	m_timerEvent->UpdateEarly();
+}
+
 uint32_t Timers::Read( uint32_t offset ) noexcept
 {
 	const uint32_t timerIndex = offset / 4;
-	dbAssert( timerIndex < 3 );
-
-	const uint32_t registerIndex = offset % 4;
-	dbAssert( registerIndex < 3 );
-
-	if ( registerIndex < 3 )
+	if ( timerIndex >= 3 )
 	{
-		m_timerEvent->UpdateEarly();
-		const auto value = m_timers[ timerIndex ].Read( registerIndex );
-		ScheduleNextIrq();
-		return value;
+		dbLogWarning( "Timers::Read -- invalid timer" );
+		return 0xffffffffu;
 	}
-	else
+
+	auto& timer = m_timers[ timerIndex ];
+
+	switch ( static_cast<TimerRegister>( offset % 4 ) )
 	{
-		dbLogError( "Timers::Read() -- read from 4th register" );
-		return 0;
+		case TimerRegister::Counter:
+			UpdateEventsEarly( timerIndex );
+			return timer.GetCounter();
+
+		case TimerRegister::Mode:
+			UpdateEventsEarly( timerIndex );
+			return timer.ReadMode();
+
+		case TimerRegister::Target:
+			return timer.GetTarget();
+
+		default:
+			dbLogWarning( "Timers::Read -- invalid timer register" );
+			return 0xffffffffu;
 	}
 }
 
 void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 {
 	const uint32_t timerIndex = offset / 4;
-	dbAssert( timerIndex < 3 );
-
-	const uint32_t registerIndex = offset % 4;
-	dbAssert( registerIndex < 3 );
-
-	if ( registerIndex < 3 )
+	if ( timerIndex >= 3 )
 	{
-		m_timerEvent->UpdateEarly();
-		m_timers[ timerIndex ].Write( registerIndex, static_cast<uint16_t>( value ) );
+		dbLogWarning( "Timers::Write -- invalid timer index" );
+		return;
+	}
+
+	auto& timer = m_timers[ timerIndex ];
+
+	UpdateEventsEarly( timerIndex );
+
+	switch ( static_cast<TimerRegister>( offset % 4 ) )
+	{
+		case TimerRegister::Counter:
+		{
+			timer.SetCounter( value );
+			break;
+		}
+
+		case TimerRegister::Mode:
+		{
+			timer.SetMode( value );
+			const bool useSystemClock = ( timer.GetClockSource() & ( timerIndex == 2 ? 0x02 : 0x01 ) ) == 0;
+			timer.UseSystemClock( useSystemClock );
+			break;
+		}
+
+		case TimerRegister::Target:
+		{
+			timer.SetTarget( value );
+			break;
+		}
+
+		default:
+		{
+			dbLogWarning( "Timers::Write -- invalid timer register" );
+			break;
+		}
+	}
+
+	if ( timer.IsUsingSystemClock() || timerIndex == 2 )
 		ScheduleNextIrq();
-	}
 	else
-	{
-		dbLogError( "Timers::Write() -- write to 4th register" );
-	}
+		m_gpu.ScheduleNextEvent();
 }
 
 void Timers::AddCycles( cycles_t cycles ) noexcept
 {
 	dbExpects( cycles > 0 );
 
-	// timer0
 	{
-		auto& dotTimer = m_timers[ 0 ];
-		if ( dotTimer.GetClockSource() % 2 == 0 )
-			if ( dotTimer.Update( cycles ) )
+		auto& timer0 = m_timers[ 0 ];
+		if ( timer0.IsUsingSystemClock() )
+			if ( timer0.Update( cycles ) )
 				m_interruptControl.SetInterrupt( Interrupt::Timer0 );
 	}
 
-	// timer1
 	{
-		auto& hblankTimer = m_timers[ 1 ];
-		if ( hblankTimer.GetClockSource() % 2 == 0 )
-			if ( hblankTimer.Update( cycles ) )
+		auto& timer1 = m_timers[ 1 ];
+		if ( timer1.IsUsingSystemClock() )
+			if ( timer1.Update( cycles ) )
 				m_interruptControl.SetInterrupt( Interrupt::Timer1 );
 	}
 
-	// timer2
 	{
-		auto& cpuTimer = m_timers[ 2 ];
-		const bool useDiv8 = cpuTimer.GetClockSource() & 0x2;
+		auto& timer2 = m_timers[ 2 ];
 		uint32_t ticks;
-		if ( useDiv8 )
+		if ( timer2.IsUsingSystemClock() )
+		{
+			ticks = cycles;
+		}
+		else
 		{
 			ticks = ( cycles + m_cyclesDiv8Remainder ) / 8;
 			m_cyclesDiv8Remainder = ( cycles + m_cyclesDiv8Remainder ) % 8;
 		}
-		else
-		{
-			ticks = cycles;
-		}
 
-		if ( cpuTimer.Update( ticks ) )
+		if ( timer2.Update( ticks ) )
 		{
 			m_interruptControl.SetInterrupt( Interrupt::Timer2 );
 
-			if ( cpuTimer.GetSyncEnable() )
+			if ( timer2.GetSyncEnable() )
 			{
-				const auto syncMode = cpuTimer.GetSyncMode();
+				const auto syncMode = timer2.GetSyncMode();
 				if ( syncMode == 0 || syncMode == 3 )
 				{
 					// stop at current value with no restart
-					cpuTimer.PauseAtTarget();
+					timer2.PauseAtTarget();
 				}
 			}
 		}

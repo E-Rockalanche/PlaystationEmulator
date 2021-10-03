@@ -72,6 +72,9 @@ public:
 	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
 	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
 
+	void UpdateClockEventEarly();
+	void ScheduleNextEvent();
+
 private:
 	union Status
 	{
@@ -198,7 +201,6 @@ private:
 	void CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height );
 
 	void UpdateCycles( cycles_t cpuCycles ) noexcept;
-	void ScheduleNextEvent() noexcept;
 
 private:
 	Timers& m_timers;

@@ -14,7 +14,52 @@ namespace PSX
 class Timer
 {
 public:
+	Timer( uint32_t index ) noexcept : m_index{ index } {}
 
+	void Reset();
+
+	// registers
+
+	uint32_t GetCounter() const noexcept { return m_counter; }
+	void SetCounter( uint32_t counter ) noexcept { m_counter = static_cast<uint16_t>( counter ); }
+
+	uint32_t ReadMode() noexcept;
+	void SetMode( uint32_t mode ) noexcept;
+
+	uint32_t GetTarget() const noexcept { return m_target; }
+	void SetTarget( uint32_t target ) noexcept { m_target = static_cast<uint16_t>( target ); }
+
+	// mode
+
+	void SetSyncEnable( bool enable ) noexcept { m_mode.syncEnable = enable; }
+	bool GetSyncEnable() const noexcept { return m_mode.syncEnable; }
+
+	uint32_t GetSyncMode() const noexcept { return m_mode.syncMode; }
+	uint32_t GetClockSource() const noexcept { return m_mode.clockSource; }
+
+	// internal
+
+	bool IsUsingSystemClock() const noexcept { return m_useSystemClock; }
+	void UseSystemClock( bool useSystemClock ) noexcept { m_useSystemClock = useSystemClock; }
+
+	bool GetPaused() const noexcept { return m_paused; }
+	void PauseAtTarget() noexcept; // timer2 only
+
+	bool CanTriggerIrq() const noexcept
+	{
+		return !m_paused && ( m_mode.irqOnTarget || m_mode.irqOnMax );
+	}
+
+	// update hblank and vblank for timers 0 and 1
+	void UpdateBlank( bool blanked ) noexcept;
+
+	// returns number of ticks to target, max, or infinity depending on the mode
+	uint32_t GetTicksUntilIrq() const noexcept;
+
+	// returns true if IRQ was signalled
+	bool Update( uint32_t ticks ) noexcept;
+
+private:
 	union CounterMode
 	{
 		CounterMode() : value{ 0 } {}
@@ -57,71 +102,27 @@ public:
 	};
 	static_assert( sizeof( CounterMode ) == 4 );
 
-	Timer( uint32_t index ) noexcept : m_index{ index } {}
-
-	void Reset()
-	{
-		m_counter = 0;
-		m_mode.value = 0;
-		m_mode.noInterruptRequest = true;
-		m_target = 0;
-		m_irq = false;
-		m_paused = false;
-		m_inBlank = false;
-	}
-
-	void ResetCounter() noexcept
-	{
-		m_counter = 0;
-	}
-
-	void SetSyncEnable( bool enable ) noexcept { m_mode.syncEnable = enable; }
-	bool GetSyncEnable() const noexcept { return m_mode.syncEnable; }
-
-	uint32_t GetSyncMode() const noexcept { return m_mode.syncMode; }
-	uint32_t GetClockSource() const noexcept { return m_mode.clockSource; }
-
-	bool GetPaused() const noexcept { return m_paused; }
-	void PauseAtTarget() noexcept; // timer2 only
-
-	bool CanTriggerIrq() const noexcept
-	{
-		return !m_paused && ( m_mode.irqOnTarget || m_mode.irqOnMax );
-	}
-
-	uint32_t Read( uint32_t index ) noexcept;
-
-	void Write( uint32_t index, uint16_t value ) noexcept;
-
-	// update hblank and vblank for timers 0 and 1
-	void UpdateBlank( bool blanked ) noexcept;
-
-	// returns number of ticks to target, max, or infinity depending on the mode
-	uint32_t GetTicksUntilIrq() const noexcept;
-
-	// returns true if IRQ was signalled
-	bool Update( uint32_t ticks ) noexcept;
-
 private:
 	void UpdatePaused() noexcept;
 	bool TrySignalIrq() noexcept;
 
 private:
+	const uint32_t m_index;
+
 	uint32_t m_counter = 0;
 	CounterMode m_mode;
 	uint32_t m_target = 0;
 
 	bool m_irq = false;
 	bool m_paused = false;
-	bool m_inBlank = false;
-
-	uint32_t m_index = 0;
+	bool m_inBlank = false; // depends on sync enable/mode
+	bool m_useSystemClock = true; // cached result of clock source
 };
 
 class Timers
 {
 public:
-	Timers( InterruptControl& interruptControl, EventManager& eventManager );
+	Timers( InterruptControl& interruptControl, Gpu& gpu, EventManager& eventManager );
 	~Timers();
 
 	void Reset();
@@ -138,7 +139,19 @@ public:
 	void ScheduleNextIrq() noexcept;
 
 private:
+	enum class TimerRegister
+	{
+		Counter,
+		Mode,
+		Target
+	};
+
+private:
+	void UpdateEventsEarly( uint32_t timerIndex );
+
+private:
 	InterruptControl& m_interruptControl;
+	Gpu& m_gpu;
 	EventHandle m_timerEvent;
 
 	std::array<Timer, 3> m_timers{ Timer( 0 ), Timer( 1 ), Timer( 2 ) };

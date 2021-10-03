@@ -178,6 +178,11 @@ void Gpu::Reset()
 	ScheduleNextEvent();
 }
 
+void Gpu::UpdateClockEventEarly()
+{
+	m_clockEvent->UpdateEarly();
+}
+
 void Gpu::ClearCommandBuffer() noexcept
 {
 	m_commandBuffer.Clear();
@@ -935,7 +940,7 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	const float dots = gpuTicks * GetDotsPerVideoCycle();
 
 	auto& dotTimer = m_timers[ 0 ];
-	if ( dotTimer.GetClockSource() % 2 )
+	if ( !dotTimer.IsUsingSystemClock() )
 	{
 		m_dotTimerFraction += dots;
 		dotTimer.Update( static_cast<uint32_t>( m_dotTimerFraction ) );
@@ -960,7 +965,7 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 		dotTimer.UpdateBlank( hblank );
 
 	auto& hblankTimer = m_timers[ 1 ];
-	if ( hblankTimer.GetClockSource() % 2 )
+	if ( !hblankTimer.IsUsingSystemClock() )
 	{
 		const uint32_t lines = static_cast<uint32_t>( dots / dotsPerScanline );
 		hblankTimer.Update( static_cast<uint32_t>( hblank && !m_hblank ) + lines );
@@ -991,7 +996,7 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	ScheduleNextEvent();
 }
 
-void Gpu::ScheduleNextEvent() noexcept
+void Gpu::ScheduleNextEvent()
 {
 	float gpuTicks = std::numeric_limits<float>::max();
 
