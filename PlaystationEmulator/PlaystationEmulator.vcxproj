@@ -184,6 +184,7 @@
     <ClInclude Include="inc\PlaystationEmulator\MemoryControl.h" />
     <ClInclude Include="inc\PlaystationEmulator\MemoryMap.h" />
     <ClInclude Include="inc\PlaystationEmulator\ControllerPorts.h" />
+    <ClInclude Include="inc\PlaystationEmulator\Playstation.h" />
     <ClInclude Include="inc\PlaystationEmulator\RAM.h" />
     <ClInclude Include="inc\PlaystationEmulator\Renderer.h" />
     <ClInclude Include="inc\PlaystationEmulator\SPU.h" />
