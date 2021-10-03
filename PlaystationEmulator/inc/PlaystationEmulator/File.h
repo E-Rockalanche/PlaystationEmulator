@@ -1,5 +1,8 @@
 #pragma once
 
+#include "Defs.h"
+#include "RAM.h"
+
 #include <cstdint>
 #include <string_view>
 
@@ -33,5 +36,7 @@ struct ExeHeader
 	char zeroFilled[ 0x7C8 ];
 };
 static_assert( sizeof( ExeHeader ) == 0x800 );
+
+bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram );
 
 }

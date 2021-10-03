@@ -29,6 +29,8 @@ public:
 
 	bool Initialize( SDL_Window* window );
 
+	void Reset();
+
 	void EnableVRamView( bool enable );
 	bool IsVRamViewEnabled() const { return m_viewVRam; }
 
@@ -111,8 +113,8 @@ private:
 
 	uint32_t m_displayX = 0;
 	uint32_t m_displayY = 0;
-	uint32_t m_displayWidth = 640;
-	uint32_t m_displayHeight = 480;
+	uint32_t m_displayWidth = 0;
+	uint32_t m_displayHeight = 0;
 
 	GLint m_drawAreaLeft = 0;
 	GLint m_drawAreaTop = 0;

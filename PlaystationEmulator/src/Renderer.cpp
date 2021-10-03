@@ -77,15 +77,27 @@ bool Renderer::Initialize( SDL_Window* window )
 	dbAssert( m_vramReadFrameBuffer.IsComplete() );
 	m_vramReadFrameBuffer.Unbind();
 
-	// set shader uniforms
-	SetOrigin( 0, 0 );
-	SetDisplaySize( 640, 480 );
-	SetTextureWindow( 0, 0, 0, 0 );
+	// initialize shader uniforms
+	glUniform2f( m_originLoc, 0.0f, 0.0f );
+	glUniform2i( m_texWindowMask, 0, 0 );
+	glUniform2i( m_texWindowOffset, 0, 0 );
+	glScissor( 0, 0, 0, 0 );
 
 	// get ready to render!
 	RestoreRenderState();
 
 	return true;
+}
+
+void Renderer::Reset()
+{
+	// TODO: clear vram
+
+	// GPU will reset uniforms
+
+	m_vertices.clear();
+	ResetDirtyArea();
+	m_renderedPrimitive = false;
 }
 
 void Renderer::EnableVRamView( bool enable )
@@ -126,7 +138,7 @@ void Renderer::SetDisplaySize( uint32_t w, uint32_t h )
 		m_displayWidth = w;
 		m_displayHeight = h;
 
-		if ( !m_viewVRam )
+		if ( !m_viewVRam && w > 0 && h > 0 )
 			SDL_SetWindowSize( m_window, w, h );
 	}
 }

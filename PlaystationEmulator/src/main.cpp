@@ -1,18 +1,6 @@
-#include "BIOS.h"
-#include "CDRomDrive.h"
-#include "CPU.h"
-#include "DMA.h"
-#include "EventManager.h"
-#include "File.h"
-#include "GPU.h"
-#include "InterruptControl.h"
-#include "MemoryControl.h"
-#include "MemoryMap.h"
+#include "Playstation.h"
 #include "Controller.h"
-#include "ControllerPorts.h"
-#include "RAM.h"
 #include "Renderer.h"
-#include "Timers.h"
 
 #include <Render/Error.h>
 
@@ -22,6 +10,7 @@
 #include <stdx/flat_unordered_map.h>
 #include <stdx/string.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -31,73 +20,6 @@ void PrintSdlError( const char* message )
 {
 	std::cout << message << '\n';
 	std::cout << "SDL error: " << SDL_GetError() << '\n';
-}
-
-bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram )
-{
-	std::ifstream fin( filename, std::ios::binary );
-	if ( !fin.is_open() )
-	{
-		dbBreakMessage( "failed to open executable file" );
-		dbBreak();
-		return false;
-	}
-
-	fin.seekg( 0, std::ios_base::end );
-	const size_t fileSize = static_cast<size_t>( fin.tellg() );
-	fin.seekg( 0, std::ios_base::beg );
-
-	if ( ( fileSize / 0x800 < 2 ) || ( fileSize % 0x800 != 0 ) )
-	{
-		dbLogError( "file size must be a multiple of 0x800 greater than 1 [%x]", static_cast<uint32_t>( fileSize ) );
-		dbBreak();
-		return false;
-	}
-
-	PSX::ExeHeader header;
-	fin.read( reinterpret_cast<char*>( &header ), sizeof( header ) );
-
-	if ( header.id != PSX::ExeHeader::Id )
-	{
-		header.id[ 0xf ] = '\0';
-		dbLogError( "header ID is invalid [%s]", header.id );
-		dbBreak();
-		return false;
-	}
-
-	if ( header.fileSize > fileSize - sizeof( header ) )
-	{
-		dbLogError( "header file size is greater than actual file size [%x] [%x]", header.fileSize, static_cast<uint32_t>( fileSize ) );
-		dbBreak();
-		return false;
-	}
-
-	const auto physicalRamDest = header.ramDestination & 0x7fffffff;
-
-	if ( physicalRamDest + header.fileSize > PSX::Ram::Size() )
-	{
-		dbLogError( "file size larger than ram at destination [%x] [%x]", header.fileSize, header.ramDestination );
-		dbBreak();
-		return false;
-	}
-
-	// TODO: zero fill
-
-	fin.read( (char*)ram.Data() + physicalRamDest, header.fileSize );
-
-	cpu.DebugSetProgramCounter( header.programCounter );
-
-	cpu.DebugSetRegister( 28, header.globalPointer );
-
-	if ( header.stackPointerBase != 0 )
-	{
-		cpu.DebugSetRegister( 29, header.stackPointerBase + header.stackPointerOffset ); // TODO: is this right?
-		cpu.DebugSetRegister( 30, header.stackPointerBase ); // TODO: is this right?
-	}
-
-	dbLog( "loaded %s", filename );
-
-	return true;
 }
 
 int main( int argc, char** argv )
@@ -148,49 +70,13 @@ int main( int argc, char** argv )
 
 	dbCheckRenderErrors();
 
-	PSX::Renderer renderer;
-	if ( !renderer.Initialize( window ) )
+	PSX::Playstation playstationCore;
+	if ( !playstationCore.Initialize( window, "bios.bin" ) )
 		return 1;
-	
-	auto bios = std::make_unique<PSX::Bios>();
-	bios->Fill( 0xfe );
-	if ( !PSX::LoadBios( "bios.bin", *bios ) )
-	{
-		std::cout << "could not find BIOS" << std::endl;
-		return 1;
-	}
-
-	auto ram = std::make_unique<PSX::Ram>();
-	ram->Fill( 0xfe );
-
-	auto scratchpad = std::make_unique<PSX::Scratchpad>();
-	scratchpad->Fill( 0xfe );
-
-	PSX::EventManager eventManager;
-
-	PSX::MemoryControl memControl;
-
-	PSX::InterruptControl interruptControl;
-
-	PSX::Timers timers{ interruptControl, eventManager };
-
-	PSX::Gpu gpu{ timers, interruptControl, renderer, eventManager };
-
-	PSX::Spu spu;
-
-	auto cdRomDrive = std::make_unique<PSX::CDRomDrive>( interruptControl, eventManager );
-
-	PSX::Dma dma{ *ram, gpu, *cdRomDrive, interruptControl, eventManager };
-
-	PSX::ControllerPorts controllerPorts{ interruptControl, eventManager };
-
-	PSX::MemoryMap memoryMap{ *ram, *scratchpad, memControl, controllerPorts, interruptControl, dma, timers, *cdRomDrive, gpu, spu, *bios };
-
-	auto cpu = std::make_unique<PSX::MipsR3000Cpu>( memoryMap, *ram, *bios, *scratchpad, interruptControl, eventManager );
 
 	// controller mapping
 	PSX::Controller controller;
-	controllerPorts.SetController( 0, &controller );
+	playstationCore.SetController( 0, &controller );
 
 	stdx::flat_unordered_map<SDL_Keycode, PSX::Button> controllerMapping
 	{
@@ -211,13 +97,9 @@ int main( int argc, char** argv )
 	};
 
 	if ( stdx::ends_with( filename, ".bin" ) )
-	{
-		auto cdrom = std::make_unique<PSX::CDRom>();
-		if ( cdrom->Open( filename.data() ) )
-			cdRomDrive->SetCDRom( std::move( cdrom ) );
-	}
-
-	bool hookEXE = stdx::ends_with( filename, ".exe" );
+		playstationCore.LoadRom( filename.data() );
+	else if ( stdx::ends_with( filename, ".exe" ) )
+		playstationCore.HookExe( filename.data() );
 
 	eventManager.Reset();
 	memControl.Reset();
@@ -265,12 +147,12 @@ int main( int argc, char** argv )
 
 						case SDLK_F3:
 							// toggle trace logging
-							cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
+							// cpu->EnableCpuLogging = !cpu->EnableCpuLogging;
 							break;
 
 						case SDLK_F4:
 							// toggle kernel logging
-							cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
+							// cpu->EnableKernelLogging = !cpu->EnableKernelLogging;
 							break;
 
 						case SDLK_F5:
@@ -279,7 +161,7 @@ int main( int argc, char** argv )
 
 						case SDLK_F6:
 							// toggle vram view
-							renderer.EnableVRamView( !renderer.IsVRamViewEnabled() );
+							playstationCore.GetRenderer().EnableVRamView( !playstationCore.GetRenderer().IsVRamViewEnabled() );
 							break;
 
 						case SDLK_F9:
@@ -309,7 +191,7 @@ int main( int argc, char** argv )
 		{
 			static constexpr size_t BufferSize = 1024;
 			char cbuf[ BufferSize ];
-			std::snprintf( cbuf, BufferSize, "%s - averageFps:%.1f", windowTitle.c_str(), avgFps );
+			std::snprintf( cbuf, BufferSize, "%s - FPS:%.1f", windowTitle.c_str(), avgFps );
 			SDL_SetWindowTitle( window, cbuf );
 		}
 
@@ -319,23 +201,14 @@ int main( int argc, char** argv )
 		{
 			stepFrame = false;
 
-			// run frame
-			while ( !gpu.GetDisplayFrame() )
-			{
-				if ( hookEXE && cpu->GetPC() == HookAddress )
-				{
-					hookEXE = false;
-					LoadExecutable( filename.data(), *cpu, *ram );
-				}
-
-				cpu->Tick();
-			}
+			playstationCore.RunFrame();
+		}
+		else
+		{
+			playstationCore.GetRenderer().DisplayFrame();
 		}
 
-		gpu.ResetDisplayFrame();
-		renderer.DisplayFrame();
-
-		const auto refreshRate = gpu.GetRefreshRate();
+		const auto refreshRate = playstationCore.GetRefreshRate();
 		const float targetMilliseconds = 1000.0f / refreshRate;
 
 		const uint32_t curTicks = SDL_GetTicks();
@@ -346,8 +219,10 @@ int main( int argc, char** argv )
 
 		ticks = curTicks;
 
-		const float curFps = std::min( 1000.0f / elapsed, refreshRate );
+		const float curFps = std::min<float>( 1000.0f / elapsed, refreshRate );
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
+
+		Log( "FPS: %.1f", curFps );
 	}
 
 	SDL_GL_DeleteContext( glContext );

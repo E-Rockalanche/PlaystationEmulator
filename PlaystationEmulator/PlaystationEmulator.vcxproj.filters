@@ -90,6 +90,9 @@
     <ClInclude Include="inc\PlaystationEmulator\EventManager.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\Playstation.h">
+      <Filter>inc</Filter>
+    </ClInclude>
     <ClInclude Include="inc\PlaystationEmulator\Defs.h">
       <Filter>inc</Filter>
     </ClInclude>
@@ -141,6 +144,12 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\EventManager.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="inc\PlaystationEmulator\Playstation.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\File.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

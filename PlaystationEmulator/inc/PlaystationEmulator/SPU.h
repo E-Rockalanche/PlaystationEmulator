@@ -11,6 +11,8 @@ namespace PSX
 class Spu
 {
 public:
+	void Reset() {} // TODO
+
 	uint16_t Read( uint32_t offset ) noexcept;
 	void Write( uint32_t offset, uint16_t value ) noexcept;
 
