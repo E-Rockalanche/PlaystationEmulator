@@ -10,6 +10,7 @@
 #include "EventManager.h"
 #include "File.h"
 #include "GPU.h"
+#include "MacroblockDecoder.h"
 #include "MemoryControl.h"
 #include "Renderer.h"
 #include "SPU.h"
@@ -39,11 +40,11 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 
 	m_ram = std::make_unique<Ram>();
 	m_scratchpad = std::make_unique<Scratchpad>();
-
 	m_memoryControl = std::make_unique<MemoryControl>();
 	m_interruptControl = std::make_unique<InterruptControl>();
 	m_eventManager = std::make_unique<EventManager>();
 	m_spu = std::make_unique<Spu>();
+	m_mdec = std::make_unique<MacroblockDecoder>();
 
 	m_timers = std::make_unique<Timers>( *m_interruptControl, *m_eventManager );
 
@@ -51,11 +52,11 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 
 	m_cdromDrive = std::make_unique<CDRomDrive>( *m_interruptControl, *m_eventManager );
 
-	m_dma = std::make_unique<Dma>( *m_ram, *m_gpu, *m_cdromDrive, *m_interruptControl, *m_eventManager );
+	m_dma = std::make_unique<Dma>( *m_ram, *m_gpu, *m_cdromDrive, *m_mdec, *m_interruptControl, *m_eventManager );
 
 	m_controllerPorts = std::make_unique<ControllerPorts>( *m_interruptControl, *m_eventManager );
 
-	m_memoryMap = std::make_unique<MemoryMap>( *m_ram, *m_scratchpad, *m_memoryControl, *m_controllerPorts, *m_interruptControl, *m_dma, *m_timers, *m_cdromDrive, *m_gpu, *m_spu, *m_bios );
+	m_memoryMap = std::make_unique<MemoryMap>( *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_memoryControl, *m_ram, *m_scratchpad, *m_spu, *m_timers );
 
 	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_ram, *m_bios, *m_scratchpad, *m_interruptControl, *m_eventManager );
 

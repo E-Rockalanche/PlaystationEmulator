@@ -61,9 +61,6 @@ uint32_t ControllerPorts::ReadStatus() noexcept
 		( (uint32_t)!m_txBufferFull ) |
 		( (uint32_t)IsFinishedTransfer() << 2 );
 
-	// no logging since status is read a LOT
-	// dbLog( "ControllerPorts::Read() -- status [%X]", status );
-
 	// just reset the ack level since we don't emulate the timing for it
 	stdx::reset_bits<uint32_t>( m_status, Status::AckInputLevel );
 
@@ -131,8 +128,10 @@ void ControllerPorts::TryTransfer() noexcept
 	{
 		dbLog( "ControllerPorts::CheckTransfer()" );
 
+		/*
 		if ( m_rxBufferFull )
 			dbBreakMessage( "ControllerPorts::CheckTransfer() -- RX buffer is full" );
+			*/
 
 		m_tranferringValue = m_txBuffer;
 		m_txBufferFull = false;

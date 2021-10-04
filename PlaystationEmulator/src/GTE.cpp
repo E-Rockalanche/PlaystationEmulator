@@ -87,8 +87,6 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 {
 	dbExpects( index < 64 );
 
-	// dbLog( "GTE::Read() -- [%u]", index );
-
 	auto readVXYn = [this]( size_t n ) -> uint32_t
 	{
 		auto& v = m_vectors[ n ];
@@ -368,8 +366,6 @@ void GTE::Write( uint32_t index, uint32_t value ) noexcept
 
 void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 {
-	// dbLog( "GTE::ExecuteCommand() -- [%X]", commandValue );
-
 	Command command{ commandValue };
 
 	m_errorFlags = 0;

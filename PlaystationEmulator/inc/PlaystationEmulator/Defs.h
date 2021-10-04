@@ -27,6 +27,7 @@ class Event;
 class EventManager;
 class Gpu;
 class InterruptControl;
+class MacroblockDecoder;
 class MemoryControl;
 class MemoryMap;
 class MipsR3000Cpu;

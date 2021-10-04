@@ -180,6 +180,7 @@
     <ClInclude Include="inc\PlaystationEmulator\GpuDefs.h" />
     <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />
     <ClInclude Include="inc\PlaystationEmulator\InterruptControl.h" />
+    <ClInclude Include="inc\PlaystationEmulator\MacroblockDecoder.h" />
     <ClInclude Include="inc\PlaystationEmulator\Memory.h" />
     <ClInclude Include="inc\PlaystationEmulator\MemoryControl.h" />
     <ClInclude Include="inc\PlaystationEmulator\MemoryMap.h" />
@@ -205,6 +206,7 @@
     <ClCompile Include="src\GTE.cpp" />
     <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />
+    <ClCompile Include="src\MacroblockDecoder.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\MemoryControl.cpp" />
     <ClCompile Include="src\Renderer.cpp" />

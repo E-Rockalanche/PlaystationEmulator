@@ -14,6 +14,47 @@ namespace PSX
 class Dma
 {
 public:
+
+public:
+	Dma( Ram& ram,
+		Gpu& gpu,
+		CDRomDrive& cdromDRive,
+		MacroblockDecoder& mdec,
+		InterruptControl& interruptControl,
+		EventManager& eventManager )
+		: m_ram{ ram }
+		, m_gpu{ gpu }
+		, m_cdromDrive{ cdromDRive }
+		, m_mdec{ mdec }
+		, m_interruptControl{ interruptControl }
+		, m_eventManager{ eventManager }
+	{
+		Reset();
+	}
+
+	void Reset();
+
+	uint32_t Read( uint32_t index ) const noexcept;
+
+	void Write( uint32_t index, uint32_t value ) noexcept;
+
+	void DoBlockTransfer( uint32_t channel ) noexcept;
+
+	void DoLinkedListTransfer( uint32_t channel ) noexcept;
+
+	uint32_t GetChannelPriority( uint32_t channel ) const noexcept
+	{
+		dbExpects( channel < 7 );
+		return ( m_controlRegister >> ( channel * 4 ) ) & 0x03u;
+	}
+
+	bool GetChannelMasterEnable( uint32_t channel ) const noexcept
+	{
+		dbExpects( channel < 7 );
+		return m_controlRegister & ( 1u << ( 3 + channel * 4 ) );
+	}
+
+private:
 	enum class ChannelIndex
 	{
 		MDecIn,
@@ -185,44 +226,6 @@ public:
 		WriteMask = UnknownMask | ForceIrq | IrqEnablesMask | IrqMasterEnable,
 	};
 
-public:
-	Dma( Ram& ram, Gpu& gpu, CDRomDrive& cdromDRive, InterruptControl& interruptControl, EventManager& eventManager )
-		: m_ram{ ram }
-		, m_gpu{ gpu }
-		, m_cdromDrive{ cdromDRive }
-		, m_interruptControl{ interruptControl }
-		, m_eventManager{ eventManager }
-	{
-		Reset();
-	}
-
-	void Reset();
-
-	uint32_t Read( uint32_t index ) const noexcept;
-
-	void Write( uint32_t index, uint32_t value ) noexcept;
-
-	void DoBlockTransfer( uint32_t channel ) noexcept;
-
-	void DoLinkedListTransfer( uint32_t channel ) noexcept;
-
-	// control register
-
-	uint32_t GetChannelPriority( uint32_t channel ) const noexcept
-	{
-		dbExpects( channel < 7 );
-		return ( m_controlRegister >> ( channel * 4 ) ) & 0x03u;
-	}
-
-	bool GetChannelMasterEnable( uint32_t channel ) const noexcept
-	{
-		dbExpects( channel < 7 );
-		return m_controlRegister & ( 1u << ( 3 + channel * 4 ) );
-	}
-
-	// interrupt register
-
-private:
 	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
 
 	enum class Register
@@ -256,6 +259,7 @@ private:
 	Ram& m_ram;
 	Gpu& m_gpu;
 	CDRomDrive& m_cdromDrive;
+	MacroblockDecoder& m_mdec;
 	InterruptControl& m_interruptControl;
 	EventManager& m_eventManager;
 

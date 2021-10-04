@@ -8,8 +8,8 @@ namespace PSX
 constexpr uint32_t VRamWidth = 1024;
 constexpr uint32_t VRamHeight = 512;
 
-constexpr uint32_t VRamMaskX = VRamWidth - 1;
-constexpr uint32_t VRamMaskY = VRamHeight - 1;
+constexpr uint32_t VRamWidthMask = VRamWidth - 1;
+constexpr uint32_t VRamHeightMask = VRamHeight - 1;
 
 constexpr uint32_t TexturePageWidth = 256;
 constexpr uint32_t TexturePageHeight = 256;

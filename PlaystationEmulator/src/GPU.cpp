@@ -577,7 +577,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		}
 
 		case 0x01: // reset command buffer
-			// dbLog( "Gpu::WriteGP1() -- clear command buffer" );
+			dbLog( "Gpu::WriteGP1() -- clear command buffer" );
 			ClearCommandBuffer();
 			break;
 
@@ -860,20 +860,8 @@ void Gpu::RenderRectangle() noexcept
 		case RectangleSize::Variable:
 		{
 			const uint32_t sizeParam = m_commandBuffer.Pop();
-			width = sizeParam & 0xffff;
-			height = sizeParam >> 16;
-
-			// TODO: not sure if it is ignored or masked
-			if ( width >= VRamWidth || height >= VRamHeight )
-			{
-				dbLogWarning( "Gpu::RenderRectangle -- ignoring rectangle larger than %ux%u", VRamWidth - 1, VRamHeight - 1 );
-				ClearCommandBuffer();
-				return;
-			}
-
-			if ( width > 256 || height > 256 )
-				dbLogWarning( "Gpu::RenderRectangle -- rectangle texture needs to be tiled [%u, %u]", width, height );
-
+			width = sizeParam & VRamWidthMask;
+			height = ( sizeParam >> 16 ) & VRamHeightMask;
 			break;
 		}
 

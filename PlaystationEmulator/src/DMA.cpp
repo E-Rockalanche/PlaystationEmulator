@@ -4,6 +4,7 @@
 #include "EventManager.h"
 #include "GPU.h"
 #include "InterruptControl.h"
+#include "MacroblockDecoder.h"
 
 #include <stdx/bit.h>
 
@@ -234,8 +235,10 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		{
 			case ChannelIndex::MDecOut:
 			{
-				// TODO
-				dbLog( "ignoring MDEC-OUT to RAM DMA transfer" );
+				// TODO: block reordering
+				for ( ; wordCount > 0; --wordCount, address += increment )
+					m_ram.Write<uint32_t>( address, m_mdec.Read( 0 ) );
+
 				break;
 			}
 
@@ -270,7 +273,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 			case ChannelIndex::Spu:
 			{
 				// TODO
-				dbLog( "ignoring SPU to RAM DMA transfer" );
+				// dbLog( "ignoring SPU to RAM DMA transfer" );
 				break;
 			}
 
@@ -286,8 +289,9 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		{
 			case ChannelIndex::MDecIn:
 			{
-				// TODO
-				dbLog( "ignoring RAM to MDEC-IN DMA transfer" );
+				for ( ; wordCount > 0; --wordCount, address += increment )
+					m_mdec.Write( 0, m_ram.Read<uint32_t>( address ) );
+
 				break;
 			}
 
@@ -302,7 +306,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 			case ChannelIndex::Spu:
 			{
 				// TODO
-				dbLog( "ignoring RAM to SPU DMA transfer" );
+				// dbLog( "ignoring RAM to SPU DMA transfer" );
 				break;
 			}
 

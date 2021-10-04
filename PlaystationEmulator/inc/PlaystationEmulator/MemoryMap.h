@@ -2,14 +2,15 @@
 
 #include "BIOS.h"
 #include "CDRomDrive.h"
-#include "InterruptControl.h"
+#include "ControllerPorts.h"
 #include "DMA.h"
 #include "DualSerialPort.h"
+#include "InterruptControl.h"
 #include "GPU.h"
-#include "SPU.h"
+#include "MacroblockDecoder.h"
 #include "MemoryControl.h"
-#include "ControllerPorts.h"
 #include "RAM.h"
+#include "SPU.h"
 #include "Timers.h"
 
 #include <stdx/assert.h>
@@ -76,28 +77,30 @@ public:
 
 public:
 	MemoryMap(
+		Bios& bios,
+		CDRomDrive& cdRomDrive,
+		ControllerPorts& controllerPorts,
+		Dma& dma,
+		Gpu& gpu,
+		InterruptControl& interruptControl,
+		MacroblockDecoder& mdec,
+		MemoryControl& memControl,
 		Ram& ram,
 		Scratchpad& scratchpad,
-		MemoryControl& memControl,
-		ControllerPorts& peripheralPorts,
-		InterruptControl& interrupts,
-		Dma& dma,
-		Timers& timers,
-		CDRomDrive& cdRomDrive,
-		Gpu& gpu,
 		Spu& spu,
-		Bios& bios )
-		: m_ram{ ram }
-		, m_scratchpad{ scratchpad }
-		, m_memoryControl{ memControl }
-		, m_controllerPorts{ peripheralPorts }
-		, m_interruptControl{ interrupts }
-		, m_dma{ dma }
-		, m_timers{ timers }
+		Timers& timers )
+		: m_bios{ bios }
 		, m_cdRomDrive{ cdRomDrive }
+		, m_controllerPorts{ controllerPorts }
+		, m_dma{ dma }
 		, m_gpu{ gpu }
+		, m_interruptControl{ interruptControl }
+		, m_mdec{ mdec }
+		, m_memoryControl{ memControl }
+		, m_ram{ ram }
+		, m_scratchpad{ scratchpad }
 		, m_spu{ spu }
-		, m_bios{ bios }
+		, m_timers{ timers }
 	{}
 
 	template <typename T>
@@ -175,17 +178,19 @@ private:
 	}
 
 private:
+
+	Bios& m_bios;
+	CDRomDrive& m_cdRomDrive;
+	ControllerPorts& m_controllerPorts;
+	Dma& m_dma;
+	Gpu& m_gpu;
+	InterruptControl& m_interruptControl;
+	MacroblockDecoder& m_mdec;
+	MemoryControl& m_memoryControl;
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
-	MemoryControl& m_memoryControl;
-	ControllerPorts& m_controllerPorts;
-	InterruptControl& m_interruptControl;
-	Dma& m_dma;
-	Timers& m_timers;
-	CDRomDrive& m_cdRomDrive;
-	Gpu& m_gpu;
 	Spu& m_spu;
-	Bios& m_bios;
+	Timers& m_timers;
 
 	DualSerialPort* m_dualSerialPort = nullptr;
 };
@@ -259,9 +264,7 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	}
 	else if ( Within( address, MdecStart, MdecSize ) )
 	{
-		// TODO
-		if constexpr ( Read )
-			value = 0;
+		AccessComponent32<T, Read>( m_mdec, address - MdecStart, value );
 	}
 	else if ( Within( address, SpuStart, SpuSize ) )
 	{

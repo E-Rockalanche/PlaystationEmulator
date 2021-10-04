@@ -54,6 +54,7 @@ private:
 	std::unique_ptr<EventManager> m_eventManager;
 	std::unique_ptr<Gpu> m_gpu;
 	std::unique_ptr<InterruptControl> m_interruptControl;
+	std::unique_ptr<MacroblockDecoder> m_mdec;
 	std::unique_ptr<MemoryControl> m_memoryControl;
 	std::unique_ptr<MemoryMap> m_memoryMap;
 	std::unique_ptr<MipsR3000Cpu> m_cpu;

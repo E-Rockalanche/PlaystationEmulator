@@ -96,6 +96,9 @@
     <ClInclude Include="inc\PlaystationEmulator\Defs.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\MacroblockDecoder.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">
@@ -150,6 +153,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\File.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\MacroblockDecoder.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>
