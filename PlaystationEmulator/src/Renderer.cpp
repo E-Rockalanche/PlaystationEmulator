@@ -278,6 +278,9 @@ void Renderer::CheckDrawMode( uint16_t drawMode, uint16_t clut )
 	m_lastDrawMode = drawMode;
 	m_lastClut = clut;
 
+	// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
+	SetSemiTransparency( static_cast<SemiTransparency>( ( drawMode >> 5 ) & 0x3 ) );
+
 	if ( stdx::any_of<uint16_t>( drawMode, 1 << 11 ) )
 		return; // textures are disabled
 
