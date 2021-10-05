@@ -1,14 +1,37 @@
 #include "MacroblockDecoder.h"
 
+#include <algorithm>
+
 namespace PSX
 {
 
+namespace
+{
+
+const std::array<uint32_t, 64> ZigZag
+{
+	0,  1,  5,  6,  14, 15, 27, 28,
+	2,  4,  7,  13, 16, 26, 29, 42,
+	3,  8,  12, 17, 25, 30, 41, 43,
+	9,  11, 18, 24, 31, 40, 44, 53,
+	10, 19, 23, 32, 39, 45, 52, 54,
+	20, 22, 33, 38, 46, 51, 55, 60,
+	21, 34, 37, 47, 50, 56, 59, 61,
+	35, 36, 48, 49, 57, 58, 62, 63
+};
+
+constexpr int16_t SignExtend10( uint16_t value ) noexcept
+{
+	return static_cast<int16_t>( ( value & 0x03ffu ) | ( value & 0x200u ) ? 0xfc00u : 0u );
+}
+
+}
 
 void MacroblockDecoder::Reset()
 {
-	m_remainingParams = 1;
-	m_readBlock = Block::Y;
-	m_writeBlock = Block::Y;
+	m_remainingHalfWords = 2;
+	m_readBlock = BlockIndex::Y;
+	m_writeBlock = BlockIndex::Y;
 	m_dataOutputBit15 = false;
 	m_dataOutputSigned = false;
 	m_dataOutputDepth = DataOutputDepth::Four;
@@ -34,10 +57,10 @@ uint32_t MacroblockDecoder::ReadStatus()
 	// TODO: check dma setting
 	const bool dataOutRequest = m_enableDataOut;
 	const bool dataInRequest = m_enableDataIn;
-	const uint16_t remainingParams = static_cast<uint16_t>( m_remainingParams - 1 );
-	const Block currentBlock = m_dataOutBuffer.Empty() ? m_readBlock : m_writeBlock;
+	const uint16_t remainingParamsMinusOne = static_cast<uint16_t>( ( m_remainingHalfWords + 1 ) / 2 - 1 );
+	const BlockIndex currentBlock = m_dataOutBuffer.Empty() ? m_readBlock : m_writeBlock;
 
-	return static_cast<uint32_t>( remainingParams ) |
+	return static_cast<uint32_t>( remainingParamsMinusOne ) |
 		( static_cast<uint32_t>( currentBlock ) << 16 ) |
 		( static_cast<uint32_t>( m_dataOutputBit15 ) << 23 ) |
 		( static_cast<uint32_t>( m_dataOutputDepth ) << 25 ) |
@@ -91,34 +114,29 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 
 void MacroblockDecoder::WriteParam( uint32_t value )
 {
-	auto pushWord = [&]
-	{
-		m_dataInBuffer.Push( static_cast<uint16_t>( value ) );
-		m_dataInBuffer.Push( static_cast<uint16_t>( value >> 16 ) );
-		m_remainingParams--;
-	};
+	m_dataInBuffer.Push( static_cast<uint16_t>( value ) );
+	m_dataInBuffer.Push( static_cast<uint16_t>( value >> 16 ) );
 
 	switch ( m_state )
 	{
 		case State::Idle:
-			StartCommand( value );
+		{
+			const uint32_t command = m_dataInBuffer.Pop() | ( m_dataInBuffer.Pop() << 16 );
+			StartCommand( command );
 			break;
+		}
 
 		case State::ReadingMacroblock:
-			pushWord();
-			if ( m_remainingParams == 0 )
+			if ( m_dataInBuffer.Size() == m_remainingHalfWords )
 				Decode();
 			break;
 
 		case State::DecodingMacroblock:
 			dbBreak(); // TODO
-			pushWord();
-			// TODO
 			break;
 
 		case State::ReadingQuantTable:
-			pushWord();
-			if ( m_remainingParams == 0 )
+			if ( m_dataInBuffer.Size() == m_remainingHalfWords )
 			{
 				m_dataInBuffer.Clear();
 				m_state = State::Idle;
@@ -127,8 +145,7 @@ void MacroblockDecoder::WriteParam( uint32_t value )
 			break;
 
 		case State::ReadingScaleTable:
-			pushWord();
-			if ( m_remainingParams == 0 )
+			if ( m_dataInBuffer.Size() == m_remainingHalfWords )
 			{
 				m_dataInBuffer.Clear();
 				m_state = State::Idle;
@@ -138,7 +155,8 @@ void MacroblockDecoder::WriteParam( uint32_t value )
 
 		case State::InvalidCommand:
 		{
-			if ( --m_remainingParams == 0 )
+			m_remainingHalfWords -= 2;
+			if ( m_remainingHalfWords == 0 )
 				m_state = State::Idle;
 
 			break;
@@ -157,8 +175,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		case Command::DecodeMacroblock:
 		{
 			m_state = State::ReadingMacroblock;
-			m_remainingParams = static_cast<uint16_t>( value );
-			dbAssert( m_remainingParams != 0 ); // zero parameters?
+			m_remainingHalfWords = static_cast<uint16_t>( value ) * 2;
 			break;
 		}
 
@@ -168,7 +185,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 			// and if Command.Bit0 was set, by another 64 unsigned parameter bytes for the Color Quant Table (used for Cb and Cr).
 			m_state = State::ReadingQuantTable;
 			m_color = stdx::any_of<uint32_t>( value, 1 );
-			m_remainingParams = ( 1 + m_color ) * 64 / 4;
+			m_remainingHalfWords = ( 1 + m_color ) * 64 / 2;
 			break;
 		}
 
@@ -177,7 +194,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 			// The command is followed by 64 signed halfwords with 14bit fractional part, the values should be usually/always the same values
 			// (based on the standard JPEG constants, although, MDEC(3) allows to use other values than that constants).
 			m_state = State::ReadingScaleTable;
-			m_remainingParams = 64 / 2;
+			m_remainingHalfWords = 64;
 			break;
 		}
 
@@ -185,7 +202,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		{
 			// similar as the "number of parameter words" for MDEC(1), but without the "minus 1" effect, and without actually expecting any parameters
 			m_state = State::InvalidCommand;
-			m_remainingParams = static_cast<uint16_t>( value + 1 );
+			m_remainingHalfWords = static_cast<uint16_t>( value + 1 ) * 2;
 			break;
 		}
 	}
@@ -222,6 +239,138 @@ void MacroblockDecoder::Decode()
 
 	m_dataInBuffer.Clear();
 	m_state = State::Idle;
+}
+
+bool MacroblockDecoder::rl_decode_block( int16_t* blk, const uint8_t* qt )
+{
+	if ( m_currentK == 64 )
+	{
+		std::fill_n( blk, 64, int16_t( 0 ) );
+
+		// skip padding
+		uint16_t n;
+		do
+		{
+			if ( m_dataInBuffer.Empty() || m_remainingHalfWords == 0 )
+				return false;
+
+			n = m_dataInBuffer.Pop();
+			--m_remainingHalfWords;
+		}
+		while ( n == EndOfData );
+
+		// start filling block
+		m_currentK = 0;
+
+		const uint16_t q_scale = ( n >> 10 ) & 0x3f;
+		int val = SignExtend10( n ) * static_cast<int>( qt[ m_currentK ] );
+
+		if ( m_currentQ == 0 )
+			val = SignExtend10( n ) * 2;
+
+		val = std::clamp( val, -0x400, 0x3ff );
+		if ( m_currentQ > 0 )
+			blk[ ZigZag[ m_currentK ] ] = static_cast<int16_t>( val );
+		else
+			blk[ m_currentK ] = static_cast<int16_t>( val );
+	}
+
+	while( !m_dataInBuffer.Empty() && m_remainingHalfWords > 0 )
+	{
+		uint16_t n = m_dataInBuffer.Pop();
+
+		m_currentK += 1 + ( ( n >> 10 ) & 0x3f );
+
+		if ( m_currentK >= 64 )
+		{
+			// finished filling block
+			m_currentK = 64;
+			return true;
+		}
+
+		int val = ( SignExtend10( n ) * qt[ m_currentK ] * m_currentQ + 4 ) / 8;
+
+		if ( m_currentQ == 0 )
+			val = SignExtend10( n ) * 2;
+
+		val = std::clamp( val, -0x400, 0x3ff );
+		if ( m_currentQ > 0 )
+			blk[ ZigZag[ m_currentK ] ] = static_cast<int16_t>( val );
+		else
+			blk[ m_currentK ] = static_cast<int16_t>( val );
+	}
+
+	return false;
+}
+
+void MacroblockDecoder::real_idct_core( Block& blk )
+{
+	std::array<int16_t, 64> temp_buffer;
+
+	int16_t* src = blk.data();
+	int16_t* dst = temp_buffer.data();
+
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		for ( size_t x = 0; x < 8; ++x )
+		{
+			for ( size_t y = 0; y < 8; ++y )
+			{
+				int16_t sum = 0;
+				for ( size_t z = 0; z < 8; ++z )
+				{
+					sum = sum + src[ y + z * 8 ] * ( m_scaleTable[ x + z * 8 ] >> 3 );
+				}
+				dst[ x + y * 8 ] = ( sum + 0xfff ) >> 13;
+			}
+		}
+		std::swap( src, dst );
+	}
+}
+
+void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, const Block& cbBlk, const Block& yBlk )
+{
+	for ( size_t y = 0; y < 8; ++y )
+	{
+		for ( size_t x = 0; x < 8; ++x )
+		{
+			int R = crBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
+			int B = cbBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
+			int G = ( B * -22524 + R * -46811 ) / 0xffff;
+			R = ( R * 91880 ) / 0xffff;
+			B = ( B * 116128 ) / 0xffff;
+			int Y = yBlk[ x + y * 8 ];
+			R = std::clamp( Y + R, -128, 127 );
+			G = std::clamp( Y + G, -128, 127 );
+			B = std::clamp( Y + B, -128, 127 );
+
+			if ( !m_dataOutputSigned )
+			{
+				R += 128;
+				G += 128;
+				B += 128;
+			}
+
+			const uint32_t BGR = ( static_cast<uint8_t>( B ) << 16 ) | ( static_cast<uint8_t>( G ) << 8 ) | static_cast<uint8_t>( R );
+
+			m_colorDest[ ( x + xx ) + ( y + yy ) * 16 ] = BGR;
+		}
+	}
+}
+
+void MacroblockDecoder::y_to_mono( const Block& yBlk )
+{
+	for ( size_t i = 0; i < 64; ++i )
+	{
+		int Y = yBlk[ i ];
+		Y = SignExtend10( static_cast<int16_t>( Y ) );
+		Y = std::clamp( Y, -128, 127 );
+
+		if ( !m_dataOutputSigned )
+			Y += 128;
+
+		m_colorDest[ i ] = static_cast<uint8_t>( Y );
+	}
 }
 
 }

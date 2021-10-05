@@ -68,7 +68,7 @@ private:
 		InvalidCommand
 	};
 
-	enum class Block
+	enum class BlockIndex
 	{
 		Y1,
 		Y2,
@@ -79,6 +79,10 @@ private:
 		Y = 4 // for monochrome
 	};
 
+	using Block = std::array<int16_t, 64>;
+
+	static constexpr uint16_t EndOfData = 0xfe00;
+
 private:
 	uint32_t ReadData();
 	uint32_t ReadStatus();
@@ -88,10 +92,17 @@ private:
 
 	void Decode();
 
+	// decompression functions
+
+	bool rl_decode_block( int16_t* blk, const uint8_t* qt ); // returns true when the block is full
+	void real_idct_core( Block& blk );
+	void yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, const Block& cbBlk, const Block& yBlk );
+	void y_to_mono( const Block& yBlk );
+
 private:
-	uint16_t m_remainingParams = 0;
-	Block m_readBlock{};
-	Block m_writeBlock{};
+	uint32_t m_remainingHalfWords = 0;
+	BlockIndex m_readBlock{};
+	BlockIndex m_writeBlock{};
 
 	bool m_dataOutputBit15 = false;
 	bool m_dataOutputSigned = false;
@@ -107,6 +118,16 @@ private:
 
 	FifoBuffer<uint16_t, 512> m_dataInBuffer;
 	FifoBuffer<uint32_t, 192> m_dataOutBuffer;
+
+	std::array<uint8_t, 64> m_luminanceTable{}; // used for Y1-Y4
+	std::array<uint8_t, 64> m_colorTable{}; // used for Cr and Cb
+
+	Block m_scaleTable{}; // should be the same as the standard JPEG constants
+
+	size_t m_currentK = 0;
+	int16_t m_currentQ = 0;
+
+	std::array<uint32_t, 64> m_colorDest{};
 };
 
 }

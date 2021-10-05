@@ -90,21 +90,28 @@ public:
 	{
 		dbExpects( m_size + count <= BufferSize );
 
-		// split copy into two segment if ( m_last + count > BufferSize )
-
-		const size_type seg1Capacity = BufferSize - m_last;
-		const size_type seg1Size = ( count <= seg1Capacity ) ? count : seg1Capacity;
+		const size_type seg1Size = std::min( BufferSize - m_last, count );
 		const size_type seg2Size = count - seg1Size;
 
-		// copy data to buffer after m_last
 		std::copy_n( data, seg1Size, m_buffer.data() + m_last );
-
-		// copy remaining data to start of buffer
-		if ( seg2Size > 0 )
-			std::copy_n( data + seg1Size, seg2Size, m_buffer.data() );
+		std::copy_n( data + seg1Size, seg2Size, m_buffer.data() );
 
 		m_last = ( m_last + count ) % BufferSize;
 		m_size += count;
+	}
+
+	void Pop( T* data, size_type count ) noexcept
+	{
+		dbExpects( count <= m_size );
+
+		const size_type seg1Size = std::min( BufferSize - m_first, count );
+		const size_type seg2Size = count - seg1Size;
+
+		std::copy_n( m_buffer.data() + m_first, seg1Size, data );
+		std::copy_n( m_buffer.data(), seg2Size, data + seg1Size );
+
+		m_first = ( m_first + count ) & BufferSize;
+		m_size -= count;
 	}
 
 private:
