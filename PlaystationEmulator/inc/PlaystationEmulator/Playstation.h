@@ -46,12 +46,12 @@ public:
 	Timers&				GetTimers()				{ dbAssert( m_timers ); return *m_timers; }
 
 private:
+	std::unique_ptr<EventManager> m_eventManager; // must be destroyed last
 	std::unique_ptr<Bios> m_bios;
 	std::unique_ptr<CDRomDrive> m_cdromDrive;
 	std::unique_ptr<ControllerPorts> m_controllerPorts;
 	std::unique_ptr<Dma> m_dma;
 	std::unique_ptr<DualSerialPort> m_dualSerialPort; // optional
-	std::unique_ptr<EventManager> m_eventManager;
 	std::unique_ptr<Gpu> m_gpu;
 	std::unique_ptr<InterruptControl> m_interruptControl;
 	std::unique_ptr<MacroblockDecoder> m_mdec;
