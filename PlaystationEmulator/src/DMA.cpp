@@ -235,10 +235,8 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		{
 			case ChannelIndex::MDecOut:
 			{
-				// TODO: block reordering
-				for ( ; wordCount > 0; --wordCount, address += increment )
-					m_ram.Write<uint32_t>( address, m_mdec.Read( 0 ) );
-
+				dbAssert( increment == 4 );
+				m_mdec.DmaOut( (uint32_t*)m_ram.Data() + address, wordCount );
 				break;
 			}
 
@@ -289,9 +287,8 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 		{
 			case ChannelIndex::MDecIn:
 			{
-				for ( ; wordCount > 0; --wordCount, address += increment )
-					m_mdec.Write( 0, m_ram.Read<uint32_t>( address ) );
-
+				dbAssert( increment == 4 );
+				m_mdec.DmaIn( (const uint32_t*)m_ram.Data() + address, wordCount );
 				break;
 			}
 

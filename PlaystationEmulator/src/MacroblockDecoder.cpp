@@ -30,26 +30,34 @@ constexpr int16_t SignExtend10( uint16_t value ) noexcept
 void MacroblockDecoder::Reset()
 {
 	m_remainingHalfWords = 2;
-	m_readBlock = BlockIndex::Y;
-	m_writeBlock = BlockIndex::Y;
+
 	m_dataOutputBit15 = false;
 	m_dataOutputSigned = false;
+
 	m_dataOutputDepth = DataOutputDepth::Four;
+
 	m_enableDataOut = false;
 	m_enableDataIn = false;
 	m_color = false;
+
 	m_state = State::Idle;
+
 	m_dataInBuffer.Reset();
 	m_dataOutBuffer.Reset();
-}
 
-uint32_t MacroblockDecoder::Read( uint32_t offset )
-{
-	dbExpects( offset < 2 );
-	if ( offset == 0 )
-		return ReadData();
-	else
-		return ReadStatus();
+	m_luminanceTable.fill( 0 );
+
+	m_colorTable.fill( 0 );
+	m_scaleTable.fill( 0 );
+
+	m_currentK = 64;
+	m_currentQ = 0;
+
+	for ( auto& block : m_blocks )
+		block.fill( 0 );
+
+	m_currentBlock = 0;
+	m_dest.fill( 0 );
 }
 
 uint32_t MacroblockDecoder::ReadStatus()
@@ -58,7 +66,7 @@ uint32_t MacroblockDecoder::ReadStatus()
 	const bool dataOutRequest = m_enableDataOut;
 	const bool dataInRequest = m_enableDataIn;
 	const uint16_t remainingParamsMinusOne = static_cast<uint16_t>( ( m_remainingHalfWords + 1 ) / 2 - 1 );
-	const BlockIndex currentBlock = m_dataOutBuffer.Empty() ? m_readBlock : m_writeBlock;
+	const uint16_t currentBlock = ( m_currentBlock + 4 ) % BlockIndex::Count;
 
 	return static_cast<uint32_t>( remainingParamsMinusOne ) |
 		( static_cast<uint32_t>( currentBlock ) << 16 ) |
@@ -71,21 +79,22 @@ uint32_t MacroblockDecoder::ReadStatus()
 		( static_cast<uint16_t>( m_dataOutBuffer.Empty() ) << 31 );
 }
 
-
 uint32_t MacroblockDecoder::ReadData()
 {
 	if ( m_dataOutBuffer.Empty() )
 	{
-		// TODO: stall the CPU if MDEC has pending block
+		// TODO: stall the CPU if MDEC has pending block?
 
-		// dbLogWarning( "MacroblockDecoder::ReadData -- data out buffer is empty" );
+		dbLogWarning( "MacroblockDecoder::ReadData -- output fifo is empty" );
 		return 0xffffffffu;
 	}
 	else
 	{
 		const uint32_t value = m_dataOutBuffer.Pop();
 
-		// TODO: decode next block if buffer is empty
+		// process more data if we were waiting for output fifo to empty
+		if ( m_dataOutBuffer.Empty() && ( m_state == State::DecodingMacroblock ) )
+			ProcessInput();
 
 		return value;
 	}
@@ -96,7 +105,9 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 	dbExpects( offset < 2 );
 	if ( offset == 0 )
 	{
-		WriteParam( value );
+		m_dataInBuffer.Push( static_cast<uint16_t>( value ) );
+		m_dataInBuffer.Push( static_cast<uint16_t>( value >> 16 ) );
+		ProcessInput();
 	}
 	else
 	{
@@ -112,54 +123,102 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 	}
 }
 
-void MacroblockDecoder::WriteParam( uint32_t value )
+void MacroblockDecoder::DmaIn( const uint32_t* input, uint32_t count )
 {
-	m_dataInBuffer.Push( static_cast<uint16_t>( value ) );
-	m_dataInBuffer.Push( static_cast<uint16_t>( value >> 16 ) );
+	m_dataInBuffer.Push( reinterpret_cast<const uint16_t*>( input ), count * 2 );
+	ProcessInput();
+}
 
-	switch ( m_state )
+void MacroblockDecoder::DmaOut( uint32_t* output, uint32_t count )
+{
+	const uint32_t available = std::min( m_dataOutBuffer.Size(), count );
+	m_dataOutBuffer.Pop( output, available );
+
+	if ( available < count )
 	{
-		case State::Idle:
+		dbLogWarning( "MacroblockDecoder::DmaOut -- output fifo is empty" );
+		std::fill_n( output + available, count - available, 0xffffffffu );
+	}
+
+	// process more data if we were waiting for output fifo to empty
+	if ( m_dataOutBuffer.Empty() && ( m_state == State::DecodingMacroblock ) )
+		ProcessInput();
+}
+
+void MacroblockDecoder::ProcessInput()
+{
+	// keep processing data until there's no more or something returns
+	while ( !m_dataInBuffer.Empty() )
+	{
+		switch ( m_state )
 		{
-			const uint32_t command = m_dataInBuffer.Pop() | ( m_dataInBuffer.Pop() << 16 );
-			StartCommand( command );
-			break;
-		}
-
-		case State::ReadingMacroblock:
-			if ( m_dataInBuffer.Size() == m_remainingHalfWords )
-				Decode();
-			break;
-
-		case State::DecodingMacroblock:
-			dbBreak(); // TODO
-			break;
-
-		case State::ReadingQuantTable:
-			if ( m_dataInBuffer.Size() == m_remainingHalfWords )
+			case State::Idle:
 			{
-				m_dataInBuffer.Clear();
-				m_state = State::Idle;
+				dbAssert( m_dataInBuffer.Size() >= 2 );
+				const uint32_t command = m_dataInBuffer.Pop() | ( m_dataInBuffer.Pop() << 16 );
+				StartCommand( command );
+				break;
 			}
-			// TODO
-			break;
 
-		case State::ReadingScaleTable:
-			if ( m_dataInBuffer.Size() == m_remainingHalfWords )
+			case State::DecodingMacroblock:
 			{
-				m_dataInBuffer.Clear();
-				m_state = State::Idle;
+				if ( DecodeMacroblock() )
+				{
+					m_state = State::WritingMacroblock;
+					OutputBlock(); // TODO: schedule output
+					return;
+				}
+				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
+				{
+					// didn't get enough data to decode all blocks
+					m_currentBlock = 0;
+					m_currentK = 64;
+					m_state = State::Idle;
+				}
+				break;
 			}
-			// TODO
-			break;
 
-		case State::InvalidCommand:
-		{
-			m_remainingHalfWords -= 2;
-			if ( m_remainingHalfWords == 0 )
+			case State::WritingMacroblock:
+				// wait until macroblock is in output buffer
+				return;
+
+			case State::ReadingQuantTable:
+			{
+				if ( m_dataInBuffer.Size() < m_remainingHalfWords )
+					return;
+
+				m_dataInBuffer.Pop( (uint16_t*)m_luminanceTable.data(), 32 ); // 64 bytes
+				if ( m_color )
+					m_dataInBuffer.Pop( (uint16_t*)m_colorTable.data(), 32 ); // 64 bytes
+
+				m_remainingHalfWords = 0;
 				m_state = State::Idle;
+				break;
+			}
 
-			break;
+			case State::ReadingScaleTable:
+			{
+				if ( m_dataInBuffer.Size() < m_remainingHalfWords )
+					return;
+
+				m_dataInBuffer.Pop( (uint16_t*)m_scaleTable.data(), 64 );
+
+				m_remainingHalfWords = 0;
+				m_state = State::Idle;
+				break;
+			}
+
+			case State::InvalidCommand:
+			{
+				const auto ignoreCount = std::min( m_dataInBuffer.Size(), m_remainingHalfWords );
+				m_remainingHalfWords -= ignoreCount;
+				m_dataInBuffer.Ignore( ignoreCount );
+
+				if ( m_remainingHalfWords == 0 )
+					m_state = State::Idle;
+
+				break;
+			}
 		}
 	}
 }
@@ -174,7 +233,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 	{
 		case Command::DecodeMacroblock:
 		{
-			m_state = State::ReadingMacroblock;
+			m_state = State::DecodingMacroblock;
 			m_remainingHalfWords = static_cast<uint16_t>( value ) * 2;
 			break;
 		}
@@ -201,6 +260,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		default:
 		{
 			// similar as the "number of parameter words" for MDEC(1), but without the "minus 1" effect, and without actually expecting any parameters
+			dbLogWarning( "MacroblockDecoder::StartCommand -- invalid command [%X]", value );
 			m_state = State::InvalidCommand;
 			m_remainingHalfWords = static_cast<uint16_t>( value + 1 ) * 2;
 			break;
@@ -208,44 +268,170 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 	}
 }
 
-void MacroblockDecoder::Decode()
+bool MacroblockDecoder::DecodeColoredMacroblock()
 {
-	// TODO
-
-	const uint32_t pixelsPerBlock = m_color ? 256 : 64;
-
-	uint32_t words = 0;
-	switch ( m_dataOutputDepth )
+	// decode remaining blocks
+	for ( auto i = m_currentBlock; i < BlockIndex::Count; ++i )
 	{
-		case DataOutputDepth::Four:
-			words = pixelsPerBlock / 8;
-			break;
+		if ( !rl_decode_block( m_blocks[ i ], i < 2 ? m_luminanceTable : m_colorTable ) )
+			return false;
 
-		case DataOutputDepth::Eight:
-			words = pixelsPerBlock / 4;
-			break;
-
-		case DataOutputDepth::TwentyFour:
-			words = ( ( pixelsPerBlock * 3 ) + 3 ) / 4;
-			break;
-
-		case DataOutputDepth::Fifteen:
-			words = pixelsPerBlock / 2;
-			break;
+		real_idct_core( m_blocks[ i ] );
 	}
 
-	for ( uint32_t i = 0; i < words; ++i )
-		m_dataOutBuffer.Push( 0 );
+	// wait for output fifo to be emptied
+	if ( m_dataOutBuffer.Empty() )
+		return false;
 
-	m_dataInBuffer.Clear();
-	m_state = State::Idle;
+	// calculate final rgb data
+	yuv_to_rgb( 0, 0, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y1 ] );
+	yuv_to_rgb( 0, 8, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y2 ] );
+	yuv_to_rgb( 8, 0, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y3 ] );
+	yuv_to_rgb( 8, 8, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y4 ] );
+
+	// reset block
+	m_currentBlock = 0;
+
+	return true;
 }
 
-bool MacroblockDecoder::rl_decode_block( int16_t* blk, const uint8_t* qt )
+bool MacroblockDecoder::DecodeMonoMacroblock()
+{
+	// wait for output fifo to be emptied
+	if ( !m_dataOutBuffer.Empty() )
+		return false;
+
+	// decode Y block
+	if ( !rl_decode_block( m_blocks[ BlockIndex::Y ], m_luminanceTable ) )
+		return false;
+
+	// calculate final greyscale
+	y_to_mono( m_blocks[ BlockIndex::Y ] );
+	OutputBlock();
+
+	return true;
+}
+
+void MacroblockDecoder::OutputBlock()
+{
+	dbExpects( m_state == State::WritingMacroblock );
+
+	switch ( m_dataOutputDepth )
+	{
+		case DataOutputDepth::Four: // mono
+		{
+			auto to4bit = []( uint32_t mono ) { return ( mono >> 4 ); }; // convert 8bit luminance to 4bit
+
+			for ( size_t i = 0; i < 64; i += 8 )
+			{
+				uint32_t value = to4bit( m_dest[ i ] );
+				value |= to4bit( m_dest[ i + 1 ] ) << 4;
+				value |= to4bit( m_dest[ i + 2 ] ) << 8;
+				value |= to4bit( m_dest[ i + 3 ] ) << 12;
+				value |= to4bit( m_dest[ i + 4 ] ) << 16;
+				value |= to4bit( m_dest[ i + 5 ] ) << 20;
+				value |= to4bit( m_dest[ i + 6 ] ) << 24;
+				value |= to4bit( m_dest[ i + 7 ] ) << 28;
+				m_dataOutBuffer.Push( value );
+			}
+			break;
+		}
+
+		case DataOutputDepth::Eight: // mono
+		{
+			for ( size_t i = 0; i < 64; i += 4 )
+			{
+				uint32_t value = m_dest[ i ];
+				value |= m_dest[ i + 1 ] << 8;
+				value |= m_dest[ i + 2 ] << 16;
+				value |= m_dest[ i + 3 ] << 24;
+				m_dataOutBuffer.Push( value );
+			}
+			break;
+		}
+
+		case DataOutputDepth::Fifteen: // color
+		{
+			const uint32_t maskBit = m_dataOutputBit15 ? 0x8000 : 0;
+
+			auto toBGR15 = [maskBit]( uint32_t BGR24 ) -> uint32_t
+			{
+				auto to5bit = []( uint32_t c ) { return static_cast<uint16_t>( ( c >> 3 ) & 0x1f ); };
+
+				const uint16_t red = to5bit( BGR24 );
+				const uint16_t green = to5bit( BGR24 >> 8 );
+				const uint16_t blue = to5bit( BGR24 >> 16 );
+				return red | ( green << 5 ) | ( blue << 5 ) | maskBit;
+			};
+
+			for ( size_t i = 0; i < 64; i += 2 )
+			{
+				const uint32_t value = toBGR15( m_dest[ i ] ) | ( toBGR15( m_dest[ i + 1 ] ) << 16 );
+				m_dataOutBuffer.Push( value );
+			}
+			break;
+		}
+
+		case DataOutputDepth::TwentyFour: // color
+		{
+			uint32_t value = 0;
+			int curSize = 0;
+			for ( size_t i = 0; i < 64; ++i )
+			{
+				const uint32_t BGR = m_dest[ i ];
+				switch ( curSize )
+				{
+					case 0:
+					{
+						value = BGR;
+						curSize = 3;
+						break;
+					}
+
+					case 3:
+					{
+						value |= BGR << 24;
+						m_dataOutBuffer.Push( value );
+						value = BGR >> 8;
+						curSize = 2;
+						break;
+					}
+
+					case 2:
+					{
+						value |= BGR << 16;
+						m_dataOutBuffer.Push( value );
+						value = BGR >> 16;
+						curSize = 1;
+						break;
+					}
+
+					case 1:
+					{
+						value |= BGR << 8;
+						m_dataOutBuffer.Push( value );
+						curSize = 0;
+						break;
+					}
+				}
+			}
+			// there will always be a component left over since 64 is not divisible by 3
+			m_dataOutBuffer.Push( value );
+			break;
+		}
+	}
+
+	m_state = ( m_remainingHalfWords == 0 ) ? State::Idle : State::DecodingMacroblock;
+
+	// TODO: uncomment when output is scheduled
+	// ProcessInput();
+}
+
+bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 {
 	if ( m_currentK == 64 )
 	{
-		std::fill_n( blk, 64, int16_t( 0 ) );
+		blk.fill( 0 );
 
 		// skip padding
 		uint16_t n;
@@ -278,6 +464,7 @@ bool MacroblockDecoder::rl_decode_block( int16_t* blk, const uint8_t* qt )
 	while( !m_dataInBuffer.Empty() && m_remainingHalfWords > 0 )
 	{
 		uint16_t n = m_dataInBuffer.Pop();
+		--m_remainingHalfWords;
 
 		m_currentK += 1 + ( ( n >> 10 ) & 0x3f );
 
@@ -353,7 +540,7 @@ void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, co
 
 			const uint32_t BGR = ( static_cast<uint8_t>( B ) << 16 ) | ( static_cast<uint8_t>( G ) << 8 ) | static_cast<uint8_t>( R );
 
-			m_colorDest[ ( x + xx ) + ( y + yy ) * 16 ] = BGR;
+			m_dest[ ( x + xx ) + ( y + yy ) * 16 ] = BGR;
 		}
 	}
 }
@@ -369,7 +556,7 @@ void MacroblockDecoder::y_to_mono( const Block& yBlk )
 		if ( !m_dataOutputSigned )
 			Y += 128;
 
-		m_colorDest[ i ] = static_cast<uint8_t>( Y );
+		m_dest[ i ] = static_cast<uint8_t>( Y );
 	}
 }
 

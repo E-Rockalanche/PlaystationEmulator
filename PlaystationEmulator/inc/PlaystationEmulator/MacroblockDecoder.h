@@ -15,9 +15,19 @@ public:
 
 	void Reset();
 
-	uint32_t Read( uint32_t offset );
+	uint32_t Read( uint32_t offset )
+	{
+		dbExpects( offset < 2 );
+		if ( offset == 0 )
+			return ReadData();
+		else
+			return ReadStatus();
+	}
 
 	void Write( uint32_t offset, uint32_t value );
+
+	void DmaIn( const uint32_t* input, uint32_t count );
+	void DmaOut( uint32_t* output, uint32_t count );
 
 private:
 	union Status
@@ -61,25 +71,31 @@ private:
 	enum class State
 	{
 		Idle,
-		ReadingMacroblock,
 		DecodingMacroblock,
+		WritingMacroblock,
 		ReadingQuantTable,
 		ReadingScaleTable,
 		InvalidCommand
 	};
 
-	enum class BlockIndex
+	// not the same order as block index in status register!
+	struct BlockIndex
 	{
-		Y1,
-		Y2,
-		Y3,
-		Y4,
-		Cr,
-		Cb,
-		Y = 4 // for monochrome
+		enum : uint32_t
+		{
+			Cr,
+			Cb,
+			Y1,
+			Y2,
+			Y3,
+			Y4,
+			Count,
+			Y = Cr
+		};
 	};
 
 	using Block = std::array<int16_t, 64>;
+	using Table = std::array<uint8_t, 64>;
 
 	static constexpr uint16_t EndOfData = 0xfe00;
 
@@ -87,22 +103,31 @@ private:
 	uint32_t ReadData();
 	uint32_t ReadStatus();
 
-	void WriteParam( uint32_t value );
+	void ProcessInput();
+
 	void StartCommand( uint32_t value );
 
-	void Decode();
+	bool DecodeMacroblock()
+	{
+		if ( m_color )
+			return DecodeColoredMacroblock();
+		else
+			return DecodeMonoMacroblock();
+	}
+
+	bool DecodeColoredMacroblock(); // returns true when data is ready to be output
+	bool DecodeMonoMacroblock(); // returns true when data is ready to be output
+	void OutputBlock();
 
 	// decompression functions
 
-	bool rl_decode_block( int16_t* blk, const uint8_t* qt ); // returns true when the block is full
+	bool rl_decode_block( Block& blk, const Table& qt ); // returns true when the block is full
 	void real_idct_core( Block& blk );
 	void yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, const Block& cbBlk, const Block& yBlk );
 	void y_to_mono( const Block& yBlk );
 
 private:
 	uint32_t m_remainingHalfWords = 0;
-	BlockIndex m_readBlock{};
-	BlockIndex m_writeBlock{};
 
 	bool m_dataOutputBit15 = false;
 	bool m_dataOutputSigned = false;
@@ -127,7 +152,10 @@ private:
 	size_t m_currentK = 0;
 	int16_t m_currentQ = 0;
 
-	std::array<uint32_t, 64> m_colorDest{};
+	std::array<Block, BlockIndex::Count> m_blocks;
+	uint32_t m_currentBlock = 0;
+
+	std::array<uint32_t, 64> m_dest{};
 };
 
 }

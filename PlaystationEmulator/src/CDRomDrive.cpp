@@ -401,7 +401,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 
 			SendResponse();
 
-			dbBreak(); // TODO
+			// dbBreak(); // TODO
 			break;
 		}
 

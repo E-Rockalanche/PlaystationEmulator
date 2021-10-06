@@ -110,7 +110,14 @@ public:
 		std::copy_n( m_buffer.data() + m_first, seg1Size, data );
 		std::copy_n( m_buffer.data(), seg2Size, data + seg1Size );
 
-		m_first = ( m_first + count ) & BufferSize;
+		m_first = ( m_first + count ) % BufferSize;
+		m_size -= count;
+	}
+
+	void Ignore( size_type count ) noexcept
+	{
+		dbExpects( count <= m_size );
+		m_first = ( m_first + count ) % BufferSize;
 		m_size -= count;
 	}
 
