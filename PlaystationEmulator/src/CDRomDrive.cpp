@@ -401,7 +401,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 
 			SendResponse();
 
-			// dbBreak(); // TODO
+			dbBreak(); // TODO
 			break;
 		}
 
@@ -540,6 +540,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			m_status |= Status::Seek;
 			SendResponse();
 			QueueSecondResponse( Command::SetSession );
+			dbBreak(); // TODO
 			break;
 		}
 
@@ -657,7 +658,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 
 			SendResponse();
 
-			// TODO: return return start of specified track
+			dbBreak(); // TODO: return return start of specified track
 			m_responseBuffer.Push( 0 );
 			m_responseBuffer.Push( 0 );
 			break;
@@ -679,7 +680,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			// muting is just forcing the CD output volume to zero.
 			// Mute is used by Dino Crisis 1 to mute noise during modchip detection.
 			dbLog( "CDRomDRive::Mute" );
-			// TODO
+			dbBreak(); // TODO
 			SendResponse();
 			break;
 		}
@@ -689,16 +690,16 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 			// Turn on audio streaming to SPU (affects both CD-DA and XA-ADPCM). The Demute command is needed only if one has formerly used the Mute command
 			// (by default, the PSX is demuted after power-up (...and/or after Init command?), and is demuted after cdrom-booting).
 			dbLog( "CDRomDRive::Demute" );
-			// TODO
+			dbBreak(); // TODO
 			SendResponse();
 			break;
 		}
 
 		case Command::Play:
 		{
-			// TODO
 			dbLog( "CDRomDrive::Play" );
 			const uint8_t param = m_parameterBuffer.Empty() ? 0x00 : m_parameterBuffer.Pop();
+			dbBreak(); // TODO
 			if ( param == 0x00 )
 			{
 				// play either starts at Setloc position (if there was a pending unprocessed Setloc), or otherwise starts at the current location
@@ -719,7 +720,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		{
 			dbLog( "CDRomDRive::Forward" );
 			SendResponse();
-			// TODO
+			dbBreak(); // TODO
 			break;
 		}
 
@@ -727,7 +728,7 @@ void CDRomDrive::ExecuteCommand( Command command ) noexcept
 		{
 			dbLog( "CDRomDRive::Backward" );
 			SendResponse();
-			// TODO
+			dbBreak(); // TODO
 			break;
 		}
 
@@ -846,6 +847,7 @@ void CDRomDrive::ExecuteSecondResponse( Command command ) noexcept
 			dbLog( "CDRomDrive::Pause -- second response" );
 			stdx::reset_bits<uint8_t>( m_status, Status::Read | Status::Play | Status::Seek );
 			SendSecondResponse();
+			dbBreak(); // TODO
 			break;
 		}
 
