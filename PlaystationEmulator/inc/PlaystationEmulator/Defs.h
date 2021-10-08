@@ -15,6 +15,8 @@ using cycles_t = int;
 
 constexpr cycles_t InfiniteCycles = std::numeric_limits<cycles_t>::max();
 
+constexpr cycles_t CpuCyclesPerSecond = 44100 * 0x300;
+
 class Event;
 class EventManager;
 class CDRom;

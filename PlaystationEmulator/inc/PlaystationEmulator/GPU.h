@@ -13,23 +13,23 @@
 namespace PSX
 {
 
-static constexpr float CpuClockSpeed = 44100 * 0x300; // Hz
-static constexpr float VideoClockSpeed = CpuClockSpeed * 11 / 7; // Hz
+static constexpr float CpuClockSpeed = CpuCyclesPerSecond; // Hz
+static constexpr float VideoClockSpeed = CpuCyclesPerSecond * 11.0f / 7.0f; // Hz
 
-static constexpr float RefreshRatePAL = 50;
-static constexpr float RefreshRateNTSC = 60;
+static constexpr float RefreshRatePAL = 50.0f;
+static constexpr float RefreshRateNTSC = 60.0f;
 
 static constexpr uint32_t ScanlinesPAL = 314;
 static constexpr uint32_t ScanlinesNTSC = 263;
 
 constexpr float ConvertCpuToVideoCycles( float cycles ) noexcept
 {
-	return ( cycles * VideoClockSpeed ) / CpuClockSpeed;
+	return cycles * 11.0f / 7.0f;
 }
 
 constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
 {
-	return ( cycles * CpuClockSpeed ) / VideoClockSpeed;
+	return cycles * 7.0f / 11.0f;
 }
 
 class Gpu
