@@ -2,6 +2,8 @@
 
 #include <glad/glad.h>
 
+#include <type_traits>
+
 namespace Render
 {
 
