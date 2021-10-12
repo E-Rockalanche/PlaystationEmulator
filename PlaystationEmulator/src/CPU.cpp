@@ -38,7 +38,7 @@ void MipsR3000Cpu::Tick() noexcept
 	m_inDelaySlot = m_inBranch;
 	m_inBranch = false;
 
-	if ( m_cop0.ShouldTriggerInterrupt() )
+	if ( STDX_unlikely( m_cop0.ShouldTriggerInterrupt() ) )
 	{
 		// update current PC now so we can save the proper return address
 		m_currentPC = m_pc;
@@ -188,9 +188,6 @@ void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 		std::printf( "pc(%08X): ", m_currentPC );
 		PrintDisassembly( instr );
 	}
-
-	if ( instr.value == 0 )
-		return; // NOP
 
 #define OP_CASE( opcode ) case Opcode::opcode:	opcode( instr );	break;
 
@@ -834,7 +831,9 @@ void MipsR3000Cpu::StoreHalfword( Instruction instr ) noexcept
 
 void MipsR3000Cpu::ShiftLeftLogical( Instruction instr ) noexcept
 {
-	m_registers.Set( instr.rd(), m_registers[ instr.rt() ] << instr.shamt() );
+	// 0 is a common NOP instruction (shift zero register by 0)
+	if ( instr.value != 0 )
+		m_registers.Set( instr.rd(), m_registers[ instr.rt() ] << instr.shamt() );
 }
 
 void MipsR3000Cpu::ShiftLeftLogicalVariable( Instruction instr ) noexcept

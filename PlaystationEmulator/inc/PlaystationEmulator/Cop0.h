@@ -116,8 +116,9 @@ public:
 		return m_systemStatus & SystemStatus::InterruptEnable;
 	}
 
-	bool ShouldTriggerInterrupt() const noexcept
+	inline bool ShouldTriggerInterrupt() const noexcept
 	{
+		// TODO: cache result when state changes
 		return GetInterruptEnable() && ( m_systemStatus & GetExceptionCause() & SystemStatus::InterruptMask );
 	}
 
