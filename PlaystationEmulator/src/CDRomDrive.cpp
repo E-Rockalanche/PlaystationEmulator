@@ -914,7 +914,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// muting is just forcing the CD output volume to zero.
 			// Mute is used by Dino Crisis 1 to mute noise during modchip detection.
 			dbLog( "CDRomDrive::ExecuteCommand -- Mute" );
-			dbBreak(); // TODO
+			SendResponse();
 			break;
 		}
 
@@ -923,7 +923,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// Turn on audio streaming to SPU (affects both CD-DA and XA-ADPCM). The Demute command is needed only if one has formerly used the Mute command
 			// (by default, the PSX is demuted after power-up (...and/or after Init command?), and is demuted after cdrom-booting).
 			dbLog( "CDRomDrive::ExecuteCommand -- Demute" );
-			dbBreak(); // TODO
+			SendResponse();
 			break;
 		}
 
