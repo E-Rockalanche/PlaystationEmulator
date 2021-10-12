@@ -18,10 +18,15 @@ public:
 
 	void Reset();
 
+	// for software 8bit & 16bit reads and DMA 32bit reads
 	template <typename T>
 	T ReadDataFifo() noexcept
 	{
-		return static_cast<T>( m_dataBuffer.Pop() * 0x01010101 );
+		T result = 0;
+		for ( size_t i = 0; i < sizeof( T ); ++i )
+			result |= m_dataBuffer.Pop() << ( i * 8 );
+
+		return result;
 	}
 
 	uint8_t Read( uint32_t index ) noexcept;

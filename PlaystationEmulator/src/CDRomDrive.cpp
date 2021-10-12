@@ -86,17 +86,17 @@ enum class TestFunction : uint8_t
 CDRomDrive::CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
 {
-	m_commandEvent = eventManager.CreateEvent( "CDRomDrive command event", [this]( auto )
+	m_commandEvent = eventManager.CreateEvent( "CDRomDrive command event", [this]( cycles_t )
 		{
 			ExecuteCommand();
 		} );
 
-	m_secondResponseEvent = eventManager.CreateEvent( "CDRomDrive second response", [this]( auto )
+	m_secondResponseEvent = eventManager.CreateEvent( "CDRomDrive second response", [this]( cycles_t )
 		{
 			ExecuteSecondResponse();
 		} );
 
-	m_driveEvent = eventManager.CreateEvent( "CDRomDrive drive event", [this]( auto )
+	m_driveEvent = eventManager.CreateEvent( "CDRomDrive drive event", [this]( cycles_t )
 		{
 			ExecuteDrive();
 		} );

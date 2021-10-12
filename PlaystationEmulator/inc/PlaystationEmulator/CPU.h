@@ -540,7 +540,7 @@ void MipsR3000Cpu::StoreImp( uint32_t address, T value ) noexcept
 		}
 		else
 		{
-			dbLog( "write cache [%X <= %X]", address, value );
+			// dbLog( "write cache [%X <= %X]", address, value );
 			m_instructionCache.Write( address / 16, value );
 		}
 	}
