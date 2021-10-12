@@ -1105,8 +1105,6 @@ void CDRomDrive::ExecuteDrive() noexcept
 				SendSecondError( ErrorCode::SeekFailed ); // TODO: should this happen at the end of seek?
 			}
 
-			auto& sector = m_sectorBuffers[ m_writeSectorBuffer ];
-
 			const bool readFullSector = m_mode.sectorSize;
 			const uint32_t readCount = readFullSector ? DataBufferSize : CDRom::DataBytesPerSector;
 
@@ -1136,9 +1134,10 @@ void CDRomDrive::ExecuteDrive() noexcept
 				}
 			}
 
+			// read data to next buffer
+			auto& sector = m_sectorBuffers[ m_writeSectorBuffer ];
 			m_cdrom->Read( (char*)sector.bytes.data(), readCount );
 			sector.size = readCount;
-
 			m_writeSectorBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
 
 			// schedule next sector to read

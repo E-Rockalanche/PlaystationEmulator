@@ -20,14 +20,7 @@ public:
 
 	// for software 8bit & 16bit reads and DMA 32bit reads
 	template <typename T>
-	T ReadDataFifo() noexcept
-	{
-		T result = 0;
-		for ( size_t i = 0; i < sizeof( T ); ++i )
-			result |= m_dataBuffer.Pop() << ( i * 8 );
-
-		return result;
-	}
+	T ReadDataFifo() noexcept;
 
 	uint8_t Read( uint32_t index ) noexcept;
 	void Write( uint32_t index, uint8_t value ) noexcept;
@@ -200,7 +193,7 @@ private:
 	void SendError( ErrorCode errorCode )
 	{
 		dbLog( "CDRomDrive::SendError -- [%u]", uint32_t( errorCode ) );
-		m_responseBuffer.Push( m_status.value & 0x01 );
+		m_responseBuffer.Push( m_status.value | 0x01 );
 		m_responseBuffer.Push( static_cast<uint8_t>( errorCode ) );
 		m_interruptFlags = InterruptResponse::Error;
 	}
@@ -209,7 +202,7 @@ private:
 	void SendSecondError( ErrorCode errorCode )
 	{
 		dbLog( "CDRomDrive::SendSecondError -- [%u]", uint32_t( errorCode ) );
-		m_secondResponseBuffer.Push( m_status.value & 0x01 );
+		m_secondResponseBuffer.Push( m_status.value | 0x01 );
 		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
 		m_queuedInterrupt = InterruptResponse::Error;
 	}
@@ -304,5 +297,22 @@ private:
 	bool m_pendingSeek = false; // SetLoc was called, but we haven't called seek yet
 	bool m_pendingRead = false; // Read was called, but we were still seeking
 };
+
+template <typename T>
+inline T CDRomDrive::ReadDataFifo() noexcept
+{
+	T result = static_cast<T>( m_dataBuffer.Pop() );
+
+	if constexpr ( sizeof( T ) >= 2 )
+		result |= static_cast<T>( m_dataBuffer.Pop() << 8 );
+
+	if constexpr ( sizeof( T ) >= 4 )
+	{
+		result |= static_cast<T>( m_dataBuffer.Pop() << 16 );
+		result |= static_cast<T>( m_dataBuffer.Pop() << 24 );
+	}
+
+	return result;
+}
 
 }
