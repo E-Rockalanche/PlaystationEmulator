@@ -10,7 +10,7 @@ namespace PSX
 ControllerPorts::ControllerPorts( InterruptControl& interruptControl, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
 {
-	m_communicateEvent = eventManager.CreateEvent( "ControllerPorts communicate event", [this]( cycles_t cycles ) { UpdateCycles( cycles ); } );
+	m_communicateEvent = eventManager.CreateEvent( "ControllerPorts communicate event", [this]( cycles_t ) { UpdateCommunication(); } );
 }
 
 ControllerPorts::~ControllerPorts() = default;
@@ -28,7 +28,6 @@ void ControllerPorts::Reset()
 	m_baudrateReloadValue = 0x0088;
 
 	m_state = State::Idle;
-	m_cyclesUntilEvent = 0;
 
 	m_txBuffer = 0;
 	m_txBufferFull = false;
@@ -69,8 +68,6 @@ uint32_t ControllerPorts::ReadStatus() noexcept
 
 void ControllerPorts::WriteData( uint32_t value ) noexcept
 {
-	m_communicateEvent->UpdateEarly();
-
 	// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
 	// the written value is sent to the controller or memory card, and, simultaneously,
 	// a byte is received (and stored in RX FIFO if JOY_CTRL.1 or JOY_CTRL.2 is set).
@@ -87,8 +84,6 @@ void ControllerPorts::WriteData( uint32_t value ) noexcept
 
 void ControllerPorts::WriteControl( uint16_t value ) noexcept
 {
-	m_communicateEvent->UpdateEarly();
-
 	dbLog( "ControllerPorts::Write() -- control [%X]", value );
 	m_control = value & Control::WriteMask;
 
@@ -136,8 +131,7 @@ void ControllerPorts::TryTransfer() noexcept
 		m_tranferringValue = m_txBuffer;
 		m_txBufferFull = false;
 		m_state = State::Transferring;
-		m_cyclesUntilEvent = GetTransferCycles();
-		m_communicateEvent->Schedule( m_cyclesUntilEvent );
+		m_communicateEvent->Schedule( GetTransferCycles() );
 	}
 }
 
@@ -149,7 +143,7 @@ void ControllerPorts::DoTransfer()
 	m_control |= Control::RXEnable;
 
 	uint8_t received = 0xff;
-	bool ack = false;
+	bool doAck = false;
 
 	if ( stdx::any_of<uint16_t>( m_control, Control::JoyNOutput ) )
 	{
@@ -159,7 +153,7 @@ void ControllerPorts::DoTransfer()
 		if ( controller )
 		{
 			received = controller->Communicate( m_tranferringValue );
-			ack = true; // TODO: when does the controller actually ack?
+			doAck = true; // TODO: when does the controller actually ack?
 		}
 	}
 	else
@@ -172,11 +166,10 @@ void ControllerPorts::DoTransfer()
 	m_rxBuffer = received;
 	m_rxBufferFull = true;
 
-	if ( ack )
+	if ( doAck )
 	{
 		m_state = State::PendingAck;
-		m_cyclesUntilEvent = ControllerAckCycles; // TODO: memory card ack cycles
-		m_communicateEvent->Schedule( m_cyclesUntilEvent );
+		m_communicateEvent->Schedule( ControllerAckCycles ); // TODO: memory card ack cycles
 	}
 	else
 	{
@@ -210,17 +203,8 @@ void ControllerPorts::EndTransfer()
 	TryTransfer();
 }
 
-void ControllerPorts::UpdateCycles( uint32_t cycles )
+void ControllerPorts::UpdateCommunication()
 {
-	if ( m_state == State::Idle )
-		return;
-
-	dbExpects( cycles <= m_cyclesUntilEvent );
-
-	m_cyclesUntilEvent -= cycles;
-	if ( m_cyclesUntilEvent > 0 )
-		return;
-
 	switch ( m_state )
 	{
 		case State::Idle:

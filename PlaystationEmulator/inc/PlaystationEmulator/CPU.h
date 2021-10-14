@@ -77,13 +77,13 @@ private:
 			Static8 = FramePointer,
 		};
 
-		uint32_t operator[]( uint32_t index ) const noexcept
+		inline uint32_t operator[]( uint32_t index ) const noexcept
 		{
 			return m_input[ index ];
 		}
 
 		// immediately updates register
-		void Set( uint32_t index, uint32_t value ) noexcept
+		inline void Set( uint32_t index, uint32_t value ) noexcept
 		{
 			dbExpects( index < 32 );
 
@@ -99,7 +99,7 @@ private:
 		}
 
 		// emulates delayed load
-		void Load( uint32_t index, uint32_t value ) noexcept
+		inline void Load( uint32_t index, uint32_t value ) noexcept
 		{
 			dbExpects( index < 32 );
 			dbExpects( m_delayedLoad.index == 0 && m_delayedLoad.value == 0 );
@@ -122,7 +122,7 @@ private:
 			m_delayedLoad = { 0, 0 };
 		}
 
-		void Update() noexcept
+		inline void Update() noexcept
 		{
 			m_input[ m_output.index ] = m_output.value;
 			m_input[ Zero ] = 0; // zero register is always 0
@@ -130,7 +130,7 @@ private:
 			m_delayedLoad = { 0, 0 };
 		}
 
-		void Flush() noexcept
+		inline void Flush() noexcept
 		{
 			m_input[ m_output.index ] = m_output.value;
 			m_input[ Zero ] = 0; // zero register is always 0

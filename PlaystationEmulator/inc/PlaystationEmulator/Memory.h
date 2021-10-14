@@ -30,7 +30,7 @@ public:
 	const uint8_t* Data() const noexcept { return m_data.data(); }
 
 	template <typename T>
-	T Read( uint32_t offset ) const noexcept
+	inline T Read( uint32_t offset ) const noexcept
 	{
 		dbExpects( offset % sizeof( T ) == 0 );
 		dbExpects( offset < MemorySize );
@@ -38,7 +38,7 @@ public:
 	}
 
 	template <typename T>
-	void Write( uint32_t offset, T value ) noexcept
+	inline void Write( uint32_t offset, T value ) noexcept
 	{
 		dbExpects( offset % sizeof( T ) == 0 );
 		dbExpects( offset < MemorySize );

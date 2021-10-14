@@ -40,15 +40,9 @@ public:
 	// internal
 
 	bool IsUsingSystemClock() const noexcept { return m_useSystemClock; }
-	void UseSystemClock( bool useSystemClock ) noexcept { m_useSystemClock = useSystemClock; }
 
-	bool GetPaused() const noexcept { return m_paused; }
+	bool IsPaused() const noexcept { return m_paused; }
 	void PauseAtTarget() noexcept; // timer2 only
-
-	bool CanTriggerIrq() const noexcept
-	{
-		return !m_paused && ( m_mode.irqOnTarget || m_mode.irqOnMax );
-	}
 
 	// update hblank and vblank for timers 0 and 1
 	void UpdateBlank( bool blanked ) noexcept;
@@ -147,6 +141,11 @@ private:
 		Mode,
 		Target
 	};
+
+	// Timers are always running in the background.
+	// The timer event needs to be scheduled for UpdateEarly to do anything.
+	// InfiniteCycles causes integer overflow in EventManager
+	static constexpr cycles_t MaxScheduleCycles = InfiniteCycles / 2;
 
 private:
 	void UpdateEventsEarly( uint32_t timerIndex );

@@ -157,6 +157,7 @@ private:
 	static constexpr uint32_t ControllerAckCycles = 450;
 	static constexpr uint32_t MemoryCardAckCycles = 170;
 
+private:
 	void ReloadBaudrateTimer() noexcept;
 
 	uint16_t GetRXInterruptMode() const noexcept
@@ -185,10 +186,7 @@ private:
 	void DoAck();
 	void EndTransfer();
 
-	void UpdateCycles( uint32_t cycles );
-
-	// TEMP until the cycles shceduler is improved
-	void UpdateCyclesBeforeRead() const noexcept;
+	void UpdateCommunication();
 
 private:
 	InterruptControl& m_interruptControl;
@@ -196,12 +194,11 @@ private:
 
 	uint32_t m_status = 0;
 	uint32_t m_baudrateTimer = 0;
-	Mode m_mode{};
+	Mode m_mode;
 	uint16_t m_control = 0;
 	uint16_t m_baudrateReloadValue = 0;
 
 	State m_state = State::Idle;
-	uint32_t m_cyclesUntilEvent = 0;
 
 	uint8_t m_txBuffer = 0;
 	uint8_t m_tranferringValue = 0;
