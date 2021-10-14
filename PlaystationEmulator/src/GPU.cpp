@@ -946,12 +946,13 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	}
 
 	// update render position
+	const auto scanlineCount = GetScanlines();
 	const auto dotsPerScanline = GetDotsPerScanline();
 	m_currentDot += dots;
 	while ( m_currentDot >= dotsPerScanline )
 	{
 		m_currentDot -= dotsPerScanline;
-		m_currentScanline = ( m_currentScanline + 1 ) % GetScanlines();
+		m_currentScanline = ( m_currentScanline + 1 ) % scanlineCount;
 		if ( !IsInterlaced() )
 			m_status.drawingEvenOdd ^= 1;
 	}
@@ -1002,36 +1003,42 @@ void Gpu::ScheduleNextEvent()
 
 	const float dotsPerCycle = GetDotsPerVideoCycle();
 
-	auto& dotTimer = m_timers->GetTimer( 0 );
-	if ( dotTimer.GetSyncEnable() ) // dot timer synchronizes with hblanks
+	// timer0
 	{
-		const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / dotsPerCycle;
+		auto& dotTimer = m_timers->GetTimer( 0 );
 
-		gpuTicks = std::min( gpuTicks, ticksUntilHblankChange );
-	}
+		if ( dotTimer.GetSyncEnable() ) // dot timer synchronizes with hblanks
+		{
+			const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / dotsPerCycle;
 
-	if ( !dotTimer.IsUsingSystemClock() && !dotTimer.GetPaused() )
-	{
-		const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / dotsPerCycle;
+			gpuTicks = std::min( gpuTicks, ticksUntilHblankChange );
+		}
 
-		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
+		if ( !dotTimer.IsUsingSystemClock() && !dotTimer.IsPaused() )
+		{
+			const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / dotsPerCycle;
+
+			gpuTicks = std::min( gpuTicks, ticksUntilIrq );
+		}
 	}
 
 	const uint32_t linesUntilVblankChange = ( m_currentScanline < 240 ? 240 : GetScanlines() ) - m_currentScanline;
 	const float ticksUntilVblankChange = linesUntilVblankChange * GetVideoCyclesPerScanline() - m_currentDot / dotsPerCycle;
 	gpuTicks = std::min( gpuTicks, ticksUntilVblankChange );
 
-	auto& hblankTimer = m_timers->GetTimer( 1 );
-	if ( !hblankTimer.IsUsingSystemClock() && !hblankTimer.GetPaused() )
+	// timer1
 	{
-		const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / dotsPerCycle;
-		const float ticksUntilIrq = hblankTimer.GetTicksUntilIrq() * GetVideoCyclesPerScanline() - ticksUntilHblank;
+		auto& scanlineTimer = m_timers->GetTimer( 1 );
+		if ( !scanlineTimer.IsUsingSystemClock() && !scanlineTimer.IsPaused() )
+		{
+			const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / dotsPerCycle;
+			const float ticksUntilIrq = scanlineTimer.GetTicksUntilIrq() * GetVideoCyclesPerScanline() - ticksUntilHblank;
 
-		gpuTicks = std::min( gpuTicks, ticksUntilIrq );
+			gpuTicks = std::min( gpuTicks, ticksUntilIrq );
+		}
 	}
 
-	// because of floating point preceision, we are often 1 cycle short. Adding one cycle should hardly affect anything
-	const auto cpuCycles = static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) ) + 1;
+	const auto cpuCycles = static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
 
 	m_cachedCyclesUntilNextEvent = cpuCycles;
 

@@ -81,6 +81,7 @@ EventManager::~EventManager()
 
 EventHandle EventManager::CreateEvent( std::string name, EventUpdateCallback onUpdate )
 {
+	dbExpects( !name.empty() );
 	EventHandle event( new Event( *this, std::move( name ), std::move( onUpdate ) ) );
 	m_events.push_back( event.get() );
 	return event;
@@ -123,7 +124,7 @@ void EventManager::UpdateNextEvent()
 		m_pendingCycles = 0;
 	}
 
-	dbExpects( m_nextEvent->GetRemainingCycles() <= 0 );
+	dbExpects( m_nextEvent->GetLocalRemainingCycles() <= 0 );
 	UpdateEvent( m_nextEvent, m_nextEvent->m_cyclesUntilEvent );
 }
 

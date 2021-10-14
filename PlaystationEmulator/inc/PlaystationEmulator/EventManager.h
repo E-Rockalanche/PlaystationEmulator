@@ -67,6 +67,7 @@ private:
 	// Get remaining cycles until event triggers (will be negative if event is late) (does not include pending cycles in event manager)
 	cycles_t GetLocalRemainingCycles() const noexcept
 	{
+		dbExpects( ( m_cyclesUntilEvent >= m_pendingCycles ) == ( m_cyclesUntilEvent - m_pendingCycles >= 0 ) );
 		return m_cyclesUntilEvent - m_pendingCycles;
 	}
 
