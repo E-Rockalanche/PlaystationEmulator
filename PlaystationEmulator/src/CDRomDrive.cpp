@@ -996,7 +996,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 		}
 	}
 
-	dbAssert( m_interruptFlags != InterruptResponse::None ); // there should be a response
+	dbAssertMessage( m_interruptFlags != InterruptResponse::None, "No interrupt for command [%X]", command ); // there should be a response
 	m_parameterBuffer.Clear();
 	CheckInterrupt();
 }

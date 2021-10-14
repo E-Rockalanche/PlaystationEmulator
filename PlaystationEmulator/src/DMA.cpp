@@ -217,9 +217,7 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 
 	const int32_t increment = ( channel.GetMemoryAddressStep() == Channel::MemoryAddressStep::Forward ) ? 4 : -4;
 
-	uint32_t address = channel.GetBaseAddress();
-	dbAssert( address % 4 == 0 );
-	// TODO: address might need to be bitwise anded with 0x001ffffc
+	uint32_t address = channel.GetBaseAddress() & AddressMask; // TODO: handle address wrapping
 
 	const uint32_t totalWords = channel.GetWordCount();
 
@@ -236,7 +234,8 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 			case ChannelIndex::MDecOut:
 			{
 				dbAssert( increment == 4 );
-				m_mdec.DmaOut( (uint32_t*)m_ram.Data() + address, wordCount );
+				dbAssert( address + wordCount * 4 <= RamSize );
+				m_mdec.DmaOut( (uint32_t*)( m_ram.Data() + address ), wordCount );
 				break;
 			}
 
@@ -288,7 +287,8 @@ void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
 			case ChannelIndex::MDecIn:
 			{
 				dbAssert( increment == 4 );
-				m_mdec.DmaIn( (const uint32_t*)m_ram.Data() + address, wordCount );
+				dbAssert( address + wordCount * 4 <= RamSize );
+				m_mdec.DmaIn( (const uint32_t*)( m_ram.Data() + address ), wordCount );
 				break;
 			}
 

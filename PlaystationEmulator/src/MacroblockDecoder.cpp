@@ -125,7 +125,11 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 
 void MacroblockDecoder::DmaIn( const uint32_t* input, uint32_t count )
 {
-	m_dataInBuffer.Push( reinterpret_cast<const uint16_t*>( input ), count * 2 );
+	if ( m_dataInBuffer.Capacity() < count * 2 )
+		dbLogWarning( "MacroblockDecoder::DmaIn -- input buffer overflow" );
+
+	const uint32_t pushCount = std::min( m_dataInBuffer.Capacity(), count * 2 );
+	m_dataInBuffer.Push( reinterpret_cast<const uint16_t*>( input ), pushCount );
 	ProcessInput();
 }
 

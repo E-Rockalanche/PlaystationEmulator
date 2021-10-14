@@ -88,21 +88,8 @@ void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, 
 {
 	dbExpects( coprocessor < 4 );
 
-	dbLog( "Cop0::SetException() -- pc: %X, code: %u, coprocessor?: %u, branchDelay: %s", pc, static_cast<uint32_t>( code ), coprocessor, branchDelay ? "true" : "false" );
-
-	/*
-	switch ( code )
-	{
-		case ExceptionCode::Interrupt:
-		case ExceptionCode::Syscall:
-		case ExceptionCode::Breakpoint:
-		case ExceptionCode::ArithmeticOverflow:
-			break;
-
-		default:
-			dbBreak();
-	}
-	*/
+	if ( code != ExceptionCode::Interrupt && code != ExceptionCode::Breakpoint && code != ExceptionCode::Syscall )
+		dbLogWarning( "Cop0::SetException() -- pc: %X, code: %u, coprocessor?: %u, branchDelay: %s", pc, static_cast<uint32_t>( code ), coprocessor, branchDelay ? "true" : "false" );
 
 	m_trapReturnAddress = pc;
 	m_exceptionCause = ( static_cast<uint32_t>( code ) << 2 ) | ( coprocessor << 28 ) | ( static_cast<uint32_t>( branchDelay ) << 31 );

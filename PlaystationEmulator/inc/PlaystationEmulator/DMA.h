@@ -226,8 +226,6 @@ private:
 		WriteMask = UnknownMask | ForceIrq | IrqEnablesMask | IrqMasterEnable,
 	};
 
-	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
-
 	enum class Register
 	{
 		// DMA0-DMA6
@@ -236,6 +234,9 @@ private:
 		Unknown1,
 		Unknown2,
 	};
+
+	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
+	static constexpr uint32_t AddressMask = RamAddressMask & 0xfffffffc;
 
 private:
 	void FinishTransfer( uint32_t channelIndex ) noexcept;
