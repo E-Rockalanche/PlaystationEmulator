@@ -11,78 +11,13 @@
 namespace PSX
 {
 
-void Dma::Channel::Reset()
-{
-	m_baseAddress = 0;
-	m_blockSize = 0;
-	m_blockCount = 0;
-	m_control.value = 0;
-}
-
-uint32_t Dma::Channel::Read( uint32_t index ) const noexcept
-{
-	dbExpects( index < 4 );
-	switch ( index )
-	{
-		case Register::BaseAddress:		return m_baseAddress;
-		case Register::BlockControl:	return m_blockSize | ( m_blockCount << 16 );
-		case Register::ChannelControl:	return m_control.value;
-		case Register::Unused:
-			dbLogWarning( "Dma::Channel::Read -- reading from unused register" );
-			return 0; // alway zero
-	}
-
-	dbBreak();
-	return uint32_t( -1 );
-}
-
-void Dma::Channel::Write( uint32_t index, uint32_t value ) noexcept
-{
-	dbExpects( index < 4 );
-	switch ( index )
-	{
-		case Register::BaseAddress:
-			SetBaseAddress( value );
-			break;
-
-		case Register::BlockControl:
-			m_blockSize = static_cast<uint16_t>( value );
-			m_blockCount = static_cast<uint16_t>( value >> 16 );
-			break;
-
-		case Register::ChannelControl:
-			m_control.value = value & Control::WriteMask;
-			break;
-
-		case Register::Unused:
-			dbLogWarning( "Dma::Channel::Write -- writing to unused register" );
-			break;
-	}
-}
-
-uint32_t Dma::Channel::GetWordCount() const noexcept
-{
-	switch ( GetSyncMode() )
-	{
-		case SyncMode::Manual:
-			return GetBlockSize();
-
-		case SyncMode::Request:
-			return GetBlockSize() * GetBlockCount();
-
-		default:
-			dbBreak();
-			return 0;
-	}
-}
-
 void Dma::Reset()
 {
 	for ( auto& channel : m_channels )
-		channel.Reset();
+		channel = {};
 
 	m_controlRegister = ControlRegisterResetValue;
-	m_interruptRegister = 0;
+	m_interruptRegister = {};
 }
 
 uint32_t Dma::Read( uint32_t index ) const noexcept
@@ -91,13 +26,33 @@ uint32_t Dma::Read( uint32_t index ) const noexcept
 	switch ( static_cast<Register>( index ) )
 	{
 		default:
-			return m_channels[ index / 4 ].Read( index % 4 );
+		{
+			const uint32_t channelIndex = index / 4;
+			const uint32_t registerIndex = index % 4;
+
+			if ( channelIndex >= m_channels.size() )
+			{
+				dbLogWarning( "Dma::Read -- invalid channel" );
+				return 0xffffffffu;
+			}
+
+			auto& state = m_channels[ channelIndex ];
+			switch ( static_cast<ChannelRegister>( registerIndex ) )
+			{
+				case ChannelRegister::BaseAddress:		return state.baseAddress;
+				case ChannelRegister::BlockControl:		return static_cast<uint32_t>( state.wordCount | ( state.blockCount << 16 ) );
+				case ChannelRegister::ChannelControl:	return state.control.value;
+				default:
+					dbLogWarning( "Dma::Read -- invalid channel register" );
+					return 0xffffffffu;
+			}
+		}
 
 		case Register::Control:
 			return m_controlRegister;
 
 		case Register::Interrupt:
-			return m_interruptRegister | ( GetIrqMasterFlag() ? InterruptRegister::IrqMasterFlag : 0 );
+			return m_interruptRegister.value;
 
 		case Register::Unknown1:
 			dbLogWarning( "Dma::Read -- reading from unused register" );
@@ -118,27 +73,44 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 		{
 			const uint32_t channelIndex = index / 4;
 			const uint32_t registerIndex = index % 4;
-			auto& channel = m_channels[ channelIndex ];
-			channel.Write( registerIndex, value );
-			if ( ( registerIndex == Channel::Register::ChannelControl ) && channel.Active() )
+
+			if ( channelIndex >= m_channels.size() )
 			{
-				switch ( channel.GetSyncMode() )
-				{
-					case Channel::SyncMode::Manual:	
-					case Channel::SyncMode::Request:
-						DoBlockTransfer( channelIndex );
-						break;
-
-					case Channel::SyncMode::LinkedList:
-						DoLinkedListTransfer( channelIndex );
-						break;
-
-					default:
-						dbLogWarning( "Dma::Write -- channel %u has unused sync mode", channelIndex );
-						break;
-				}
+				dbLogWarning( "Dma::Write -- invalid channel" );
+				return;
 			}
 
+			auto& state = m_channels[ channelIndex ];
+			switch ( static_cast<ChannelRegister>( registerIndex ) )
+			{
+				case ChannelRegister::BaseAddress:
+					state.baseAddress = value & 0x00ffffff;
+					break;
+
+				case ChannelRegister::BlockControl:
+					state.wordCount = static_cast<uint16_t>( value );
+					state.blockCount = static_cast<uint16_t>( value >> 16 );
+					break;
+
+				case ChannelRegister::ChannelControl:
+				{
+					const Channel channel = static_cast<Channel>( channelIndex );
+
+					if ( channel == Channel::RamOrderTable )
+						state.control.value = ( value & 0x51000000 ) | 0x00000002; // only bits 24, 28, and 30 of OTC are writeable. bit 1 is always 1 (address step backwards)
+					else
+						state.control.value = value & ChannelState::Control::WriteMask;
+
+					if ( CanTransferChannel( channel ) )
+						StartDma( channel );
+
+					break;
+				}
+
+				default:
+					dbLogWarning( "Dma::Write -- invalid channel register" );
+					break;
+			}
 			break;
 		}
 
@@ -148,13 +120,15 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 
 		case Register::Interrupt:
 		{
-			bool oldMasterIRQ = GetIrqMasterFlag();
+			const bool oldIrqMasterFlag = m_interruptRegister.irqMasterFlag;
 
-			const uint32_t irqFlags = ( m_interruptRegister & ~value ) & InterruptRegister::IrqFlagsMask; // write 1 to reset irq flags
-			m_interruptRegister = ( value & InterruptRegister::WriteMask ) | irqFlags;
+			// Bit24-30 are acknowledged (reset to zero) when writing a "1" to that bits (and, additionally, IRQ3 must be acknowledged via Port 1F801070h).
+			const uint32_t irqFlags = ( m_interruptRegister.value & ~value ) & InterruptRegister::IrqFlagsMask;
+			m_interruptRegister.value = ( value & InterruptRegister::WriteMask ) | irqFlags;
+			m_interruptRegister.UpdateIrqMasterFlag();
 
-			// trigger IRQ on 0 to 1 of master flag
-			if ( !oldMasterIRQ && GetIrqMasterFlag() )
+			// Upon 0-to-1 transition of Bit31, the IRQ3 flag (in Port 1F801070h) gets set.
+			if ( !oldIrqMasterFlag && m_interruptRegister.irqMasterFlag )
 				m_interruptControl.SetInterrupt( Interrupt::Dma );
 
 			break;
@@ -167,7 +141,30 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 	}
 }
 
-uint32_t Dma::GetCyclesForTransfer( ChannelIndex channel, uint32_t words ) noexcept
+void Dma::SetRequest( Channel channel, bool request ) noexcept
+{
+	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
+	if ( state.request != request )
+	{
+		state.request = request;
+
+		if ( CanTransferChannel( channel ) )
+			StartDma( channel );
+	}
+}
+
+bool Dma::CanTransferChannel( Channel channel ) const noexcept
+{
+	if ( IsChannelEnabled( channel ) )
+	{
+		auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
+		return state.control.startBusy && ( state.request || state.control.startTrigger );
+	}
+
+	return false;
+}
+
+uint32_t Dma::GetCyclesForTransfer( Channel channel, uint32_t words ) noexcept
 {
 	/*
 	DMA Transfer Rates
@@ -182,185 +179,252 @@ uint32_t Dma::GetCyclesForTransfer( ChannelIndex channel, uint32_t words ) noexc
 	*/
 	switch ( channel )
 	{
-		case ChannelIndex::CdRom:	return ( words * 0x2800 ) / 0x100;
-		case ChannelIndex::Spu:		return ( words * 0x0420 ) / 0x100;
-		default:					return ( words * 0x0110 ) / 0x100;
+		case Channel::CdRom:	return ( words * 0x2800 ) / 0x100;
+		case Channel::Spu:		return ( words * 0x0420 ) / 0x100;
+		default:				return ( words * 0x0110 ) / 0x100;
 	}
 }
 
-void Dma::FinishTransfer( uint32_t channelIndex ) noexcept
-{
-	m_channels[ channelIndex ].SetTransferComplete();
 
-	const uint32_t enableMask = InterruptRegister::IrqMasterEnable | ( 1u << ( channelIndex + 16 ) );
-	if ( stdx::all_of( m_interruptRegister, enableMask ) )
+
+void Dma::StartDma( Channel channel )
+{
+	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
+	state.control.startTrigger = false;
+
+	const uint32_t startAddress = state.baseAddress;
+	const bool toRam = state.control.transferDirection == false;
+	const uint32_t addressStep = state.control.memoryAddressStep ? BackwardStep : ForwardStep;
+
+	switch ( state.GetSyncMode() )
 	{
-		// trigger IRQ on 0 to 1 of master flag
-		if ( !GetIrqMasterFlag() )
+		case SyncMode::Manual:
+		{
+			const uint32_t words = state.GetWordCount();
+
+			// TODO: chopping
+			if ( toRam )
+				TransferToRam( channel, startAddress & DmaAddressMask, words, addressStep );
+			else
+				TransferFromRam( channel, startAddress & DmaAddressMask, words, addressStep );
+
+			FinishTransfer( channel );
+			m_eventManager.AddCycles( GetCyclesForTransfer( channel, words ) );
+			break;
+		}
+
+		case SyncMode::Request:
+		{
+			const uint32_t blockSize = state.GetBlockSize();
+			uint32_t blocksRemaining = state.GetBlockCount();
+			uint32_t currentAddress = startAddress;
+
+			while ( state.request && blocksRemaining > 0 )
+			{
+				if ( toRam )
+					TransferToRam( channel, currentAddress & DmaAddressMask, blockSize, addressStep );
+				else
+					TransferFromRam( channel, currentAddress & DmaAddressMask, blockSize, addressStep );
+
+				currentAddress += blockSize * addressStep;
+				--blocksRemaining;
+				m_eventManager.AddCycles( GetCyclesForTransfer( channel, blockSize ) );
+			}
+
+			state.SetBaseAddress( currentAddress );
+			state.blockCount = static_cast<uint16_t>( blocksRemaining );
+
+			if ( blocksRemaining == 0 )
+				FinishTransfer( channel );
+
+			break;
+		}
+
+		case SyncMode::LinkedList:
+		{
+			if ( toRam )
+			{
+				dbLogWarning( "Dma::StartDma -- cannot do linked list transfer to ram" );
+				return;
+			}
+
+			uint32_t totalWords = 0;
+			uint32_t currentAddress = state.baseAddress;
+			do
+			{
+				uint32_t header = m_ram.Read<uint32_t>( currentAddress & DmaAddressMask );
+				const uint32_t wordCount = header >> 24;
+				TransferFromRam( channel, ( currentAddress + 4 ) & DmaAddressMask, wordCount, ForwardStep );
+				currentAddress = header & 0x00ffffffu;
+				totalWords += wordCount + 1; // +1 for header?
+			}
+			while ( currentAddress != LinkedListTerminator );
+
+			state.SetBaseAddress( LinkedListTerminator );
+			FinishTransfer( channel );
+			m_eventManager.AddCycles( GetCyclesForTransfer( channel, totalWords ) );
+			break;
+		}
+	}
+
+}
+
+void Dma::FinishTransfer( Channel channel ) noexcept
+{
+	const uint32_t channelIndex = static_cast<uint32_t>( channel );
+
+	m_channels[ channelIndex ].control.startBusy = false;
+
+	if ( m_interruptRegister.irqMasterEnable && ( m_interruptRegister.irqEnables & ( 1 << channelIndex ) ) )
+	{
+		// IRQ flags in Bit(24+n) are set upon DMAn completion - but caution - they are set ONLY if enabled in Bit(16+n).
+		m_interruptRegister.irqFlags |= 1 << channelIndex;
+
+		// Upon 0-to-1 transition of Bit31, the IRQ3 flag (in Port 1F801070h) gets set.
+		if ( !m_interruptRegister.irqMasterFlag )
+		{
+			m_interruptRegister.irqMasterFlag = true;
 			m_interruptControl.SetInterrupt( Interrupt::Dma );
-
-		m_interruptRegister |= ( 1u << ( channelIndex + 24 ) );
+		}
 	}
 }
 
-void Dma::DoBlockTransfer( uint32_t channelIndex ) noexcept
+void Dma::TransferToRam( const Channel channel, const uint32_t address, const uint32_t wordCount, const uint32_t addressStep )
 {
-	auto& channel = m_channels[ channelIndex ];
+	dbExpects( address < RamSize );
+	dbExpects( wordCount > 0 );
+	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
 
-	const bool toRam = channel.GetTransferDirection() == Channel::TransferDirection::ToMainRam;
-	dbLog( "Dma::DoBlockTransfer() -- channel: %u, toRAM: %i, chopping: %i, dmaChopSize: %u, cpuChopSize: %i",
-		channelIndex,
-		(int)toRam,
-		channel.GetChoppingEnable(),
-		channel.GetChoppingDmaWindowSize(),
-		channel.GetChoppingCpuWindowSize() );
-
-	const int32_t increment = ( channel.GetMemoryAddressStep() == Channel::MemoryAddressStep::Forward ) ? 4 : -4;
-
-	uint32_t address = channel.GetBaseAddress() & AddressMask; // TODO: handle address wrapping
-
-	const uint32_t totalWords = channel.GetWordCount();
-
-	if ( totalWords == 0 )
-		dbLogWarning( "Dma::DoBlockTransfer() -- transferring 0 words" );
-
-	uint32_t wordCount = totalWords;
-
-	if ( toRam )
+	if ( channel == Channel::RamOrderTable )
 	{
-		dbLog( "\twriting %X bytes to %X", totalWords, address );
-		switch ( static_cast<ChannelIndex>( channelIndex ) )
-		{
-			case ChannelIndex::MDecOut:
-			{
-				dbAssert( increment == 4 );
-				dbAssert( address + wordCount * 4 <= RamSize );
-				m_mdec.DmaOut( (uint32_t*)( m_ram.Data() + address ), wordCount );
-				break;
-			}
-
-			case ChannelIndex::RamOrderTable:
-			{
-				dbAssert( increment == -4 ); // TODO: can it go forward?
-				dbAssert( wordCount > 0 );
-
-				for ( ; wordCount > 1; --wordCount, address += increment )
-					m_ram.Write<uint32_t>( address, address + increment );
-
-				m_ram.Write<uint32_t>( address, LinkedListTerminator );
-				break;
-			}
-
-			case ChannelIndex::Gpu:
-			{
-				for ( ; wordCount > 0; --wordCount, address += increment )
-					m_ram.Write<uint32_t>( address, m_gpu.GpuRead() );
-
-				break;
-			}
-
-			case ChannelIndex::CdRom:
-			{
-				for ( ; wordCount > 0; --wordCount, address += increment )
-					m_ram.Write<uint32_t>( address, m_cdromDrive.ReadDataFifo<uint32_t>() );
-
-				break;
-			}
-
-			case ChannelIndex::Spu:
-			{
-				// TODO
-				// dbLog( "ignoring SPU to RAM DMA transfer" );
-				break;
-			}
-
-			default:
-				dbBreakMessage( "unhandled DMA transfer from channel %u to RAM", channelIndex );
-				break;
-		}
-	}
-	else
-	{
-		dbLog( "\treading %X bytes from %X", totalWords, address );
-		switch ( static_cast<ChannelIndex>( channelIndex ) )
-		{
-			case ChannelIndex::MDecIn:
-			{
-				dbAssert( increment == 4 );
-				dbAssert( address + wordCount * 4 <= RamSize );
-				m_mdec.DmaIn( (const uint32_t*)( m_ram.Data() + address ), wordCount );
-				break;
-			}
-
-			case ChannelIndex::Gpu:
-			{
-				for ( ; wordCount > 0; --wordCount, address += increment )
-					m_gpu.WriteGP0( m_ram.Read<uint32_t>( address ) );
-
-				break;
-			}
-
-			case ChannelIndex::Spu:
-			{
-				// TODO
-				// dbLog( "ignoring RAM to SPU DMA transfer" );
-				break;
-			}
-
-			default:
-				dbBreakMessage( "unhandled DMA transfer from RAM to channel %u", channelIndex );
-				break;
-		}
+		ClearOrderTable( address, wordCount );
+		return;
 	}
 
-	if ( channel.GetSyncMode() == Channel::SyncMode::Request )
-		channel.SetBaseAddress( channel.GetBaseAddress() + totalWords * increment );
+	uint32_t* dest = reinterpret_cast<uint32_t*>( m_ram.Data() + address );
 
-	FinishTransfer( channelIndex );
+	const bool useTempBuffer = ( addressStep == BackwardStep ) || ( address + wordCount * 4 > RamSize ); // backward step or wrapping
+	if ( useTempBuffer )
+	{
+		ResizeTempBuffer( wordCount );
+		dest = m_tempBuffer.get();
+	}
 
-	m_eventManager.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalWords ) );
+	switch ( channel )
+	{
+		case Channel::MDecOut:
+		{
+			m_mdec.DmaOut( dest, wordCount );
+			break;
+		}
+
+		case Channel::Gpu:
+		{
+			for ( uint32_t i = 0; i < wordCount; ++i )
+			{
+				dest[ i ] = m_gpu.GpuRead();
+			}
+			break;
+		}
+
+		case Channel::CdRom:
+		{
+			for ( uint32_t i = 0; i < wordCount; ++i )
+			{
+				dest[ i ] = m_cdromDrive.ReadDataFifo<uint32_t>();
+			}
+			break;
+		}
+
+		case Channel::Spu:
+		{
+			// TODO
+			// dbLog( "ignoring SPU to RAM DMA transfer" );
+			break;
+		}
+
+		default:
+			dbLogWarning( "Dma::TransferToRam -- invalid channel [%X]", channel );
+			std::fill_n( dest, wordCount, 0xffffffffu );
+			break;
+	}
+
+	if ( useTempBuffer )
+	{
+		// copy from temp buffer to ram
+		uint32_t curAddress = address;
+		for ( uint32_t i = 0; i < wordCount; ++i )
+		{
+			m_ram.Write<uint32_t>( curAddress, m_tempBuffer[ i ] );
+			curAddress = ( curAddress + addressStep ) & DmaAddressMask;
+		}
+	}
 }
 
-void Dma::DoLinkedListTransfer( uint32_t channelIndex ) noexcept
+
+void Dma::TransferFromRam( const Channel channel, const uint32_t address, const uint32_t wordCount, const uint32_t addressStep )
 {
-	dbExpects( channelIndex == (uint32_t)ChannelIndex::Gpu ); // must transfer to GPU
-	auto& channel = m_channels[ channelIndex ];
+	dbExpects( address < RamSize );
+	dbExpects( wordCount > 0 );
+	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
 
-	dbAssert( channel.GetTransferDirection() == Channel::TransferDirection::FromMainRam ); // must transfer from RAM
+	const uint32_t* src = reinterpret_cast<const uint32_t*>( m_ram.Data() + address );
 
-	dbLog( "Dma::DoLinkedListTransfer() -- chopping: %i, dmaChopSize: %u, cpuChopSize: %i",
-		channel.GetChoppingEnable(),
-		channel.GetChoppingDmaWindowSize(),
-		channel.GetChoppingCpuWindowSize() );
-
-	uint32_t address = channel.GetBaseAddress();
-	dbAssert( address % 4 == 0 );
-
-	uint32_t totalCount = 0;
-
-	do
+	if ( ( addressStep == BackwardStep ) || ( address + wordCount * 4 > RamSize ) )
 	{
-		uint32_t header = m_ram.Read<uint32_t>( address );
-		address += 4;
+		// backward step or wrapping
 
-		const uint32_t wordCount = header >> 24;
-		const uint32_t end = address + wordCount * 4;
-		for ( ; address != end; address += 4 )
+		ResizeTempBuffer( wordCount );
+
+		uint32_t curAddress = address;
+		for ( uint32_t i = 0; i < wordCount; ++i )
 		{
-			m_gpu.WriteGP0( m_ram.Read<uint32_t>( address ) );
+			m_tempBuffer[ i ] = m_ram.Read<uint32_t>( curAddress );
+			curAddress = ( address + addressStep ) & DmaAddressMask;
 		}
 
-		address = header & 0x00ffffff;
-		totalCount += wordCount;
+		src = m_tempBuffer.get();
 	}
-	while ( address != 0x00ffffff );
 
-	// base address is updated at end of transfer
-	channel.SetBaseAddress( 0x00ffffff );
+	switch ( channel )
+	{
+		case Channel::MDecIn:
+		{
+			m_mdec.DmaIn( src, wordCount );
+			break;
+		}
 
-	m_eventManager.AddCycles( GetCyclesForTransfer( static_cast<ChannelIndex>( channelIndex ), totalCount ) );
+		case Channel::Gpu:
+		{
+			for ( uint32_t i = 0; i < wordCount; ++i )
+			{
+				m_gpu.WriteGP0( src[ i ] );
+			}
+			break;
+		}
 
-	FinishTransfer( channelIndex );
+		case Channel::Spu:
+		{
+			// TODO
+			// dbLog( "ignoring RAM to SPU DMA transfer" );
+			break;
+		}
+
+		default:
+			dbLogWarning( "Dma::TransferFromRam -- invalid channel [%X]", channel );
+			break;
+	}
+}
+
+void Dma::ClearOrderTable( uint32_t address, uint32_t wordCount )
+{
+	for ( uint32_t i = 1; i < wordCount; ++i )
+	{
+		const uint32_t nextAddress = ( address + BackwardStep ) & DmaAddressMask;
+		m_ram.Write<uint32_t>( address, nextAddress );
+		address = nextAddress;
+	}
+	m_ram.Write<uint32_t>( address, LinkedListTerminator );
 }
 
 }

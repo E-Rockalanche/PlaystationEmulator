@@ -72,36 +72,6 @@ enum class PrimitiveType
 	Rectangle = 3,
 };
 
-/*
-struct Vertex
-{
-	Vertex( uint32_t value )
-		: x{ static_cast<int16_t>( value ) }
-		, y{ static_cast<int16_t>( value >> 16 ) }
-	{
-		// top 5 bits of x and y should be only be sign extension
-		dbEnsures( -1024 <= x && x <= 1023 );
-		dbEnsures( -1024 <= y && y <= 1023 );
-	}
-
-	int16_t x;
-	int16_t y;
-};
-
-struct Color
-{
-	Color( uint32_t value )
-		: r{ static_cast<uint8_t>( value ) }
-		, g{ static_cast<uint8_t>( value >> 8 ) }
-		, b{ static_cast<uint8_t>( value >> 16 ) }
-	{}
-
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
-};
-*/
-
 }
 
 

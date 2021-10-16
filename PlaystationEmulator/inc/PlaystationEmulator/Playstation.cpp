@@ -63,6 +63,7 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 	// resolve circular dependancy
 	m_timers->SetGpu( *m_gpu );
 	m_gpu->SetTimers( *m_timers );
+	m_mdec->SetDma( *m_dma );
 
 	Reset();
 

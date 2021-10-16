@@ -1,5 +1,9 @@
 #include "MacroblockDecoder.h"
 
+#include "DMA.h"
+
+#include <stdx/scope.h>
+
 #include <algorithm>
 
 namespace PSX
@@ -22,19 +26,16 @@ const std::array<uint32_t, 64> ZigZag
 
 constexpr int16_t SignExtend10( uint16_t value ) noexcept
 {
-	return static_cast<int16_t>( ( value & 0x03ffu ) | ( value & 0x200u ) ? 0xfc00u : 0u );
+	return static_cast<int16_t>( ( value & 0x03ffu ) | ( ( value & 0x200u ) ? 0xfc00u : 0u ) );
 }
 
 }
 
 void MacroblockDecoder::Reset()
 {
+	m_status.value = 0;
+
 	m_remainingHalfWords = 2;
-
-	m_dataOutputBit15 = false;
-	m_dataOutputSigned = false;
-
-	m_dataOutputDepth = DataOutputDepth::Four;
 
 	m_enableDataOut = false;
 	m_enableDataIn = false;
@@ -58,25 +59,29 @@ void MacroblockDecoder::Reset()
 
 	m_currentBlock = 0;
 	m_dest.fill( 0 );
+
+	UpdateStatus();
 }
 
-uint32_t MacroblockDecoder::ReadStatus()
+void MacroblockDecoder::UpdateStatus()
 {
-	// TODO: check dma setting
-	const bool dataOutRequest = m_enableDataOut;
-	const bool dataInRequest = m_enableDataIn;
-	const uint16_t remainingParamsMinusOne = static_cast<uint16_t>( ( m_remainingHalfWords + 1 ) / 2 - 1 );
-	const uint16_t currentBlock = ( m_currentBlock + 4 ) % BlockIndex::Count;
+	m_status.remainingParameters = static_cast<uint16_t>( ( m_remainingHalfWords + 1 ) / 2 - 1 );
+	m_status.currentBlock = ( m_currentBlock + 4 ) % BlockIndex::Count;
 
-	return static_cast<uint32_t>( remainingParamsMinusOne ) |
-		( static_cast<uint32_t>( currentBlock ) << 16 ) |
-		( static_cast<uint32_t>( m_dataOutputBit15 ) << 23 ) |
-		( static_cast<uint32_t>( m_dataOutputDepth ) << 25 ) |
-		( static_cast<uint32_t>( dataOutRequest ) << 27 ) |
-		( static_cast<uint32_t>( dataInRequest ) << 28 ) |
-		( static_cast<uint32_t>( m_state != State::Idle ) << 29 ) |
-		( static_cast<uint16_t>( m_dataInBuffer.Full() ) << 30 ) |
-		( static_cast<uint16_t>( m_dataOutBuffer.Empty() ) << 31 );
+	const bool dataOutRequest = m_enableDataOut && !m_dataOutBuffer.Empty();
+	m_status.dataOutRequest = dataOutRequest;
+
+	const bool dataInRequest = m_enableDataIn && ( m_dataInBuffer.Capacity() >= 64 ); // 8x8 halfwords
+	m_status.dataInRequest = dataInRequest;
+
+	m_status.commandBusy = ( m_state != State::Idle );
+
+	m_status.dataInFifoFull = m_dataInBuffer.Full();
+	m_status.dataOutFifoEmpty = m_dataOutBuffer.Empty();
+
+	// requesting can start DMA right now
+	m_dma->SetRequest( Dma::Channel::MDecOut, dataOutRequest );
+	m_dma->SetRequest( Dma::Channel::MDecIn, dataInRequest );
 }
 
 uint32_t MacroblockDecoder::ReadData()
@@ -95,6 +100,8 @@ uint32_t MacroblockDecoder::ReadData()
 		// process more data if we were waiting for output fifo to empty
 		if ( m_dataOutBuffer.Empty() && ( m_state == State::DecodingMacroblock ) )
 			ProcessInput();
+		else
+			UpdateStatus();
 
 		return value;
 	}
@@ -105,21 +112,33 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 	dbExpects( offset < 2 );
 	if ( offset == 0 )
 	{
+		// command/parameter register
+
 		m_dataInBuffer.Push( static_cast<uint16_t>( value ) );
 		m_dataInBuffer.Push( static_cast<uint16_t>( value >> 16 ) );
 		ProcessInput();
 	}
 	else
 	{
-		// control/reset
+		// control/reset register
+
 		if ( value & ( 1u << 31 ) )
 		{
+			// soft reset
+			m_status.value = 0;
+			m_remainingHalfWords = 2;
 			m_state = State::Idle;
-			// TODO: reset status
+			m_dataInBuffer.Clear();
+			m_dataOutBuffer.Clear();
+			m_currentK = 64;
+			m_currentQ = 0;
+			m_currentBlock = 0;
 		}
 
 		m_enableDataIn = stdx::any_of( value, 1u << 30 );
 		m_enableDataOut = stdx::any_of( value, 1u << 29 );
+
+		UpdateStatus();
 	}
 }
 
@@ -128,29 +147,33 @@ void MacroblockDecoder::DmaIn( const uint32_t* input, uint32_t count )
 	if ( m_dataInBuffer.Capacity() < count * 2 )
 		dbLogWarning( "MacroblockDecoder::DmaIn -- input buffer overflow" );
 
-	const uint32_t pushCount = std::min( m_dataInBuffer.Capacity(), count * 2 );
-	m_dataInBuffer.Push( reinterpret_cast<const uint16_t*>( input ), pushCount );
+	const uint32_t minCount = std::min( m_dataInBuffer.Capacity(), count * 2 );
+	m_dataInBuffer.Push( reinterpret_cast<const uint16_t*>( input ), minCount );
 	ProcessInput();
 }
 
 void MacroblockDecoder::DmaOut( uint32_t* output, uint32_t count )
 {
-	const uint32_t available = std::min( m_dataOutBuffer.Size(), count );
-	m_dataOutBuffer.Pop( output, available );
+	const uint32_t minCount = std::min( m_dataOutBuffer.Size(), count );
+	m_dataOutBuffer.Pop( output, minCount );
 
-	if ( available < count )
+	if ( minCount < count )
 	{
 		dbLogWarning( "MacroblockDecoder::DmaOut -- output fifo is empty" );
-		std::fill_n( output + available, count - available, 0xffffffffu );
+		std::fill_n( output + minCount, count - minCount, 0xffffffffu );
 	}
 
 	// process more data if we were waiting for output fifo to empty
 	if ( m_dataOutBuffer.Empty() && ( m_state == State::DecodingMacroblock ) )
 		ProcessInput();
+	else
+		UpdateStatus();
 }
 
 void MacroblockDecoder::ProcessInput()
 {
+	stdx::scope_exit onExit( [this] { UpdateStatus(); } );
+
 	// keep processing data until there's no more or something returns
 	while ( !m_dataInBuffer.Empty() )
 	{
@@ -170,7 +193,7 @@ void MacroblockDecoder::ProcessInput()
 				{
 					m_state = State::WritingMacroblock;
 					OutputBlock(); // TODO: schedule output
-					return;
+					// TODO: return?
 				}
 				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
 				{
@@ -229,9 +252,9 @@ void MacroblockDecoder::ProcessInput()
 
 void MacroblockDecoder::StartCommand( uint32_t value )
 {
-	m_dataOutputBit15 = stdx::any_of( value, 1u << 25 );
-	m_dataOutputSigned = stdx::any_of( value, 1u << 26 );
-	m_dataOutputDepth = static_cast<DataOutputDepth>( ( value >> 26 ) & 0x3 );
+	m_status.dataOutputBit15 = stdx::any_of( value, 1u << 25 );
+	m_status.dataOutputSigned = stdx::any_of( value, 1u << 26 );
+	m_status.dataOutputDepth = ( value >> 26 ) & 0x3;
 
 	switch ( static_cast<Command>( value >> 29 ) )
 	{
@@ -311,7 +334,6 @@ bool MacroblockDecoder::DecodeMonoMacroblock()
 
 	// calculate final greyscale
 	y_to_mono( m_blocks[ BlockIndex::Y ] );
-	OutputBlock();
 
 	return true;
 }
@@ -320,7 +342,7 @@ void MacroblockDecoder::OutputBlock()
 {
 	dbExpects( m_state == State::WritingMacroblock );
 
-	switch ( m_dataOutputDepth )
+	switch ( static_cast<DataOutputDepth>( m_status.dataOutputDepth ) )
 	{
 		case DataOutputDepth::Four: // mono
 		{
@@ -356,7 +378,7 @@ void MacroblockDecoder::OutputBlock()
 
 		case DataOutputDepth::Fifteen: // color
 		{
-			const uint32_t maskBit = m_dataOutputBit15 ? 0x8000 : 0;
+			const uint32_t maskBit = m_status.dataOutputBit15 ? 0x8000 : 0;
 
 			auto toBGR15 = [maskBit]( uint32_t BGR24 ) -> uint32_t
 			{
@@ -491,6 +513,13 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 			blk[ m_currentK ] = static_cast<int16_t>( val );
 	}
 
+	if ( m_currentK == 63 )
+	{
+		// the last value was decoded, but K wasn't set above 63...
+		m_currentK = 64;
+		return true;
+	}
+
 	return false;
 }
 
@@ -535,7 +564,7 @@ void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, co
 			G = std::clamp( Y + G, -128, 127 );
 			B = std::clamp( Y + B, -128, 127 );
 
-			if ( !m_dataOutputSigned )
+			if ( !m_status.dataOutputSigned )
 			{
 				R += 128;
 				G += 128;
@@ -557,7 +586,7 @@ void MacroblockDecoder::y_to_mono( const Block& yBlk )
 		Y = SignExtend10( static_cast<int16_t>( Y ) );
 		Y = std::clamp( Y, -128, 127 );
 
-		if ( !m_dataOutputSigned )
+		if ( !m_status.dataOutputSigned )
 			Y += 128;
 
 		m_dest[ i ] = static_cast<uint8_t>( Y );

@@ -11,7 +11,7 @@ namespace PSX
 class MacroblockDecoder
 {
 public:
-	MacroblockDecoder() {}
+	void SetDma( Dma& dma ) { m_dma = &dma; }
 
 	void Reset();
 
@@ -21,7 +21,7 @@ public:
 		if ( offset == 0 )
 			return ReadData();
 		else
-			return ReadStatus();
+			return m_status.value;
 	}
 
 	void Write( uint32_t offset, uint32_t value );
@@ -101,7 +101,7 @@ private:
 
 private:
 	uint32_t ReadData();
-	uint32_t ReadStatus();
+	void UpdateStatus();
 
 	void ProcessInput();
 
@@ -109,10 +109,10 @@ private:
 
 	bool DecodeMacroblock()
 	{
-		if ( m_color )
-			return DecodeColoredMacroblock();
+		if ( m_status.dataOutputDepth < 2 )
+			return DecodeMonoMacroblock(); // 4bit & 8bit
 		else
-			return DecodeMonoMacroblock();
+			return DecodeColoredMacroblock(); // 24bit & 15bit
 	}
 
 	bool DecodeColoredMacroblock(); // returns true when data is ready to be output
@@ -127,12 +127,11 @@ private:
 	void y_to_mono( const Block& yBlk );
 
 private:
+	Dma* m_dma = nullptr;
+
+	Status m_status;
+
 	uint32_t m_remainingHalfWords = 0;
-
-	bool m_dataOutputBit15 = false;
-	bool m_dataOutputSigned = false;
-
-	DataOutputDepth m_dataOutputDepth{};
 
 	bool m_enableDataOut = false;
 	bool m_enableDataIn = false;
