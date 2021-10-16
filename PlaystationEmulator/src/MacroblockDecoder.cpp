@@ -193,7 +193,8 @@ void MacroblockDecoder::ProcessInput()
 				{
 					m_state = State::WritingMacroblock;
 					OutputBlock(); // TODO: schedule output
-					// TODO: return?
+
+					return; // wait for block to be read
 				}
 				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
 				{
@@ -202,7 +203,9 @@ void MacroblockDecoder::ProcessInput()
 					m_currentK = 64;
 					m_state = State::Idle;
 				}
-				break;
+
+				// no more data or block needs to be read
+				return;
 			}
 
 			case State::WritingMacroblock:
@@ -252,16 +255,35 @@ void MacroblockDecoder::ProcessInput()
 
 void MacroblockDecoder::StartCommand( uint32_t value )
 {
-	m_status.dataOutputBit15 = stdx::any_of( value, 1u << 25 );
-	m_status.dataOutputSigned = stdx::any_of( value, 1u << 26 );
-	m_status.dataOutputDepth = ( value >> 26 ) & 0x3;
+	union CommandWord
+	{
+		CommandWord( uint32_t v ) : value{ v } {}
 
-	switch ( static_cast<Command>( value >> 29 ) )
+		struct
+		{
+			uint32_t parameterWords : 16;
+			uint32_t : 9;
+			uint32_t dataOutputBit15 : 1;
+			uint32_t dataOutputSigned : 1;
+			uint32_t dataOutputDepth : 2;
+			uint32_t command : 3;
+		};
+		uint32_t value;
+	};
+	static_assert( sizeof( CommandWord ) == 4 );
+
+	const CommandWord commandWord{ value };
+
+	m_status.dataOutputBit15 = commandWord.dataOutputBit15;
+	m_status.dataOutputSigned = commandWord.dataOutputSigned;
+	m_status.dataOutputDepth = commandWord.dataOutputDepth;
+
+	switch ( static_cast<Command>( commandWord.command ) )
 	{
 		case Command::DecodeMacroblock:
 		{
 			m_state = State::DecodingMacroblock;
-			m_remainingHalfWords = static_cast<uint16_t>( value ) * 2;
+			m_remainingHalfWords = commandWord.parameterWords * 2;
 			break;
 		}
 
@@ -289,7 +311,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 			// similar as the "number of parameter words" for MDEC(1), but without the "minus 1" effect, and without actually expecting any parameters
 			dbLogWarning( "MacroblockDecoder::StartCommand -- invalid command [%X]", value );
 			m_state = State::InvalidCommand;
-			m_remainingHalfWords = static_cast<uint16_t>( value + 1 ) * 2;
+			m_remainingHalfWords = ( commandWord.parameterWords + 1 ) * 2;
 			break;
 		}
 	}
@@ -298,16 +320,17 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 bool MacroblockDecoder::DecodeColoredMacroblock()
 {
 	// decode remaining blocks
-	for ( auto i = m_currentBlock; i < BlockIndex::Count; ++i )
+	while ( m_currentBlock < BlockIndex::Count )
 	{
-		if ( !rl_decode_block( m_blocks[ i ], i < 2 ? m_luminanceTable : m_colorTable ) )
+		if ( !rl_decode_block( m_blocks[ m_currentBlock ], m_currentBlock < 2 ? m_luminanceTable : m_colorTable ) )
 			return false;
 
-		real_idct_core( m_blocks[ i ] );
+		real_idct_core( m_blocks[ m_currentBlock ] );
+		++m_currentBlock;
 	}
 
 	// wait for output fifo to be emptied
-	if ( m_dataOutBuffer.Empty() )
+	if ( !m_dataOutBuffer.Empty() )
 		return false;
 
 	// calculate final rgb data

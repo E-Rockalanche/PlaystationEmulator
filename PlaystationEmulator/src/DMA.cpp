@@ -254,7 +254,9 @@ void Dma::StartDma( Channel channel )
 			{
 				uint32_t header = m_ram.Read<uint32_t>( currentAddress & DmaAddressMask );
 				const uint32_t wordCount = header >> 24;
-				TransferFromRam( channel, ( currentAddress + 4 ) & DmaAddressMask, wordCount, ForwardStep );
+				if ( wordCount > 0 )
+					TransferFromRam( channel, ( currentAddress + 4 ) & DmaAddressMask, wordCount, ForwardStep );
+
 				currentAddress = header & 0x00ffffffu;
 				totalWords += wordCount + 1; // +1 for header?
 			}

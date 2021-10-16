@@ -39,6 +39,7 @@ public:
 	~Gpu();
 
 	void SetTimers( Timers& timers ) { m_timers = &timers; }
+	void SetDma( Dma& dma ) { m_dma = &dma; }
 
 	void Reset();
 
@@ -78,6 +79,14 @@ public:
 	void ScheduleNextEvent();
 
 private:
+	enum class DmaDirection
+	{
+		Off,
+		Fifo,
+		CpuToGp0,
+		GpuReadToCpu
+	};
+
 	union Status
 	{
 		Status() : value{ 0 } {}
@@ -103,12 +112,13 @@ private:
 			uint32_t displayAreaColorDepth : 1; // 0=15bit, 1=24bit
 			uint32_t verticalInterlace : 1;
 			uint32_t displayDisable : 1;
+
 			uint32_t interruptRequest : 1;
 			uint32_t dmaRequest : 1;
 			uint32_t readyToReceiveCommand : 1;
 			uint32_t readyToSendVRamToCpu : 1;
 			uint32_t readyToReceiveDmaBlock : 1;
-			uint32_t dmaDirection : 2; // 0=Off, 1=?, 2=CPUtoGP0, 3=GPUREADtoCPU
+			uint32_t dmaDirection : 2; // 0=Off, 1=FIFO, 2=CPUtoGP0, 3=GPUREADtoCPU
 			uint32_t drawingEvenOdd : 1; // 0=Even or Vblank, 1=Odd
 		};
 
@@ -134,6 +144,8 @@ private:
 
 	uint32_t GpuStatus() noexcept;
 
+	void UpdateDmaRequest() noexcept;
+
 	void ClearCommandBuffer() noexcept;
 
 	void InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept;
@@ -149,10 +161,11 @@ private:
 
 	void SetGP0Mode( GP0Function f ) noexcept
 	{
-		m_gp0Mode = f;
+		if ( m_gp0Mode == &Gpu::GP0_Image && m_vramCopyState )
+			FinishVRamTransfer();
 
-		// this line breaks amidog CPU tests for some reason
-		// m_status.readyToReceiveCommand = ( f == &Gpu::GP0_Command );
+		m_gp0Mode = f;
+		m_status.readyToReceiveCommand = ( f != &Gpu::GP0_Image );
 	}
 
 	// GPUREAD modes
@@ -208,6 +221,7 @@ private:
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
 	Timers* m_timers = nullptr; // circular dependency
+	Dma* m_dma = nullptr; // circular dependency
 	EventHandle m_clockEvent;
 
 	FifoBuffer<uint32_t, 16> m_commandBuffer;

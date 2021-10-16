@@ -62,10 +62,9 @@ private:
 
 	enum class Command
 	{
-		Invalid,
-		DecodeMacroblock,
-		SetQuantTable,
-		SetScaleTable
+		DecodeMacroblock = 1,
+		SetQuantTable = 2,
+		SetScaleTable = 3
 	};
 
 	enum class State
@@ -154,7 +153,7 @@ private:
 	std::array<Block, BlockIndex::Count> m_blocks;
 	uint32_t m_currentBlock = 0;
 
-	std::array<uint32_t, 64> m_dest{};
+	std::array<uint32_t, 256> m_dest;
 };
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Defs.h"
 #include "FifoBuffer.h"
 
 #include <array>
@@ -13,16 +14,30 @@ class Spu
 public:
 	void Reset() {} // TODO
 
+	void SetDma( Dma& dma ) { m_dma = &dma; }
+
 	uint16_t Read( uint32_t offset ) noexcept;
+
 	void Write( uint32_t offset, uint16_t value ) noexcept;
 
 private:
-	void SetSpuControl( uint16_t value ) noexcept;
 
-	void TransferDataToRam() noexcept;
+	enum class TransferMode
+	{
+		Stop,
+		ManualWrite,
+		DMAWrite,
+		DMARead
+	};
 
-private:
-	static constexpr uint32_t VoiceCount = 24;
+	enum class TransferType
+	{
+		Fill = 0, // and 1, 6, 7
+		Normal = 2,
+		Rep2 = 3,
+		Rep4 = 4,
+		Rep8 = 5
+	};
 
 	struct Volume
 	{
@@ -67,40 +82,33 @@ private:
 			uint16_t soundRamTransferMode : 2;
 			uint16_t irqEnable : 1;
 			uint16_t reverbMasterEnable : 1;
+
 			uint16_t noiseFrequencyStep : 2;
 			uint16_t noiseFrequencyShift : 4;
 			uint16_t mute : 1;
 			uint16_t enable : 1;
 		};
 		uint16_t value;
+
+		TransferMode GetTransfermode() const noexcept { return static_cast<TransferMode>( soundRamTransferMode ); }
 	};
 	static_assert( sizeof( Control ) == 2 );
-
-	enum class TransferMode
-	{
-		Stop,
-		ManualWrite,
-		DMAWrite,
-		DMARead
-	};
-
-	enum class TransferType
-	{
-		Fill = 0, // and 1, 6, 7
-		Normal = 2,
-		Rep2 = 3,
-		Rep4 = 4,
-		Rep8 = 5
-	};
 
 	union Status
 	{
 		Status() noexcept : value{ 0 } {}
 		struct
 		{
-			uint16_t currentMode : 6; // (same as SPUCNT.Bit5-0, but, applied a bit delayed)
+			// same as SPUCNT.Bit5-0, but, applied a bit delayed
+			uint16_t cdAudioEnable : 1;
+			uint16_t externalAudioEnable : 1;
+			uint16_t cdAudioReverb : 1;
+			uint16_t externalAudioReverb : 1;
+			uint16_t soundRamTransferMode : 2;
+
 			uint16_t irq : 1;
 			uint16_t dmaReadWriteRequest : 1;
+
 			uint16_t dmaWriteRequest : 1;
 			uint16_t dmaReadRequest : 1;
 			uint16_t dmaBusy : 1;
@@ -108,6 +116,8 @@ private:
 			uint16_t : 4;
 		};
 		uint16_t value;
+
+		static constexpr uint16_t ControlMask = 0x003f;
 	};
 	static_assert( sizeof( Status ) == 2 );
 
@@ -155,7 +165,19 @@ private:
 		};
 	};
 
+	static constexpr uint32_t VoiceCount = 24;
+
+private:
+	void SetSpuControl( uint16_t value ) noexcept;
+
+	void UpdateDmaRequest() noexcept;
+
+	void ExecuteManualWrite() noexcept;
+
+private:
 	// meaningful registers range from 0x1F801C00 to 0x1F801E5f
+
+	Dma* m_dma = nullptr;
 
 	std::array<Voice, VoiceCount> m_voices;
 	std::array<Volume, VoiceCount> m_currentVolumes;

@@ -1,5 +1,7 @@
 #include "Spu.h"
 
+#include "DMA.h"
+
 #include <stdx/bit.h>
 
 namespace PSX
@@ -234,37 +236,45 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 void Spu::SetSpuControl( uint16_t value ) noexcept
 {
 	m_control.value = value;
-	m_status.currentMode = value & 0x001f; // ignore delay
 
-	// reset dma status
-	m_status.dmaBusy = false;
-	m_status.dmaReadRequest = false;
+	// SPUSTAT bits 0-5 are the same as SPUCNT, but applied with a delay
+	// TODO: delay
+	m_status.value = value & Status::ControlMask;
+	m_status.dmaReadWriteRequest = stdx::any_of<uint16_t>( value, 1 << 5 ); // seems to be same as SPUCNT.Bit5
+
+	UpdateDmaRequest();
+}
+
+void Spu::UpdateDmaRequest() noexcept
+{
 	m_status.dmaWriteRequest = false;
-	m_status.dmaReadWriteRequest = false;
+	m_status.dmaReadRequest = false;
+	bool dmaRequest = false;
 
-	switch ( static_cast<TransferMode>( m_control.soundRamTransferMode ) )
+	switch ( m_control.GetTransfermode() )
 	{
 		case TransferMode::Stop:
 			break;
 
 		case TransferMode::ManualWrite:
-			m_status.dmaBusy = true;
-			TransferDataToRam();
+			ExecuteManualWrite();
 			break;
 
 		case TransferMode::DMAWrite:
 			m_status.dmaWriteRequest = true;
-			m_status.dmaReadWriteRequest = true;
+			dmaRequest = true;
 			break;
 
 		case TransferMode::DMARead:
 			m_status.dmaReadRequest = true;
-			m_status.dmaReadWriteRequest = true;
+			dmaRequest = true;
 			break;
 	}
+
+	m_dma->SetRequest( Dma::Channel::Spu, dmaRequest );
 }
 
-void Spu::TransferDataToRam() noexcept
+void Spu::ExecuteManualWrite() noexcept
 {
 	m_dataTransferBuffer.Clear();
 	m_status.dmaBusy = false;

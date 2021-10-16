@@ -1,4 +1,5 @@
 #include "GPU.h"
+#include "DMA.h"
 
 #include "EventManager.h"
 #include "InterruptControl.h"
@@ -95,8 +96,6 @@ void Gpu::Reset()
 
 	m_status.value = 0;
 	m_status.displayDisable = true;
-	m_status.readyToReceiveCommand = true;
-	m_status.readyToReceiveDmaBlock = true;
 
 	m_renderer.SetSemiTransparency( SemiTransparency::Blend );
 
@@ -140,9 +139,11 @@ void Gpu::Reset()
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } ); // , uint16_t{ 0x801f } );
 	m_renderer.UpdateVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
 
-	m_vramCopyState = std::nullopt;
+	m_vramCopyState.reset();
 
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+
+	UpdateDmaRequest();
 
 	ScheduleNextEvent();
 }
@@ -154,10 +155,11 @@ void Gpu::UpdateClockEventEarly()
 
 void Gpu::ClearCommandBuffer() noexcept
 {
+	SetGP0Mode( &Gpu::GP0_Command );
+
 	m_commandBuffer.Clear();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
-	SetGP0Mode( &Gpu::GP0_Command );
 }
 
 void Gpu::InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept
@@ -185,6 +187,7 @@ void Gpu::FinishVRamTransfer() noexcept
 {
 	dbExpects( m_vramCopyState.has_value() );
 	dbExpects( m_vramCopyState->pixelBuffer );
+	dbExpects( m_gp0Mode == &Gpu::GP0_Image );
 
 	if ( m_vramCopyState->IsFinished() )
 	{
@@ -199,6 +202,8 @@ void Gpu::FinishVRamTransfer() noexcept
 		dbBreakMessage( "CPU to VRAM pixel transfer did not finish" );
 		// TODO: partial transfer
 	}
+
+	m_vramCopyState.reset();
 }
 
 uint32_t Gpu::GetHorizontalResolution() const noexcept
@@ -467,10 +472,10 @@ void Gpu::GP0_Image( uint32_t param ) noexcept
 
 	if ( m_vramCopyState->IsFinished() )
 	{
+		dbLog( "Gpu::GP0_Image -- transfer finished" );
 		FinishVRamTransfer();
-
-		m_vramCopyState = std::nullopt;
 		ClearCommandBuffer();
+		UpdateDmaRequest();
 	}
 }
 
@@ -499,11 +504,11 @@ uint32_t Gpu::GpuRead_Image() noexcept
 
 	if ( m_vramCopyState->IsFinished() )
 	{
+		dbLog( "Gpu::GpuRead_Image -- finished transfer" );
 		m_gpuReadMode = &Gpu::GpuRead_Normal;
 		m_status.readyToReceiveCommand = true;
-		m_status.readyToReceiveDmaBlock = true;
-		m_status.readyToSendVRamToCpu = false;
-		m_vramCopyState = std::nullopt;
+		m_vramCopyState.reset();
+		UpdateDmaRequest();
 	}
 
 	return m_gpuRead;
@@ -512,16 +517,12 @@ uint32_t Gpu::GpuRead_Image() noexcept
 void Gpu::WriteGP1( uint32_t value ) noexcept
 {
 	const uint8_t opcode = static_cast<uint8_t>( value >> 24 );
-	switch ( opcode )
+
+	switch ( opcode & 0x3f ) // opcodes mirror 0x00-0x3f
 	{
 		case 0x00: // soft reset GPU
 		{
 			dbLog( "Gpu::WriteGP1() -- soft reset" );
-
-			if ( m_gp0Mode == &Gpu::GP0_Image )
-				FinishVRamTransfer();
-
-			m_vramCopyState = std::nullopt;
 
 			m_status.value = 0x14802000;
 			m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
@@ -551,6 +552,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_renderer.SetOrigin( 0, 0 );
 
 			ClearCommandBuffer();
+			UpdateDmaRequest();
 
 			// TODO: clear texture cache?
 
@@ -560,6 +562,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		case 0x01: // reset command buffer
 			dbLog( "Gpu::WriteGP1() -- clear command buffer" );
 			ClearCommandBuffer();
+			UpdateDmaRequest();
 			break;
 
 		case 0x02: // ack GPU interrupt
@@ -574,8 +577,14 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x04: // DMA direction / data request
 		{
-			m_status.dmaDirection = value & 0x3;
-			dbLog( "Gpu::WriteGP1() -- set DMA direction: %u", m_status.dmaDirection );
+			uint32_t newDirection = value & 0x3;
+			dbLog( "Gpu::WriteGP1() -- set DMA direction: %u", newDirection );
+
+			if ( m_status.dmaDirection != newDirection )
+			{
+				m_status.dmaDirection = newDirection;
+				UpdateDmaRequest();
+			}
 			break;
 		}
 
@@ -617,6 +626,8 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			newStatus.horizontalResolution2 = ( value >> 6 ) & 1;
 			newStatus.reverseFlag = ( value >> 7 ) & 1;
 
+			dbAssert( newStatus.displayAreaColorDepth == false ); // 24bit color not supported yet
+
 			// update cycles and renderer if the new status is different
 			if ( newStatus.value != m_status.value )
 			{
@@ -630,8 +641,20 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			break;
 		}
 
-		case 0x10: // get GPU info
+		case 0x09: // new texture disable
 		{
+			dbLog( "Gpu::WriteGP1() -- set texture disable [%X]", value );
+			m_status.textureDisable = value & 0x01;
+			break;
+		}
+
+		case 0x10: case 0x11: case 0x12: case 0x13:
+		case 0x14: case 0x15: case 0x16: case 0x17:
+		case 0x18: case 0x19: case 0x1a: case 0x1b:
+		case 0x1c: case 0x1d: case 0x1e: case 0x1f:
+		{
+			// get GPU info
+
 			switch ( value % 8 )
 			{
 				default:
@@ -669,7 +692,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		}
 
 		default:
-			dbBreakMessage( "unhandled GP1 opcode [%x]", opcode );
+			dbLogWarning( "unhandled GP1 opcode [%x]", opcode );
 			break;
 	}
 }
@@ -684,6 +707,47 @@ uint32_t Gpu::GpuStatus() noexcept
 	}
 
 	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
+}
+
+void Gpu::UpdateDmaRequest() noexcept
+{
+	if ( m_gp0Mode == &Gpu::GP0_Image )
+	{
+		m_status.readyToReceiveDmaBlock = true;
+		m_status.readyToSendVRamToCpu = false;
+	}
+	else if ( m_gpuReadMode == &Gpu::GpuRead_Image )
+	{
+		m_status.readyToReceiveDmaBlock = false;
+		m_status.readyToSendVRamToCpu = true;
+	}
+	else
+	{
+		m_status.readyToReceiveDmaBlock = m_commandBuffer.Empty() || ( m_remainingParamaters > 0 );
+		m_status.readyToSendVRamToCpu = false;
+	}
+
+	bool dmaRequest = false;
+	switch ( static_cast<DmaDirection>( m_status.dmaDirection ) )
+	{
+		case DmaDirection::Off:
+			dmaRequest = false;
+			break;
+
+		case DmaDirection::Fifo:
+			dmaRequest = !m_commandBuffer.Empty();
+			break;
+
+		case DmaDirection::CpuToGp0:
+			dmaRequest = m_status.readyToReceiveDmaBlock;
+			break;
+
+		case DmaDirection::GpuReadToCpu:
+			dmaRequest = m_status.readyToSendVRamToCpu;
+			break;
+	}
+
+	m_dma->SetRequest( Dma::Channel::Gpu, dmaRequest );
 }
 
 void Gpu::FillRectangle() noexcept
@@ -730,6 +794,7 @@ void Gpu::CopyRectangleToVram() noexcept
 	
 	m_vramCopyState->InitializePixelBuffer();
 	SetGP0Mode( &Gpu::GP0_Image );
+	UpdateDmaRequest();
 }
 
 void Gpu::CopyRectangleFromVram() noexcept
@@ -738,12 +803,12 @@ void Gpu::CopyRectangleFromVram() noexcept
 	dbLog( "Gpu::CopyRectangleFromVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
 	m_gpuReadMode = &Gpu::GpuRead_Image;
 	m_status.readyToReceiveCommand = false;
-	m_status.readyToReceiveDmaBlock = false;
-	m_status.readyToSendVRamToCpu = true;
 	ClearCommandBuffer(); // TODO: clear buffer here after image copy?
 
 	// read vram from frame buffer
 	m_renderer.ReadVRam( m_vram.get() );
+
+	UpdateDmaRequest();
 }
 
 void Gpu::RenderPolygon() noexcept
