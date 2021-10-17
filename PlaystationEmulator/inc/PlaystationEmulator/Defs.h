@@ -40,4 +40,17 @@ class Timers;
 
 using EventHandle = std::unique_ptr<Event>;
 
+template <size_t N, typename To, typename From>
+inline constexpr To SignExtend( From from ) noexcept
+{
+	static_assert( N <= sizeof( From ) * 8 );
+	static_assert( N < sizeof( To ) * 8 );
+
+	constexpr To Extension = To( -1 ) << N;
+	constexpr From Mask = static_cast<From>( ~Extension );
+	constexpr From SignBit = 1 << ( N - 1 );
+
+	return static_cast<To>( ( from & Mask ) | ( ( from & SignBit ) ? Extension : 0 ) );
+}
+
 }

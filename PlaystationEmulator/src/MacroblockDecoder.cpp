@@ -24,13 +24,6 @@ const std::array<uint32_t, 64> ZigZag
 	35, 36, 48, 49, 57, 58, 62, 63
 };
 
-constexpr int32_t SignExtend10( uint16_t value ) noexcept
-{
-	constexpr uint32_t SignExtension = 0xfffffc00;
-	const bool isSigned = ( value & 0x0200 );
-	return static_cast<int32_t>( ( value & 0x03ffu ) | ( isSigned ? SignExtension : 0 ) );
-}
-
 }
 
 void MacroblockDecoder::Reset()
@@ -324,7 +317,8 @@ bool MacroblockDecoder::DecodeColoredMacroblock()
 	// decode remaining blocks
 	while ( m_currentBlock < BlockIndex::Count )
 	{
-		if ( !rl_decode_block( m_blocks[ m_currentBlock ], m_currentBlock < 2 ? m_luminanceTable : m_colorTable ) )
+		auto& table = ( m_currentBlock < 2 ) ? m_colorTable : m_luminanceTable;
+		if ( !rl_decode_block( m_blocks[ m_currentBlock ], table ) )
 			return false;
 
 		real_idct_core( m_blocks[ m_currentBlock ] );
@@ -336,10 +330,10 @@ bool MacroblockDecoder::DecodeColoredMacroblock()
 		return false;
 
 	// calculate final rgb data
-	yuv_to_rgb( 0, 0, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y1 ] );
-	yuv_to_rgb( 0, 8, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y2 ] );
-	yuv_to_rgb( 8, 0, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y3 ] );
-	yuv_to_rgb( 8, 8, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y4 ] );
+	yuv_to_rgb( 0, 0, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y1 ] ); // upper left
+	yuv_to_rgb( 8, 0, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y2 ] ); // upper right (nocash says 0, 8?)
+	yuv_to_rgb( 0, 8, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y3 ] ); // lower left (nocash says 8, 0?)
+	yuv_to_rgb( 8, 8, m_blocks[ BlockIndex::Cr ], m_blocks[ BlockIndex::Cb ], m_blocks[ BlockIndex::Y4 ] ); // lower right
 
 	// reset block
 	m_currentBlock = 0;
@@ -371,7 +365,7 @@ void MacroblockDecoder::OutputBlock()
 	{
 		case DataOutputDepth::Four: // mono
 		{
-			auto to4bit = []( uint32_t mono ) { return ( mono >> 4 ); }; // convert 8bit luminance to 4bit
+			auto to4bit = []( uint32_t luminance ) { return ( luminance >> 4 ); }; // convert 8bit luminance to 4bit
 
 			for ( size_t i = 0; i < 64; i += 8 )
 			{
@@ -401,33 +395,11 @@ void MacroblockDecoder::OutputBlock()
 			break;
 		}
 
-		case DataOutputDepth::Fifteen: // color
-		{
-			const uint32_t maskBit = m_status.dataOutputBit15 ? 0x8000 : 0;
-
-			auto toBGR15 = [maskBit]( uint32_t BGR24 ) -> uint32_t
-			{
-				auto to5bit = []( uint32_t c ) { return static_cast<uint16_t>( ( c >> 3 ) & 0x1f ); };
-
-				const uint16_t red = to5bit( BGR24 );
-				const uint16_t green = to5bit( BGR24 >> 8 );
-				const uint16_t blue = to5bit( BGR24 >> 16 );
-				return red | ( green << 5 ) | ( blue << 5 ) | maskBit;
-			};
-
-			for ( size_t i = 0; i < 64; i += 2 )
-			{
-				const uint32_t value = toBGR15( m_dest[ i ] ) | ( toBGR15( m_dest[ i + 1 ] ) << 16 );
-				m_dataOutBuffer.Push( value );
-			}
-			break;
-		}
-
 		case DataOutputDepth::TwentyFour: // color
 		{
 			uint32_t value = 0;
 			int curSize = 0;
-			for ( size_t i = 0; i < 64; ++i )
+			for ( size_t i = 0; i < m_dest.size(); ++i )
 			{
 				const uint32_t BGR = m_dest[ i ];
 				switch ( curSize )
@@ -466,8 +438,31 @@ void MacroblockDecoder::OutputBlock()
 					}
 				}
 			}
-			// there will always be a component left over since 64 is not divisible by 3
+			// there will always be a component left over since 256 is not divisible by 3
+			dbAssert( curSize == 1 );
 			m_dataOutBuffer.Push( value );
+			break;
+		}
+
+		case DataOutputDepth::Fifteen: // color
+		{
+			const uint16_t maskBit = m_status.dataOutputBit15 ? 0x8000 : 0;
+
+			auto toBGR15 = [maskBit]( uint32_t BGR24 ) -> uint16_t
+			{
+				auto to5bit = []( uint32_t c ) { return static_cast<uint16_t>( ( c >> 3 ) & 0x1f ); };
+
+				const uint16_t red = to5bit( BGR24 );
+				const uint16_t green = to5bit( BGR24 >> 8 );
+				const uint16_t blue = to5bit( BGR24 >> 16 );
+				return red | ( green << 5 ) | ( blue << 5 ) | maskBit;
+			};
+
+			for ( size_t i = 0; i < m_dest.size(); i += 2 )
+			{
+				const uint32_t value = toBGR15( m_dest[ i ] ) | ( toBGR15( m_dest[ i + 1 ] ) << 16 );
+				m_dataOutBuffer.Push( value );
+			}
 			break;
 		}
 	}
@@ -500,10 +495,10 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		m_currentK = 0;
 
 		m_currentQ = ( n >> 10 ) & 0x3f;
-		int32_t val = SignExtend10( n ) * static_cast<int32_t>( qt[ m_currentK ] );
+		int32_t val = SignExtend<10, int32_t>( n ) * static_cast<int32_t>( qt[ m_currentK ] );
 
 		if ( m_currentQ == 0 )
-			val = SignExtend10( n ) * 2;
+			val = SignExtend<10, int32_t>( n ) * 2;
 
 		val = std::clamp( val, -0x400, 0x3ff );
 		if ( m_currentQ > 0 )
@@ -526,10 +521,10 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 			return true;
 		}
 
-		int32_t val = ( SignExtend10( n ) * static_cast<int32_t>( qt[ m_currentK ] ) * static_cast<int32_t>( m_currentQ ) + 4 ) / 8;
+		int32_t val = ( SignExtend<10, int32_t>( n ) * static_cast<int32_t>( qt[ m_currentK ] ) * static_cast<int32_t>( m_currentQ ) + 4 ) / 8;
 
 		if ( m_currentQ == 0 )
-			val = SignExtend10( n ) * 2;
+			val = SignExtend<10, int32_t>( n ) * 2;
 
 		val = std::clamp( val, -0x400, 0x3ff );
 		if ( m_currentQ > 0 )
@@ -581,13 +576,14 @@ void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, co
 		{
 			int16_t R = crBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
 			int16_t B = cbBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
-			int16_t G = static_cast<int16_t>( B * -0.3437 + R * -0.7143 );
-			R = static_cast<int16_t>( R * 1.402 );
-			B = static_cast<int16_t>( B * 1.772 );
+			int16_t G = static_cast<int16_t>( -0.3437f * B + -0.7143f * R );
+			R = static_cast<int16_t>( 1.402f * R );
+			B = static_cast<int16_t>( 1.772f * B );
+
 			int16_t Y = yBlk[ x + y * 8 ];
-			R = static_cast<int16_t>( std::clamp( Y + R, -128, 127 ) );
-			G = static_cast<int16_t>( std::clamp( Y + G, -128, 127 ) );
-			B = static_cast<int16_t>( std::clamp( Y + B, -128, 127 ) );
+			R = static_cast<int16_t>( std::clamp<int32_t>( Y + R, -128, 127 ) );
+			G = static_cast<int16_t>( std::clamp<int32_t>( Y + G, -128, 127 ) );
+			B = static_cast<int16_t>( std::clamp<int32_t>( Y + B, -128, 127 ) );
 
 			if ( !m_status.dataOutputSigned )
 			{
@@ -608,13 +604,13 @@ void MacroblockDecoder::y_to_mono( const Block& yBlk )
 	for ( size_t i = 0; i < 64; ++i )
 	{
 		int16_t Y = yBlk[ i ];
-		Y = static_cast<int16_t>( SignExtend10( Y ) );
-		Y = std::clamp<int16_t>( Y, -128, 127 );
+		Y = static_cast<int16_t>( SignExtend<9, int16_t>( Y ) ); // clip to signed 9bit range
+		Y = std::clamp<int16_t>( Y, -128, 127 ); // saturate from 9bit to signed 8bit range
 
 		if ( !m_status.dataOutputSigned )
 			Y += 128;
 
-		m_dest[ i ] = static_cast<uint8_t>( Y );
+		m_dest[ i ] = static_cast<uint32_t>( Y & 0xff );
 	}
 }
 
