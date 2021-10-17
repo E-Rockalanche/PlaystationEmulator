@@ -24,9 +24,11 @@ const std::array<uint32_t, 64> ZigZag
 	35, 36, 48, 49, 57, 58, 62, 63
 };
 
-constexpr int16_t SignExtend10( uint16_t value ) noexcept
+constexpr int32_t SignExtend10( uint16_t value ) noexcept
 {
-	return static_cast<int16_t>( ( value & 0x03ffu ) | ( ( value & 0x200u ) ? 0xfc00u : 0u ) );
+	constexpr uint32_t SignExtension = 0xfffffc00;
+	const bool isSigned = ( value & 0x0200 );
+	return static_cast<int32_t>( ( value & 0x03ffu ) | ( isSigned ? SignExtension : 0 ) );
 }
 
 }
@@ -497,8 +499,8 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		// start filling block
 		m_currentK = 0;
 
-		const uint16_t q_scale = ( n >> 10 ) & 0x3f;
-		int val = SignExtend10( n ) * static_cast<int>( qt[ m_currentK ] );
+		m_currentQ = ( n >> 10 ) & 0x3f;
+		int32_t val = SignExtend10( n ) * static_cast<int32_t>( qt[ m_currentK ] );
 
 		if ( m_currentQ == 0 )
 			val = SignExtend10( n ) * 2;
@@ -506,7 +508,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		val = std::clamp( val, -0x400, 0x3ff );
 		if ( m_currentQ > 0 )
 			blk[ ZigZag[ m_currentK ] ] = static_cast<int16_t>( val );
-		else
+		else if ( m_currentQ == 0 )
 			blk[ m_currentK ] = static_cast<int16_t>( val );
 	}
 
@@ -515,7 +517,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		uint16_t n = m_dataInBuffer.Pop();
 		--m_remainingHalfWords;
 
-		m_currentK += 1 + ( ( n >> 10 ) & 0x3f );
+		m_currentK += ( ( n >> 10 ) & 0x3f ) + 1;
 
 		if ( m_currentK >= 64 )
 		{
@@ -524,7 +526,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 			return true;
 		}
 
-		int val = ( SignExtend10( n ) * qt[ m_currentK ] * m_currentQ + 4 ) / 8;
+		int32_t val = ( SignExtend10( n ) * static_cast<int32_t>( qt[ m_currentK ] ) * static_cast<int32_t>( m_currentQ ) + 4 ) / 8;
 
 		if ( m_currentQ == 0 )
 			val = SignExtend10( n ) * 2;
@@ -532,7 +534,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		val = std::clamp( val, -0x400, 0x3ff );
 		if ( m_currentQ > 0 )
 			blk[ ZigZag[ m_currentK ] ] = static_cast<int16_t>( val );
-		else
+		else if ( m_currentQ == 0 )
 			blk[ m_currentK ] = static_cast<int16_t>( val );
 	}
 
@@ -562,9 +564,9 @@ void MacroblockDecoder::real_idct_core( Block& blk )
 				int16_t sum = 0;
 				for ( size_t z = 0; z < 8; ++z )
 				{
-					sum = sum + src[ y + z * 8 ] * ( m_scaleTable[ x + z * 8 ] >> 3 );
+					sum = sum + src[ y + z * 8 ] * ( m_scaleTable[ x + z * 8 ] / 8 );
 				}
-				dst[ x + y * 8 ] = ( sum + 0xfff ) >> 13;
+				dst[ x + y * 8 ] = ( sum + 0xfff ) / 0x2000;
 			}
 		}
 		std::swap( src, dst );
@@ -577,15 +579,15 @@ void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, co
 	{
 		for ( size_t x = 0; x < 8; ++x )
 		{
-			int R = crBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
-			int B = cbBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
-			int G = ( B * -22524 + R * -46811 ) / 0xffff;
-			R = ( R * 91880 ) / 0xffff;
-			B = ( B * 116128 ) / 0xffff;
-			int Y = yBlk[ x + y * 8 ];
-			R = std::clamp( Y + R, -128, 127 );
-			G = std::clamp( Y + G, -128, 127 );
-			B = std::clamp( Y + B, -128, 127 );
+			int16_t R = crBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
+			int16_t B = cbBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
+			int16_t G = static_cast<int16_t>( B * -0.3437 + R * -0.7143 );
+			R = static_cast<int16_t>( R * 1.402 );
+			B = static_cast<int16_t>( B * 1.772 );
+			int16_t Y = yBlk[ x + y * 8 ];
+			R = static_cast<int16_t>( std::clamp( Y + R, -128, 127 ) );
+			G = static_cast<int16_t>( std::clamp( Y + G, -128, 127 ) );
+			B = static_cast<int16_t>( std::clamp( Y + B, -128, 127 ) );
 
 			if ( !m_status.dataOutputSigned )
 			{
@@ -605,9 +607,9 @@ void MacroblockDecoder::y_to_mono( const Block& yBlk )
 {
 	for ( size_t i = 0; i < 64; ++i )
 	{
-		int Y = yBlk[ i ];
-		Y = SignExtend10( static_cast<int16_t>( Y ) );
-		Y = std::clamp( Y, -128, 127 );
+		int16_t Y = yBlk[ i ];
+		Y = static_cast<int16_t>( SignExtend10( Y ) );
+		Y = std::clamp<int16_t>( Y, -128, 127 );
 
 		if ( !m_status.dataOutputSigned )
 			Y += 128;
