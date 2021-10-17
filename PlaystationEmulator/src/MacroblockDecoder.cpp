@@ -351,6 +351,8 @@ bool MacroblockDecoder::DecodeMonoMacroblock()
 	if ( !rl_decode_block( m_blocks[ BlockIndex::Y ], m_luminanceTable ) )
 		return false;
 
+	real_idct_core( m_blocks[ BlockIndex::Y ] );
+
 	// calculate final greyscale
 	y_to_mono( m_blocks[ BlockIndex::Y ] );
 
@@ -550,18 +552,18 @@ void MacroblockDecoder::real_idct_core( Block& blk )
 	int16_t* src = blk.data();
 	int16_t* dst = temp_buffer.data();
 
-	for ( int pass = 0; pass < 2; ++pass )
+	for ( size_t pass = 0; pass < 2; ++pass )
 	{
 		for ( size_t x = 0; x < 8; ++x )
 		{
 			for ( size_t y = 0; y < 8; ++y )
 			{
-				int16_t sum = 0;
+				int64_t sum = 0;
 				for ( size_t z = 0; z < 8; ++z )
 				{
-					sum = sum + src[ y + z * 8 ] * ( m_scaleTable[ x + z * 8 ] / 8 );
+					sum += static_cast<int64_t>( src[ y + z * 8 ] ) * ( m_scaleTable[ x + z * 8 ] / 8 );
 				}
-				dst[ x + y * 8 ] = ( sum + 0xfff ) / 0x2000;
+				dst[ x + y * 8 ] = static_cast<int16_t>( ( sum + 0xfff ) / 0x2000 ); // or so?
 			}
 		}
 		std::swap( src, dst );
