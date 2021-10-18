@@ -185,8 +185,6 @@ uint32_t Dma::GetCyclesForTransfer( Channel channel, uint32_t words ) noexcept
 	}
 }
 
-
-
 void Dma::StartDma( Channel channel )
 {
 	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];

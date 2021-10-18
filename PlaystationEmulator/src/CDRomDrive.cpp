@@ -432,6 +432,12 @@ void CDRomDrive::BeginSeeking() noexcept
 	m_status.play = false;
 	m_status.seek = true;
 
+	if ( m_driveState != DriveState::Idle )
+	{
+		dbLogWarning( "CDRomDrive::BeginSeeking -- drive state is not idle [%u]", m_driveState );
+		m_driveState = DriveState::Idle;
+	}
+
 	ScheduleDriveEvent( DriveState::Seeking, GetSeekCycles() );
 
 	m_currentSector = m_seekLocation.GetLogicalSector();
@@ -475,6 +481,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 	const Command command = std::exchange( m_pendingCommand, Command::Invalid );
 	dbLog( "CDRomDrive::ExecuteCommand() -- [%X]", command );
 
+	m_commandEvent->Cancel();
 	m_responseBuffer.Clear();
 
 	switch ( command )
@@ -1009,6 +1016,7 @@ void CDRomDrive::ExecuteSecondResponse() noexcept
 	dbLog( "CDRomDrive::ExecuteSecondResponse() -- [%X]", command );
 
 	dbAssert( m_queuedInterrupt == 0 ); // cannot queue more than 1 interrupt
+	m_secondResponseEvent->Cancel();
 	m_secondResponseBuffer.Clear();
 
 	switch ( command )
@@ -1164,11 +1172,11 @@ void CDRomDrive::ExecuteDrive() noexcept
 
 void CDRomDrive::LoadDataFifo() noexcept
 {
-	dbLog( "CDRomDrive::LoadDataFifo()" );
+	dbLog( "CDRomDrive::LoadDataFifo" );
 
 	if ( !m_dataBuffer.Empty() )
 	{
-		dbLogWarning( "data buffer is not empty" );
+		dbLogWarning( "CDRomDrive::LoadDataFifo -- data buffer is not empty [%X bytes remaining]", m_dataBuffer.Size() );
 		return;
 	}
 
@@ -1181,7 +1189,7 @@ void CDRomDrive::LoadDataFifo() noexcept
 	}
 	else
 	{
-		dbLogWarning( "reading from empty sector buffer" );
+		dbLogWarning( "CDRomDrive::LoadDataFifo -- reading from empty sector buffer" );
 		m_dataBuffer.Push( sector.bytes.data(), DataBufferSize );
 	}
 

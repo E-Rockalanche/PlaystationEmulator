@@ -63,6 +63,7 @@ private:
 
 	// Update event with given cycles. Called by EventManager
 	void Update( cycles_t cycles );
+	void Update() { Update( m_cyclesUntilEvent ); }
 
 	// Get remaining cycles until event triggers (will be negative if event is late) (does not include pending cycles in event manager)
 	cycles_t GetLocalRemainingCycles() const noexcept
@@ -104,11 +105,7 @@ public:
 
 	void Reset();
 
-	bool IsUpdating() const noexcept { return m_updating; }
-
 private:
-	void UpdateEvent( Event* event, cycles_t cycles );
-
 	void UpdateNextEvent();
 
 	void ScheduleNextEvent();
@@ -116,13 +113,12 @@ private:
 	void RemoveEvent( Event* event );
 
 private:
+	// cached cycles for nest event
 	cycles_t m_cyclesUntilNextEvent = 0;
 	cycles_t m_pendingCycles = 0;
-	Event* m_nextEvent = nullptr;
 
 	std::vector<Event*> m_events;
-
-	bool m_updating = false;
+	Event* m_nextEvent = nullptr;
 };
 
 }

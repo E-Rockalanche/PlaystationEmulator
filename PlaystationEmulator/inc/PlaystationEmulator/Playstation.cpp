@@ -44,7 +44,7 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 	m_interruptControl = std::make_unique<InterruptControl>();
 	m_eventManager = std::make_unique<EventManager>();
 	m_spu = std::make_unique<Spu>();
-	m_mdec = std::make_unique<MacroblockDecoder>();
+	m_mdec = std::make_unique<MacroblockDecoder>( *m_eventManager );
 
 	m_timers = std::make_unique<Timers>( *m_interruptControl, *m_eventManager );
 

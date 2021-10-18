@@ -984,7 +984,7 @@ void MipsR3000Cpu::BitwiseXorImmediate( Instruction instr ) noexcept
 
 void MipsR3000Cpu::IllegalInstruction( [[maybe_unused]] Instruction instr ) noexcept
 {
-	dbLogError( "Illegal instruction [%X]", instr.value );
+	dbBreakMessage( "Illegal instruction [%X]", instr.value );
 	RaiseException( Cop0::ExceptionCode::ReservedInstruction );
 }
 

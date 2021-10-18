@@ -18,7 +18,10 @@ void Event::UpdateEarly()
 	dbAssert( updateCycles < m_cyclesUntilEvent ); // event should not be ready if it is updating early
 
 	if ( updateCycles > 0 )
-		m_manager.UpdateEvent( this, updateCycles );
+	{
+		Update( updateCycles );
+		m_manager.ScheduleNextEvent();
+	}
 }
 
 void Event::Schedule( cycles_t cyclesFromNow )
@@ -45,7 +48,6 @@ void Event::Cancel()
 		m_pendingCycles = 0;
 		m_cyclesUntilEvent = 0;
 		m_active = false;
-
 		m_manager.ScheduleNextEvent();
 	}
 }
@@ -60,10 +62,11 @@ void Event::Update( cycles_t cycles )
 {
 	dbExpects( m_active );
 	dbExpects( cycles > 0 );
-	dbExpects( m_manager.IsUpdating() );
+	dbExpects( cycles <= m_cyclesUntilEvent );
 
 	m_cyclesUntilEvent -= cycles;
 	m_pendingCycles -= cycles;
+
 	m_onUpdate( cycles );
 
 	// if event was not re-scheduled, disable it
@@ -114,7 +117,6 @@ void EventManager::UpdateNextEvent()
 
 	dbLog( "EventManager::UpdateNextEvent -- [%s]", m_nextEvent->GetName().c_str() );
 
-	dbAssert( m_nextEvent->IsActive() );
 
 	if ( m_pendingCycles > 0 )
 	{
@@ -124,28 +126,18 @@ void EventManager::UpdateNextEvent()
 		m_pendingCycles = 0;
 	}
 
-	dbExpects( m_nextEvent->GetLocalRemainingCycles() <= 0 );
-	UpdateEvent( m_nextEvent, m_nextEvent->m_cyclesUntilEvent );
-}
+	Event* event = std::exchange( m_nextEvent, nullptr );
+	dbAssert( event->IsActive() );
+	dbExpects( event->GetLocalRemainingCycles() <= 0 );
 
-void EventManager::UpdateEvent( Event* event, cycles_t cycles )
-{
-	dbExpects( cycles > 0 );
-	dbExpects( event );
-	dbExpects( event->IsActive() );
+	event->Update();
 
-	m_updating = true;
-	event->Update( cycles );
-	m_updating = false;
-
-	ScheduleNextEvent();
+	if ( m_nextEvent == nullptr )
+		ScheduleNextEvent();
 }
 
 void EventManager::ScheduleNextEvent()
 {
-	if ( m_updating )
-		return;
-
 	// find next event
 	auto it = std::min_element( m_events.begin(), m_events.end(), []( const Event* lhs, const Event* rhs )
 		{
@@ -154,11 +146,13 @@ void EventManager::ScheduleNextEvent()
 
 			return lhs->GetLocalRemainingCycles() < rhs->GetLocalRemainingCycles();
 		} );
-	dbAssert( it != m_events.end() );
+	dbAssert( it != m_events.end() ); // timers and GPU events are always active
 
 	m_nextEvent = *it;
 	dbAssert( m_nextEvent->IsActive() );
+	dbAssert( m_nextEvent->m_cyclesUntilEvent > 0 );
 
+	// cache cycles until event
 	m_cyclesUntilNextEvent = m_nextEvent->GetLocalRemainingCycles();
 }
 

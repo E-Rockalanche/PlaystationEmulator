@@ -1,5 +1,6 @@
 #include "MacroblockDecoder.h"
 
+#include "EventManager.h"
 #include "DMA.h"
 
 #include <stdx/scope.h>
@@ -24,10 +25,25 @@ const std::array<uint32_t, 64> ZigZag
 	35, 36, 48, 49, 57, 58, 62, 63
 };
 
+const std::array<cycles_t, 4> CyclesPerBlock // values from duckstation
+{
+	448,		// 4bit
+	448,		// 8bit
+	448 * 6,	// 24bit
+	550 * 6,	// 15bit
+};
+
+}
+
+MacroblockDecoder::MacroblockDecoder( EventManager& eventManager )
+{
+	m_outputBlockEvent = eventManager.CreateEvent( "MDEC output block", [this]( cycles_t ) { OutputBlock(); } );
 }
 
 void MacroblockDecoder::Reset()
 {
+	m_outputBlockEvent->Cancel();
+
 	m_status.value = 0;
 
 	m_remainingHalfWords = 2;
@@ -120,6 +136,7 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 		if ( value & ( 1u << 31 ) )
 		{
 			// soft reset
+			m_outputBlockEvent->Cancel();
 			m_status.value = 0;
 			m_remainingHalfWords = 2;
 			m_state = State::Idle;
@@ -186,14 +203,13 @@ void MacroblockDecoder::ProcessInput()
 			{
 				if ( DecodeMacroblock() )
 				{
-					m_state = State::WritingMacroblock;
-					OutputBlock(); // TODO: schedule output
-
+					ScheduleOutput();
 					return; // wait for block to be read
 				}
 				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
 				{
 					// didn't get enough data to decode all blocks
+					dbLogWarning( "MacroblockDecoder::ProcessInput -- not enough data to decode macroblock" );
 					m_currentBlock = 0;
 					m_currentK = 64;
 					m_state = State::Idle;
@@ -204,7 +220,7 @@ void MacroblockDecoder::ProcessInput()
 			}
 
 			case State::WritingMacroblock:
-				// wait until macroblock is in output buffer
+				// wait until block is ready to output
 				return;
 
 			case State::ReadingQuantTable:
@@ -235,7 +251,9 @@ void MacroblockDecoder::ProcessInput()
 
 			case State::InvalidCommand:
 			{
-				const auto ignoreCount = std::min( m_dataInBuffer.Size(), m_remainingHalfWords );
+				const uint32_t ignoreCount = std::min( m_dataInBuffer.Size(), m_remainingHalfWords );
+				dbLogWarning( "MacroblockDecoder::ProcessInput -- ignoring %u half-words for invalid command", ignoreCount );
+
 				m_remainingHalfWords -= ignoreCount;
 				m_dataInBuffer.Ignore( ignoreCount );
 
@@ -359,9 +377,21 @@ bool MacroblockDecoder::DecodeMonoMacroblock()
 	return true;
 }
 
+void MacroblockDecoder::ScheduleOutput()
+{
+	dbExpects( m_state == State::DecodingMacroblock );
+	dbExpects( !m_outputBlockEvent->IsActive() );
+
+	m_state = State::WritingMacroblock;
+	m_outputBlockEvent->Schedule( CyclesPerBlock[ m_status.dataOutputDepth ] );
+}
+
 void MacroblockDecoder::OutputBlock()
 {
 	dbExpects( m_state == State::WritingMacroblock );
+	dbExpects( m_dataOutBuffer.Empty() );
+
+	m_outputBlockEvent->Cancel(); // we need to schedule the next event here because the DMA will take control and add cycles
 
 	switch ( static_cast<DataOutputDepth>( m_status.dataOutputDepth ) )
 	{
@@ -440,9 +470,7 @@ void MacroblockDecoder::OutputBlock()
 					}
 				}
 			}
-			// there will always be a component left over since 256 is not divisible by 3
-			dbAssert( curSize == 1 );
-			m_dataOutBuffer.Push( value );
+			dbAssert( curSize == 0 );
 			break;
 		}
 
@@ -457,7 +485,7 @@ void MacroblockDecoder::OutputBlock()
 				const uint16_t red = to5bit( BGR24 );
 				const uint16_t green = to5bit( BGR24 >> 8 );
 				const uint16_t blue = to5bit( BGR24 >> 16 );
-				return red | ( green << 5 ) | ( blue << 5 ) | maskBit;
+				return red | ( green << 5 ) | ( blue << 10 ) | maskBit;
 			};
 
 			for ( size_t i = 0; i < m_dest.size(); i += 2 )
@@ -469,10 +497,10 @@ void MacroblockDecoder::OutputBlock()
 		}
 	}
 
-	m_state = ( m_remainingHalfWords == 0 ) ? State::Idle : State::DecodingMacroblock;
+	dbLog( "MacroblockDecoder::OutputBlock -- remaining half-words: %X", m_remainingHalfWords );
 
-	// TODO: uncomment when output is scheduled
-	// ProcessInput();
+	m_state = ( m_remainingHalfWords == 0 ) ? State::Idle : State::DecodingMacroblock;
+	ProcessInput();
 }
 
 bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
@@ -491,7 +519,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 			n = m_dataInBuffer.Pop();
 			--m_remainingHalfWords;
 		}
-		while ( n == EndOfData );
+		while ( n == EndOfBlock );
 
 		// start filling block
 		m_currentK = 0;
@@ -502,14 +530,15 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		if ( m_currentQ == 0 )
 			val = SignExtend<10, int32_t>( n ) * 2;
 
-		val = std::clamp( val, -0x400, 0x3ff );
+		val = std::clamp<int32_t>( val, -0x400, 0x3ff );
+
 		if ( m_currentQ > 0 )
 			blk[ ZigZag[ m_currentK ] ] = static_cast<int16_t>( val );
 		else if ( m_currentQ == 0 )
 			blk[ m_currentK ] = static_cast<int16_t>( val );
 	}
 
-	while( !m_dataInBuffer.Empty() && m_remainingHalfWords > 0 )
+	while( !m_dataInBuffer.Empty() && m_remainingHalfWords > 0 && m_currentK < 63 )
 	{
 		uint16_t n = m_dataInBuffer.Pop();
 		--m_remainingHalfWords;
@@ -519,6 +548,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		if ( m_currentK >= 64 )
 		{
 			// finished filling block
+			// dbAssert( n == EndOfBlock ); // ensure important data isn't being ognored
 			m_currentK = 64;
 			return true;
 		}
@@ -537,7 +567,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 
 	if ( m_currentK == 63 )
 	{
-		// the last value was decoded, but K wasn't set above 63...
+		// block was fully defined
 		m_currentK = 64;
 		return true;
 	}
@@ -576,8 +606,10 @@ void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, co
 	{
 		for ( size_t x = 0; x < 8; ++x )
 		{
-			int16_t R = crBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
-			int16_t B = cbBlk[ ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8 ];
+			const size_t crbIndex = ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8; // sample 8x8 color table from 16x16 coordinates
+
+			int16_t R = crBlk[ crbIndex ];
+			int16_t B = cbBlk[ crbIndex ];
 			int16_t G = static_cast<int16_t>( -0.3437f * B + -0.7143f * R );
 			R = static_cast<int16_t>( 1.402f * R );
 			B = static_cast<int16_t>( 1.772f * B );

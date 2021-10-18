@@ -11,6 +11,8 @@ namespace PSX
 class MacroblockDecoder
 {
 public:
+	MacroblockDecoder( EventManager& eventManager );
+
 	void SetDma( Dma& dma ) { m_dma = &dma; }
 
 	void Reset();
@@ -96,7 +98,7 @@ private:
 	using Block = std::array<int16_t, 64>;
 	using Table = std::array<uint8_t, 64>;
 
-	static constexpr uint16_t EndOfData = 0xfe00;
+	static constexpr uint16_t EndOfBlock = 0xfe00;
 
 private:
 	uint32_t ReadData();
@@ -116,6 +118,8 @@ private:
 
 	bool DecodeColoredMacroblock(); // returns true when data is ready to be output
 	bool DecodeMonoMacroblock(); // returns true when data is ready to be output
+
+	void ScheduleOutput();
 	void OutputBlock();
 
 	// decompression functions
@@ -126,6 +130,7 @@ private:
 	void y_to_mono( const Block& yBlk );
 
 private:
+	EventHandle m_outputBlockEvent;
 	Dma* m_dma = nullptr;
 
 	Status m_status;
@@ -139,8 +144,8 @@ private:
 
 	State m_state{};
 
-	FifoBuffer<uint16_t, 512> m_dataInBuffer;
-	FifoBuffer<uint32_t, 192> m_dataOutBuffer;
+	FifoBuffer<uint16_t, 512> m_dataInBuffer; // unsure of max size
+	FifoBuffer<uint32_t, ( 16 * 16 * 3 ) / 4> m_dataOutBuffer; // at most 16x16 24bit packed pixels
 
 	std::array<uint8_t, 64> m_luminanceTable{}; // used for Y1-Y4
 	std::array<uint8_t, 64> m_colorTable{}; // used for Cr and Cb
