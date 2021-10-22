@@ -123,15 +123,13 @@ void CDRomDrive::Reset()
 	m_status.value = 0;
 	m_mode.value = 0;
 
-	m_file = 0;
-	m_channel = 0;
+	m_xaFile = 0;
+	m_xaChannel = 0;
 
 	m_track = 0;
 	m_trackIndex = 0;
 	m_trackLocation = {};
 	m_seekLocation = {};
-
-	m_currentSector = 0;
 
 	m_firstTrack = 0;
 	m_lastTrack = 0;
@@ -372,7 +370,7 @@ void CDRomDrive::QueueSecondResponse( Command command, cycles_t cycles = 0x0004a
 
 void CDRomDrive::ScheduleDriveEvent( DriveState driveState, cycles_t cycles ) noexcept
 {
-	dbExpects( m_driveState == DriveState::Idle );
+	// dbExpects( m_driveState == DriveState::Idle );
 	m_driveState = driveState;
 	m_driveEvent->Schedule( cycles );
 }
@@ -393,9 +391,14 @@ void CDRomDrive::CheckInterrupt() noexcept
 void CDRomDrive::ShiftQueuedInterrupt() noexcept
 {
 	dbExpects( m_interruptFlags == 0 );
-	m_interruptFlags = std::exchange( m_queuedInterrupt, uint8_t( 0 ) );
+
+	if ( m_queuedInterrupt == InterruptResponse::ReceivedData )
+		m_readSectorBuffer = m_writeSectorBuffer;
+
+	m_interruptFlags = std::exchange( m_queuedInterrupt, InterruptResponse::None );
 	m_responseBuffer = m_secondResponseBuffer;
 	m_secondResponseBuffer.Clear();
+
 	CheckInterrupt();
 }
 
@@ -440,9 +443,8 @@ void CDRomDrive::BeginSeeking() noexcept
 
 	ScheduleDriveEvent( DriveState::Seeking, GetSeekCycles() );
 
-	m_currentSector = m_seekLocation.GetLogicalSector();
 	dbAssert( m_cdrom );
-	m_cdrom->Seek( m_currentSector );
+	m_cdrom->Seek( m_seekLocation.GetLogicalSector() );
 }
 
 void CDRomDrive::BeginReading() noexcept
@@ -492,7 +494,16 @@ void CDRomDrive::ExecuteCommand() noexcept
 		{
 			// Automatic ADPCM (CD-ROM XA) filter ignores sectors except those which have the same channel and file numbers in their subheader.
 			// This is the mechanism used to select which of multiple songs in a single .XA file to play.
-			dbBreak(); // TODO
+			if ( m_parameterBuffer.Size() < 2 )
+			{
+				SendError( ErrorCode::WrongNumberOfParameters );
+			}
+			else
+			{
+				m_xaFile = m_parameterBuffer.Pop();
+				m_xaChannel = m_parameterBuffer.Pop();
+				SendResponse();
+			}
 			break;
 		}
 
@@ -563,7 +574,6 @@ void CDRomDrive::ExecuteCommand() noexcept
 			m_secondResponseBuffer.Clear();
 			m_dataBuffer.Clear();
 
-			m_currentSector = 0;
 			m_readSectorBuffer = 0;
 			m_writeSectorBuffer = 0;
 
@@ -774,8 +784,8 @@ void CDRomDrive::ExecuteCommand() noexcept
 			SendResponse();
 			m_responseBuffer.Push( m_mode.value );
 			m_responseBuffer.Push( 0 ); // always zero
-			m_responseBuffer.Push( m_file );
-			m_responseBuffer.Push( m_channel );
+			m_responseBuffer.Push( m_xaFile );
+			m_responseBuffer.Push( m_xaChannel );
 			break;
 		}
 
@@ -806,8 +816,8 @@ void CDRomDrive::ExecuteCommand() noexcept
 				m_responseBuffer.Push( 0 ); // mode?
 
 				// return 4 byte subheader of the current sector
-				m_responseBuffer.Push( m_file );
-				m_responseBuffer.Push( m_channel );
+				m_responseBuffer.Push( m_xaFile );
+				m_responseBuffer.Push( m_xaChannel );
 				m_responseBuffer.Push( 0 ); // sm?
 				m_responseBuffer.Push( 0 ); // ci?
 
@@ -922,6 +932,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// muting is just forcing the CD output volume to zero.
 			// Mute is used by Dino Crisis 1 to mute noise during modchip detection.
 			dbLog( "CDRomDrive::ExecuteCommand -- Mute" );
+			// TODO
 			SendResponse();
 			break;
 		}
@@ -931,6 +942,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// Turn on audio streaming to SPU (affects both CD-DA and XA-ADPCM). The Demute command is needed only if one has formerly used the Mute command
 			// (by default, the PSX is demuted after power-up (...and/or after Init command?), and is demuted after cdrom-booting).
 			dbLog( "CDRomDrive::ExecuteCommand -- Demute" );
+			// TODO
 			SendResponse();
 			break;
 		}
@@ -1095,69 +1107,88 @@ void CDRomDrive::ExecuteDrive() noexcept
 			else
 			{
 				// response only sent if there is no pending play or read
-				SendSecondResponse();
+				SendSecondResponse(); // TODO: not sure if the response should be sent here or in the second response event
 			}
 			break;
 		}
 
 		case DriveState::Reading:
-		case DriveState::ReadingSingle:
+		case DriveState::ReadingNoRetry:
 		case DriveState::Playing:
 		{
 			dbLog( "CDRomDrive::ExecuteDrive -- read complete" );
 
 			m_status.read = false;
 
-			if ( !m_cdrom->ReadSync() )
+			ScheduleDriveEvent( state, GetReadCycles() );
+
+			CDRom::Sector sector;
+			if ( !m_cdrom->ReadSector( sector ) )
 			{
-				dbLogWarning( "CDRomDrive::ExecuteDrive -- invalid sync" );
-				SendSecondError( ErrorCode::SeekFailed ); // TODO: should this happen at the end of seek?
+				dbLogWarning( "CDRomDrive::ExecuteDrive -- Reading from end of disk" );
+				return;
 			}
 
-			const bool readFullSector = m_mode.sectorSize;
-			const uint32_t readCount = readFullSector ? DataBufferSize : CDRom::DataBytesPerSector;
-
-			if ( !readFullSector )
+			if ( state == DriveState::Playing )
 			{
-				// process headers
-				const auto header = m_cdrom->ReadHeader();
-				switch ( header.mode )
+				// play CD-DA audio
+				return;
+			}
+
+			if ( ( sector.header.mode == 2 ) &&
+				m_mode.xaadpcm &&
+				sector.mode2.subHeader.subMode.audio &&
+				sector.mode2.subHeader.subMode.realTime )
+			{
+				// read XA-ADPCM
+				return;
+			}
+
+			m_writeSectorBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
+			auto& buffer = m_sectorBuffers[ m_writeSectorBuffer ];
+			if ( buffer.size > 0 )
+				dbLogWarning( "CDRomDrive::ExecuteDrive -- overwriting buffer [%u]", m_writeSectorBuffer );
+
+			if ( m_mode.sectorSize )
+			{
+				std::copy_n( sector.audio.data() + CDRom::SyncSize, DataBufferSize, buffer.bytes.data() );
+				buffer.size = DataBufferSize;
+			}
+			else
+			{
+				switch ( sector.header.mode )
 				{
-					case 0: // zero filled
-						dbBreak();
+					case 0:
+						std::fill_n( buffer.bytes.data(), CDRom::DataBytesPerSector, uint8_t( 0 ) );
 						break;
 
-					case 1: // original CDROM
+					case 1:
+						std::copy_n( sector.mode1.data.data(), CDRom::DataBytesPerSector, buffer.bytes.data() );
 						break;
 
 					case 2:
-					case 3:
-					{
-						const auto subHeader = m_cdrom->ReadSubHeader();
+						std::copy_n( sector.mode2.form1.data.data(), CDRom::DataBytesPerSector, buffer.bytes.data() );
 						break;
-					}
 
-					default: // invalid
-						dbBreak();
+					case 3:
+						std::copy_n( sector.mode2.form2.data.data(), CDRom::DataBytesPerSector, buffer.bytes.data() );
 						break;
+
+					default:
+						dbBreak();
 				}
+				buffer.size = CDRom::DataBytesPerSector;
 			}
 
-			// read data to next buffer
-			auto& sector = m_sectorBuffers[ m_writeSectorBuffer ];
-			m_cdrom->Read( (char*)sector.bytes.data(), readCount );
-			sector.size = readCount;
-			m_writeSectorBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
-
-			// schedule next sector to read
-			m_currentSector++;
-			m_cdrom->Seek( m_currentSector );
-
-			if ( state != DriveState::ReadingSingle )
-				ScheduleDriveEvent( state, GetReadCycles() );
-
-			SendSecondResponse( InterruptResponse::ReceivedData );
-
+			if ( m_queuedInterrupt == InterruptResponse::None )
+			{
+				SendSecondResponse( InterruptResponse::ReceivedData );
+			}
+			else if ( state == DriveState::Reading )
+			{
+				dbLogWarning( "CDRomDrive::ExecuteDrive -- delaying data response" );
+				// TODO: try interrupt again later
+			}
 			break;
 		}
 
@@ -1176,7 +1207,7 @@ void CDRomDrive::LoadDataFifo() noexcept
 
 	if ( !m_dataBuffer.Empty() )
 	{
-		dbLogWarning( "CDRomDrive::LoadDataFifo -- data buffer is not empty [%X bytes remaining]", m_dataBuffer.Size() );
+		dbLogWarning( "CDRomDrive::LoadDataFifo -- data buffer is not empty [%u]", m_dataBuffer.Size() );
 		return;
 	}
 
@@ -1184,6 +1215,7 @@ void CDRomDrive::LoadDataFifo() noexcept
 
 	if ( sector.size > 0 )
 	{
+		dbLog( "CDRomDrive::LoadDataFifo -- loaded %u bytes from buffer %u", sector.size, m_readSectorBuffer );
 		m_dataBuffer.Push( sector.bytes.data(), sector.size );
 		sector.size = 0;
 	}
@@ -1194,14 +1226,14 @@ void CDRomDrive::LoadDataFifo() noexcept
 	}
 
 	// the PSX skips all unprocessed sectors and jumps straight to the newest sector
-	m_readSectorBuffer = m_writeSectorBuffer;
 
-	auto& nextSector = m_sectorBuffers[ m_readSectorBuffer ];
+	auto& nextSector = m_sectorBuffers[ m_writeSectorBuffer ];
 	if ( nextSector.size > 0 )
 	{
-		dbLog( "sending additional interrupt for next sector" );
+		dbLog( "sending additional interrupt for missed sector" );
 		SendSecondResponse( InterruptResponse::ReceivedData );
-		CheckInterrupt();
+		if ( m_interruptFlags == InterruptResponse::None )
+			ShiftQueuedInterrupt();
 	}
 }
 
