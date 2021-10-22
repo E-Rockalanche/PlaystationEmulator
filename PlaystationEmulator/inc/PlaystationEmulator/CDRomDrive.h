@@ -33,7 +33,7 @@ public:
 	}
 
 private:
-	static constexpr uint32_t DataBufferSize = CDRom::RawBytesPerSector - CDRom::SyncSize;
+	static constexpr uint32_t DataBufferSize = CDRom::BytesPerSector - CDRom::SyncSize;
 	static constexpr uint32_t ParamaterBufferSize = 16;
 	static constexpr uint32_t ResponseBufferSize = 16;
 	static constexpr uint32_t NumSectorBuffers = 8;
@@ -44,7 +44,7 @@ private:
 		StartingMotor,
 		Seeking,
 		Reading,
-		ReadingSingle,
+		ReadingNoRetry,
 		Playing,
 		ChangingSession
 	};
@@ -178,6 +178,7 @@ private:
 	// send status and interrupt
 	void SendResponse( uint8_t response = InterruptResponse::First )
 	{
+		dbAssert( m_interruptFlags == InterruptResponse::None );
 		m_responseBuffer.Push( m_status.value );
 		m_interruptFlags = response;
 	}
@@ -185,6 +186,9 @@ private:
 	// queue status and second interrupt
 	void SendSecondResponse( uint8_t response = InterruptResponse::Second )
 	{
+		if ( m_queuedInterrupt != InterruptResponse::None )
+			dbLogWarning( "CDRomDrive::SendSecondResponse -- overwriting queued interrupt [%u] with new interrupt [%u]", m_queuedInterrupt, response );
+
 		m_secondResponseBuffer.Push( m_status.value );
 		m_queuedInterrupt = response;
 	}
@@ -263,15 +267,14 @@ private:
 	Status m_status;
 	ControllerMode m_mode;
 
-	uint8_t m_file = 0;
-	uint8_t m_channel = 0;
+	// XA-ADCPM
+	uint8_t m_xaFile = 0;
+	uint8_t m_xaChannel = 0;
 
 	uint8_t m_track = 0;
 	uint8_t m_trackIndex = 0; // or just m_index?
 	CDRom::Location m_trackLocation;
 	CDRom::Location m_seekLocation;
-
-	uint32_t m_currentSector = 0;
 
 	uint8_t m_firstTrack = 0;
 	uint8_t m_lastTrack = 0;

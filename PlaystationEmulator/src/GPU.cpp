@@ -436,7 +436,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				}
 
 				default:
-					dbBreakMessage( "Gpu::GP0_Command() -- invalid GP0 opcode [%X]", opcode );
+					dbLogWarning( "Gpu::GP0_Command() -- invalid GP0 opcode [%X]", opcode );
+					ClearCommandBuffer();
 					break;
 			}
 			break;

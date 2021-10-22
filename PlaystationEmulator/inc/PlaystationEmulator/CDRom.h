@@ -50,45 +50,102 @@ public:
 	static constexpr uint32_t SecondsPerMinuteBCD = 0x60;
 	static constexpr uint32_t SectorsPerSecondBCD = 0x75;
 
-	static constexpr uint32_t RawBytesPerSector = 0x930;
-	static constexpr uint32_t DataBytesPerSector = 0x800; // excludes sector encoding (CDROM, CD-XA Form1, CD-XA Form2)
+	static constexpr uint32_t BytesPerSector = 0x930;
+	static constexpr uint32_t RawDataBytesPerSector = 0x924; // includes headers
+	static constexpr uint32_t DataBytesPerSector = 0x800; // excludes headers
 
 	static constexpr uint32_t SyncSize = 0x0c;
 	static constexpr uint32_t HeaderSize = 4;
 	static constexpr uint32_t SubHeaderSize = 4;
 
-	using Sync = std::array<char, SyncSize>;
+	using Sync = std::array<uint8_t, SyncSize>;
 
 	struct Header
 	{
-		uint8_t minute = 0; // BCD
-		uint8_t second = 0; // BCD
-		uint8_t sector = 0; // BCD
-		uint8_t mode = 0;
+		uint8_t minute;		// BCD
+		uint8_t second;		// BCD
+		uint8_t sector;		// BCD
+		uint8_t mode;
 	};
 
-	enum SubMode : uint8_t
+	struct SubMode
 	{
-		EndOfRecord = 1 << 0, // all volume descriptors, and all sectors with EOF
+		uint8_t endOfRecord : 1;	// all volume descriptors, and all sectors with EOF
 
 		// Sector type
-		Video = 1 << 1,
-		Audio = 1 << 2,
-		Data = 1 << 3,
+		uint8_t video : 1;
+		uint8_t audio : 1;
+		uint8_t data : 1;
 
-		Trigger = 1 << 4, // for application use
-		Form2 = 1 << 5, // 0: 0x800 data bytes, 1: 0x914 data bytes
-		RealTime = 1 << 6,
-		EndOfFile = 1 << 7, // or end of directory, path table, volume terminator
+		uint8_t trigger : 1;		// for application use
+		uint8_t form2 : 1;			// 0: 0x800 data bytes, 1: 0x914 data bytes
+		uint8_t realTime : 1;
+		uint8_t endOfFile : 1;		// or end of directory, path table, volume terminator
+	};
+
+	struct CodingInfo
+	{
+		uint8_t monoStereo : 2;		// 0=Mono, 1=Stereo, 2-3=Reserved
+		uint8_t sampleRate : 2;		// 0=37800Hz, 1=18900Hz, 2-3=Reserved
+		uint8_t bitsPerSample : 2;	// 0=Normal/4bit, 1=8bit, 2-3=Reserved
+		uint8_t emphasis : 1;		// 0=Normal/Off, 1=Emphasis
+		uint8_t : 1;
 	};
 
 	struct SubHeader
 	{
-		uint8_t file = 0; // (0x00-0xff) (for audio/video interleave)
-		uint8_t channel = 0; // (0x00-0x1f) (for audio/video interleave)
-		uint8_t submode = 0;
-		uint8_t codingInfo = 0;
+		uint8_t file;			// (0x00-0xff) (for audio/video interleave)
+		uint8_t channel;		// (0x00-0x1f) (for audio/video interleave)
+		SubMode subMode;
+		CodingInfo codingInfo;
 	};
+	static_assert( sizeof( SubHeader ) == 4 );
+
+	union Sector
+	{
+		std::array<uint8_t, BytesPerSector> audio;
+
+		struct
+		{
+			Sync sync;
+			Header header;
+
+			union
+			{
+				struct
+				{
+					std::array<uint8_t, DataBytesPerSector> data;
+					uint32_t checksum;
+					std::array<uint8_t, 8> zeroFilled;
+					std::array<uint8_t, 0x114> errorCorrectionCodes;
+				} mode1;
+
+				struct
+				{
+					SubHeader subHeader;
+					SubHeader subHeaderCopy;
+
+					union
+					{
+						struct
+						{
+							std::array<uint8_t, DataBytesPerSector> data;
+							uint32_t checksum;
+							std::array<uint8_t, 0x114> errorCorrectionCodes;
+						} form1;
+
+						struct
+						{
+							std::array<uint8_t, 0x914> data;
+							uint32_t checksum;
+						} form2;
+					};
+
+				} mode2;
+			};
+		};
+	};
+	static_assert( sizeof( Sector ) == BytesPerSector );
 
 	struct Location
 	{
@@ -128,46 +185,16 @@ public:
 
 	void Seek( uint32_t sector )
 	{
-		const uint32_t address = sector * RawBytesPerSector;
-
-		m_file.seekg( address );
-
-		dbEnsures( !m_file.eof() );
+		m_file.seekg( static_cast<std::streampos>( sector ) * BytesPerSector );
 	}
 
-	void Read( char* data, std::size_t count )
+	bool ReadSector( Sector& sector )
 	{
-		dbExpects( !m_file.eof() );
-		m_file.read( data, count );
-	}
+		if ( m_file.eof() )
+			return false;
 
-	bool ReadSync()
-	{
-		static const Sync SyncBytes{ 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0 };
-
-		Sync sync = Read<Sync>();
-		return sync == SyncBytes;
-	}
-
-	Header ReadHeader()
-	{
-		return Read<Header>();
-	}
-
-	SubHeader ReadSubHeader()
-	{
-		const auto sub = Read<SubHeader>();
-		const auto copy = Read<SubHeader>();
-		dbAssert( sub.file == copy.file &&
-			sub.channel == copy.channel &&
-			sub.submode == copy.submode &&
-			sub.codingInfo == copy.codingInfo );
-		return sub;
-	}
-
-	void Ignore( size_t bytes )
-	{
-		m_file.ignore( bytes );
+		m_file.read( (char*)&sector, sizeof( Sector ) );
+		return true;
 	}
 
 private:
