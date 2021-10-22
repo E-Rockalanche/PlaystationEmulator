@@ -1124,6 +1124,7 @@ void CDRomDrive::ExecuteDrive() noexcept
 			if ( state == DriveState::Playing )
 			{
 				// play CD-DA audio
+				dbLogWarning( "Skipping CD-DA sector" );
 				return;
 			}
 
@@ -1133,6 +1134,7 @@ void CDRomDrive::ExecuteDrive() noexcept
 				sector.mode2.subHeader.subMode.realTime )
 			{
 				// read XA-ADPCM
+				dbLogWarning( "Skipping XA-DCPM sector" );
 				return;
 			}
 
@@ -1148,23 +1150,20 @@ void CDRomDrive::ExecuteDrive() noexcept
 			}
 			else
 			{
+				auto readSectorData = [&buffer]( const uint8_t* src )
+				{
+					std::copy_n( src, CDRom::DataBytesPerSector, buffer.bytes.data() );
+				};
+
 				switch ( sector.header.mode )
 				{
 					case 0:
 						std::fill_n( buffer.bytes.data(), CDRom::DataBytesPerSector, uint8_t( 0 ) );
 						break;
 
-					case 1:
-						std::copy_n( sector.mode1.data.data(), CDRom::DataBytesPerSector, buffer.bytes.data() );
-						break;
-
-					case 2:
-						std::copy_n( sector.mode2.form1.data.data(), CDRom::DataBytesPerSector, buffer.bytes.data() );
-						break;
-
-					case 3:
-						std::copy_n( sector.mode2.form2.data.data(), CDRom::DataBytesPerSector, buffer.bytes.data() );
-						break;
+					case 1:		readSectorData( sector.mode1.data.data() );			break;
+					case 2:		readSectorData( sector.mode2.form1.data.data() );	break;
+					case 3:		readSectorData( sector.mode2.form2.data.data() );	break;
 
 					default:
 						dbBreak();
