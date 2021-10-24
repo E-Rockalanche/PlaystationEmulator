@@ -249,9 +249,15 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 		{
 			const uint32_t offset = address - CdRomStart;
 			if ( offset == 2 )
-				value = m_cdRomDrive.ReadDataFifo<T>();
+			{
+				value = m_cdRomDrive.Read( 2 );
+				if constexpr ( sizeof( T ) >= 2 )
+					value |= static_cast<T>( m_cdRomDrive.Read( 2 ) << 8 );
+			}
 			else
+			{
 				value = m_cdRomDrive.Read( offset );
+			}
 		}
 		else
 		{

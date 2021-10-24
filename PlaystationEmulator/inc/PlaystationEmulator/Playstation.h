@@ -21,7 +21,7 @@ public:
 
 	void RunFrame();
 
-	void LoadRom( const char* filename );
+	bool LoadRom( const char* filename );
 
 	void HookExe( const char* filename );
 

@@ -352,10 +352,7 @@ void Dma::TransferToRam( const Channel channel, const uint32_t address, const ui
 
 		case Channel::CdRom:
 		{
-			for ( uint32_t i = 0; i < wordCount; ++i )
-			{
-				dest[ i ] = m_cdromDrive.ReadDataFifo<uint32_t>();
-			}
+			m_cdromDrive.DmaRead( dest, wordCount );
 			break;
 		}
 

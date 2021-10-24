@@ -18,11 +18,11 @@ public:
 	CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager );
 	~CDRomDrive();
 
+	void SetDma( Dma& dma ) { m_dma = &dma; }
+
 	void Reset();
 
-	// for software 8bit & 16bit reads and DMA 32bit reads
-	template <typename T>
-	T ReadDataFifo() noexcept;
+	void DmaRead( uint32_t* data, uint32_t count );
 
 	uint8_t Read( uint32_t index ) noexcept;
 	void Write( uint32_t index, uint8_t value ) noexcept;
@@ -39,6 +39,21 @@ private:
 	static constexpr uint32_t ParamaterBufferSize = 16;
 	static constexpr uint32_t ResponseBufferSize = 16;
 	static constexpr uint32_t NumSectorBuffers = 8;
+
+	union Status
+	{
+		struct
+		{
+			uint8_t index : 2;
+			uint8_t adpBusy : 1;
+			uint8_t parameterFifoEmpty : 1;
+			uint8_t parameterFifoNotFull : 1;
+			uint8_t responseFifoNotEmpty : 1;
+			uint8_t dataFifoNotEmpty : 1;
+			uint8_t commandTransferBusy : 1;
+		};
+		uint8_t value = 0;
+	};
 
 	enum class DriveState
 	{
@@ -104,9 +119,8 @@ private:
 		// 0x6f-0xff - invalid
 	};
 
-	union Status
+	union DriveStatus
 	{
-		Status() : value{ 0 } {}
 		struct
 		{
 			uint8_t error : 1;
@@ -118,12 +132,11 @@ private:
 			uint8_t seek : 1;
 			uint8_t play : 1;
 		};
-		uint8_t value;
+		uint8_t value = 0;
 	};
 
 	union ControllerMode
 	{
-		ControllerMode() : value{ 0 } {}
 		struct
 		{
 			uint8_t cdda : 1;			// 1=Allow to Read CD-DA Sectors; ignore missing EDC
@@ -135,7 +148,7 @@ private:
 			uint8_t xaadpcm : 1;		// 0=Off, 1=Send XA-ADPCM sectors to SPU Audio Input
 			uint8_t doubleSpeed : 1;	// 0=Normal speed, 1=Double speed
 		};
-		uint8_t value;
+		uint8_t value = 0;
 	};
 
 	enum class ErrorCode
@@ -165,6 +178,8 @@ private:
 	};
 
 private:
+	void UpdateStatus();
+
 	// event callbacks
 	void ExecuteCommand() noexcept;
 	void ExecuteSecondResponse() noexcept;
@@ -251,15 +266,13 @@ private:
 
 private:
 	InterruptControl& m_interruptControl;
+	Dma* m_dma = nullptr;
 	EventHandle m_commandEvent;
 	EventHandle m_secondResponseEvent;
 	EventHandle m_driveEvent;
-
-	DriveState m_driveState = DriveState::Idle;
-
 	std::unique_ptr<CDRom> m_cdrom;
 
-	uint8_t m_index = 0;
+	Status m_status;
 	uint8_t m_interruptEnable = 0;
 	uint8_t m_interruptFlags = 0;
 	uint8_t m_queuedInterrupt = 0;
@@ -268,7 +281,9 @@ private:
 	std::optional<Command> m_pendingCommand;
 	std::optional<Command> m_secondResponseCommand;
 
-	Status m_status;
+	DriveState m_driveState = DriveState::Idle;
+
+	DriveStatus m_driveStatus;
 	ControllerMode m_mode;
 
 	// XA-ADCPM
@@ -307,22 +322,5 @@ private:
 
 	static const std::array<uint8_t, 256> ExpectedCommandParameters;
 };
-
-template <typename T>
-inline T CDRomDrive::ReadDataFifo() noexcept
-{
-	T result = static_cast<T>( m_dataBuffer.Pop() );
-
-	if constexpr ( sizeof( T ) >= 2 )
-		result |= static_cast<T>( m_dataBuffer.Pop() << 8 );
-
-	if constexpr ( sizeof( T ) >= 4 )
-	{
-		result |= static_cast<T>( m_dataBuffer.Pop() << 16 );
-		result |= static_cast<T>( m_dataBuffer.Pop() << 24 );
-	}
-
-	return result;
-}
 
 }
