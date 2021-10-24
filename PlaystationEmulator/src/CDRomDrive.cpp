@@ -300,13 +300,12 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 				case 1: // ack interrupt flags
 				{
 					dbLogDebug( "CDRomDrive::Write() -- interrupt flag [%X]", value );
-					m_interruptFlags = m_interruptFlags & ~value;
+					m_interruptFlags = m_interruptFlags & ~value; // write 1 to ack/reset
+
+					m_responseBuffer.Clear();
 
 					if ( value & InterruptFlag::ResetParameterFifo )
-					{
 						m_parameterBuffer.Clear();
-						UpdateStatus();
-					}
 
 					if ( m_interruptFlags == 0 )
 					{
@@ -319,6 +318,8 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 							CheckPendingCommand();
 						}
 					}
+
+					UpdateStatus();
 					break;
 				}
 
