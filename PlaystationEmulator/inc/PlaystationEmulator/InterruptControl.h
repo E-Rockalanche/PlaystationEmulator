@@ -36,7 +36,7 @@ public:
 
 	void SetInterrupt( Interrupt interrupt ) noexcept
 	{
-		dbLog( "InterruptControl::SetInterrupt() -- [%X]", static_cast<uint32_t>( interrupt ) );
+		dbLogDebug( "InterruptControl::SetInterrupt() -- [%X]", static_cast<uint32_t>( interrupt ) );
 		m_status |= static_cast<uint32_t>( interrupt );
 	}
 
@@ -51,11 +51,11 @@ public:
 		switch ( index )
 		{
 			case 0:
-				// dbLog( "InterruptControl::Read -- interrupt status [%X]", m_status );
+				dbLogDebug( "InterruptControl::Read -- interrupt status [%X]", m_status );
 				return m_status;
 
 			case 1:
-				// dbLog( "InterruptControl::Read -- interrupt mask [%X]", m_mask );
+				dbLogDebug( "InterruptControl::Read -- interrupt mask [%X]", m_mask );
 				return m_mask;
 
 			default:
@@ -70,12 +70,12 @@ public:
 		switch ( index )
 		{
 			case 0:
-				dbLog( "InterruptControl::Write -- acknowledge IRQs [%X]", value );
+				dbLogDebug( "InterruptControl::Write -- acknowledge IRQs [%X]", value );
 				m_status &= value & WriteMask;
 				break;
 
 			case 1:
-				dbLog( "InterruptControl::Write -- interrupt mask [%X]", value );
+				dbLogDebug( "InterruptControl::Write -- interrupt mask [%X]", value );
 				m_mask = value & WriteMask;
 				break;
 		}
