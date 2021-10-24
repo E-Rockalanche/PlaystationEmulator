@@ -1225,14 +1225,26 @@ void CDRomDrive::ExecuteDrive() noexcept
 			if ( !m_cdrom->ReadSector( sector ) )
 			{
 				dbLogWarning( "CDRomDrive::ExecuteDrive -- Reading from end of disk" );
-				return;
+				break;
 			}
 
 			if ( state == DriveState::Playing )
 			{
 				// play CD-DA audio
 				dbLogWarning( "Skipping CD-DA sector" );
-				return;
+				if ( m_mode.report )
+				{
+					m_secondResponseBuffer.Push( m_status.value );
+					m_secondResponseBuffer.Push( 0 ); // track
+					m_secondResponseBuffer.Push( 0 ); // index
+					m_secondResponseBuffer.Push( 0 ); // mm/amm
+					m_secondResponseBuffer.Push( 0 ); // ss+0x80/ass
+					m_secondResponseBuffer.Push( 0 ); // sect/asect
+					m_secondResponseBuffer.Push( 0 ); // peaklo
+					m_secondResponseBuffer.Push( 0 ); // peakhi
+					m_queuedInterrupt = InterruptResponse::ReceivedData;
+				}
+				break;
 			}
 
 			if ( ( sector.header.mode == 2 ) &&
