@@ -123,16 +123,25 @@ private:
 	{
 		struct
 		{
-			uint8_t error : 1;
+			uint8_t : 1;
 			uint8_t motorOn : 1; // spinning up is off
-			uint8_t seekError : 1;
-			uint8_t idError : 1;
+			uint8_t : 2;
 			uint8_t shellOpen : 1;
 			uint8_t read : 1;
 			uint8_t seek : 1;
 			uint8_t play : 1;
 		};
 		uint8_t value = 0;
+	};
+
+	struct DriveStatusError
+	{
+		enum : uint8_t
+		{
+			Error = 1u << 0,
+			SeekError = 1u << 2,
+			IdError = 1u << 3
+		};
 	};
 
 	union ControllerMode
@@ -211,29 +220,17 @@ private:
 	// queue status and second interrupt
 	void SendSecondResponse( uint8_t response = InterruptResponse::Second ) noexcept
 	{
-		if ( m_queuedInterrupt != InterruptResponse::None )
-			dbLogWarning( "CDRomDrive::SendSecondResponse -- overwriting queued interrupt [%u] with new interrupt [%u]", m_queuedInterrupt, response );
-
 		m_secondResponseBuffer.Push( m_driveStatus.value );
 		m_queuedInterrupt = response;
 	}
 
 	// send status, error code, and interrupt
-	void SendError( ErrorCode errorCode ) noexcept
+	void SendError( ErrorCode errorCode, uint8_t statusErrorBits = DriveStatusError::Error ) noexcept
 	{
 		dbLog( "CDRomDrive::SendError -- [%u]", uint32_t( errorCode ) );
-		m_responseBuffer.Push( m_driveStatus.value | 0x01 ); // error status bit isn't permanently set
+		m_responseBuffer.Push( m_driveStatus.value | statusErrorBits ); // error status bit isn't permanently set
 		m_responseBuffer.Push( static_cast<uint8_t>( errorCode ) );
 		m_interruptFlags = InterruptResponse::Error;
-	}
-
-	// queue status, error code, and interrupt
-	void SendSecondError( ErrorCode errorCode ) noexcept
-	{
-		dbLog( "CDRomDrive::SendSecondError -- [%u]", uint32_t( errorCode ) );
-		m_secondResponseBuffer.Push( m_driveStatus.value | 0x01 ); // error status bit isn't permanently set
-		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
-		m_queuedInterrupt = InterruptResponse::Error;
 	}
 
 	cycles_t GetReadCycles() const noexcept
