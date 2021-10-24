@@ -178,7 +178,7 @@ private:
 	};
 
 private:
-	void UpdateStatus();
+	void UpdateStatus() noexcept;
 
 	// event callbacks
 	void ExecuteCommand() noexcept;
@@ -201,37 +201,37 @@ private:
 	void LoadDataFifo() noexcept;
 
 	// send status and interrupt
-	void SendResponse( uint8_t response = InterruptResponse::First )
+	void SendResponse( uint8_t response = InterruptResponse::First ) noexcept
 	{
 		dbAssert( m_interruptFlags == InterruptResponse::None );
-		m_responseBuffer.Push( m_status.value );
+		m_responseBuffer.Push( m_driveStatus.value );
 		m_interruptFlags = response;
 	}
 
 	// queue status and second interrupt
-	void SendSecondResponse( uint8_t response = InterruptResponse::Second )
+	void SendSecondResponse( uint8_t response = InterruptResponse::Second ) noexcept
 	{
 		if ( m_queuedInterrupt != InterruptResponse::None )
 			dbLogWarning( "CDRomDrive::SendSecondResponse -- overwriting queued interrupt [%u] with new interrupt [%u]", m_queuedInterrupt, response );
 
-		m_secondResponseBuffer.Push( m_status.value );
+		m_secondResponseBuffer.Push( m_driveStatus.value );
 		m_queuedInterrupt = response;
 	}
 
 	// send status, error code, and interrupt
-	void SendError( ErrorCode errorCode )
+	void SendError( ErrorCode errorCode ) noexcept
 	{
 		dbLog( "CDRomDrive::SendError -- [%u]", uint32_t( errorCode ) );
-		m_responseBuffer.Push( m_status.value | 0x01 ); // error status bit isn't permanently set
+		m_responseBuffer.Push( m_driveStatus.value | 0x01 ); // error status bit isn't permanently set
 		m_responseBuffer.Push( static_cast<uint8_t>( errorCode ) );
 		m_interruptFlags = InterruptResponse::Error;
 	}
 
 	// queue status, error code, and interrupt
-	void SendSecondError( ErrorCode errorCode )
+	void SendSecondError( ErrorCode errorCode ) noexcept
 	{
 		dbLog( "CDRomDrive::SendSecondError -- [%u]", uint32_t( errorCode ) );
-		m_secondResponseBuffer.Push( m_status.value | 0x01 ); // error status bit isn't permanently set
+		m_secondResponseBuffer.Push( m_driveStatus.value | 0x01 ); // error status bit isn't permanently set
 		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
 		m_queuedInterrupt = InterruptResponse::Error;
 	}

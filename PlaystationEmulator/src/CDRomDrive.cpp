@@ -361,7 +361,7 @@ void CDRomDrive::DmaRead( uint32_t* data, uint32_t count )
 	UpdateStatus();
 }
 
-void CDRomDrive::UpdateStatus()
+void CDRomDrive::UpdateStatus() noexcept
 {
 	m_status.adpBusy = false;
 	m_status.parameterFifoEmpty = m_parameterBuffer.Empty();
