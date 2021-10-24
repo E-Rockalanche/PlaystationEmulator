@@ -13,17 +13,28 @@ namespace PSX
 namespace
 {
 
-const std::array<uint32_t, 64> ZigZag
+constexpr std::array<uint8_t, 64> CreateZagZig()
 {
-	0,  1,  5,  6,  14, 15, 27, 28,
-	2,  4,  7,  13, 16, 26, 29, 42,
-	3,  8,  12, 17, 25, 30, 41, 43,
-	9,  11, 18, 24, 31, 40, 44, 53,
-	10, 19, 23, 32, 39, 45, 52, 54,
-	20, 22, 33, 38, 46, 51, 55, 60,
-	21, 34, 37, 47, 50, 56, 59, 61,
-	35, 36, 48, 49, 57, 58, 62, 63
-};
+	constexpr std::array<uint8_t, 64> ZigZag
+	{
+		0,  1,  5,  6,  14, 15, 27, 28,
+		2,  4,  7,  13, 16, 26, 29, 42,
+		3,  8,  12, 17, 25, 30, 41, 43,
+		9,  11, 18, 24, 31, 40, 44, 53,
+		10, 19, 23, 32, 39, 45, 52, 54,
+		20, 22, 33, 38, 46, 51, 55, 60,
+		21, 34, 37, 47, 50, 56, 59, 61,
+		35, 36, 48, 49, 57, 58, 62, 63
+	};
+
+	std::array<uint8_t, 64> result{};
+	for ( uint8_t i = 0; i < 64; ++i )
+		result[ ZigZag[ i ] ] = i;
+
+	return result;
+}
+
+constexpr std::array<uint8_t, 64> ZagZig = CreateZagZig();
 
 const std::array<cycles_t, 4> CyclesPerBlock // values from duckstation
 {
@@ -90,9 +101,9 @@ void MacroblockDecoder::UpdateStatus()
 	m_status.dataInFifoFull = m_dataInBuffer.Full();
 	m_status.dataOutFifoEmpty = m_dataOutBuffer.Empty();
 
-	// requesting can start DMA right now
-	m_dma->SetRequest( Dma::Channel::MDecOut, dataOutRequest );
-	m_dma->SetRequest( Dma::Channel::MDecIn, dataInRequest );
+	// requesting can start DMA right now and change the status register
+	m_dma->SetRequest( Dma::Channel::MDecOut, m_status.dataOutRequest );
+	m_dma->SetRequest( Dma::Channel::MDecIn, m_status.dataInRequest );
 }
 
 uint32_t MacroblockDecoder::ReadData()
@@ -109,7 +120,7 @@ uint32_t MacroblockDecoder::ReadData()
 		const uint32_t value = m_dataOutBuffer.Pop();
 
 		// process more data if we were waiting for output fifo to empty
-		if ( m_dataOutBuffer.Empty() && ( m_state == State::DecodingMacroblock ) )
+		if ( m_dataOutBuffer.Empty() )
 			ProcessInput();
 		else
 			UpdateStatus();
@@ -138,7 +149,7 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 			// soft reset
 			m_outputBlockEvent->Cancel();
 			m_status.value = 0;
-			m_remainingHalfWords = 2;
+			m_remainingHalfWords = 0;
 			m_state = State::Idle;
 			m_dataInBuffer.Clear();
 			m_dataOutBuffer.Clear();
@@ -204,19 +215,20 @@ void MacroblockDecoder::ProcessInput()
 				if ( DecodeMacroblock() )
 				{
 					ScheduleOutput();
-					return; // wait for block to be read
+					return; // block needs to be read
 				}
 				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
 				{
 					// didn't get enough data to decode all blocks
-					dbLogWarning( "MacroblockDecoder::ProcessInput -- not enough data to decode macroblock" );
 					m_currentBlock = 0;
 					m_currentK = 64;
 					m_state = State::Idle;
 				}
-
-				// no more data or block needs to be read
-				return;
+				else
+				{
+					return; // need more data
+				}
+				break;
 			}
 
 			case State::WritingMacroblock:
@@ -246,20 +258,6 @@ void MacroblockDecoder::ProcessInput()
 
 				m_remainingHalfWords = 0;
 				m_state = State::Idle;
-				break;
-			}
-
-			case State::InvalidCommand:
-			{
-				const uint32_t ignoreCount = std::min( m_dataInBuffer.Size(), m_remainingHalfWords );
-				dbLogWarning( "MacroblockDecoder::ProcessInput -- ignoring %u half-words for invalid command", ignoreCount );
-
-				m_remainingHalfWords -= ignoreCount;
-				m_dataInBuffer.Ignore( ignoreCount );
-
-				if ( m_remainingHalfWords == 0 )
-					m_state = State::Idle;
-
 				break;
 			}
 		}
@@ -319,12 +317,13 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 			break;
 		}
 
+		case Command::NoFunction:
 		default:
 		{
-			// similar as the "number of parameter words" for MDEC(1), but without the "minus 1" effect, and without actually expecting any parameters
-			dbLogWarning( "MacroblockDecoder::StartCommand -- invalid command [%X]", value );
-			m_state = State::InvalidCommand;
-			m_remainingHalfWords = ( commandWord.parameterWords + 1 ) * 2;
+			// This command has no function. Command bits 25-28 are reflected to Status bits 23-26 as usually.
+			// Command bits 0-15 are reflected to Status bits 0-15 (similar as the "number of parameter words" for MDEC(1),
+			// but without the "minus 1" effect, and without actually expecting any parameters).
+			m_status.remainingParameters = commandWord.parameterWords;
 			break;
 		}
 	}
@@ -375,6 +374,150 @@ bool MacroblockDecoder::DecodeMonoMacroblock()
 	y_to_mono( m_blocks[ BlockIndex::Y ] );
 
 	return true;
+}
+
+bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
+{
+	if ( m_currentK == 64 )
+	{
+		blk.fill( 0 );
+
+		// skip padding
+		uint16_t n;
+		do
+		{
+			if ( m_dataInBuffer.Empty() || m_remainingHalfWords == 0 )
+				return false;
+
+			n = m_dataInBuffer.Pop();
+			--m_remainingHalfWords;
+		}
+		while ( n == EndOfBlock );
+
+		// start filling block
+		m_currentK = 0;
+
+		m_currentQ = ( n >> 10 ) & 0x3f;
+		int32_t val = SignExtend<10, int32_t>( n ) * static_cast<int32_t>( qt[ m_currentK ] );
+
+		if ( m_currentQ == 0 )
+			val = SignExtend<10, int32_t>( n ) * 2;
+
+		val = std::clamp<int32_t>( val, -0x400, 0x3ff );
+
+		if ( m_currentQ > 0 )
+			blk[ ZagZig[ m_currentK ] ] = static_cast<int16_t>( val );
+		else if ( m_currentQ == 0 )
+			blk[ m_currentK ] = static_cast<int16_t>( val );
+	}
+
+	while( !m_dataInBuffer.Empty() && m_remainingHalfWords > 0 && m_currentK < 63 )
+	{
+		uint16_t n = m_dataInBuffer.Pop();
+		--m_remainingHalfWords;
+
+		m_currentK += ( ( n >> 10 ) & 0x3f ) + 1;
+
+		if ( m_currentK >= 64 )
+		{
+			// finished filling block
+			m_currentK = 64;
+			return true;
+		}
+
+		int32_t val = ( SignExtend<10, int32_t>( n ) * static_cast<int32_t>( qt[ m_currentK ] ) * static_cast<int32_t>( m_currentQ ) + 4 ) / 8;
+
+		if ( m_currentQ == 0 )
+			val = SignExtend<10, int32_t>( n ) * 2;
+
+		val = std::clamp( val, -0x400, 0x3ff );
+		if ( m_currentQ > 0 )
+			blk[ ZagZig[ m_currentK ] ] = static_cast<int16_t>( val );
+		else if ( m_currentQ == 0 )
+			blk[ m_currentK ] = static_cast<int16_t>( val );
+	}
+
+	if ( m_currentK == 63 )
+	{
+		// block was fully defined
+		m_currentK = 64;
+		return true;
+	}
+
+	return false;
+}
+
+void MacroblockDecoder::real_idct_core( Block& blk )
+{
+	std::array<int16_t, 64> temp_buffer;
+
+	int16_t* src = blk.data();
+	int16_t* dst = temp_buffer.data();
+
+	for ( size_t pass = 0; pass < 2; ++pass )
+	{
+		for ( size_t x = 0; x < 8; ++x )
+		{
+			for ( size_t y = 0; y < 8; ++y )
+			{
+				int64_t sum = 0;
+				for ( size_t z = 0; z < 8; ++z )
+				{
+					sum += static_cast<int64_t>( src[ y + z * 8 ] ) * ( m_scaleTable[ x + z * 8 ] / 8 );
+				}
+				dst[ x + y * 8 ] = static_cast<int16_t>( ( sum + 0xfff ) / 0x2000 ); // or so?
+			}
+		}
+		std::swap( src, dst );
+	}
+}
+
+void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, const Block& cbBlk, const Block& yBlk )
+{
+	for ( size_t y = 0; y < 8; ++y )
+	{
+		for ( size_t x = 0; x < 8; ++x )
+		{
+			const size_t crbIndex = ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8; // sample 8x8 color table from 16x16 coordinates
+
+			int16_t R = crBlk[ crbIndex ];
+			int16_t B = cbBlk[ crbIndex ];
+			int16_t G = static_cast<int16_t>( -0.3437f * B + -0.7143f * R );
+			R = static_cast<int16_t>( 1.402f * R );
+			B = static_cast<int16_t>( 1.772f * B );
+
+			int16_t Y = yBlk[ x + y * 8 ];
+			R = static_cast<int16_t>( std::clamp<int32_t>( Y + R, -128, 127 ) );
+			G = static_cast<int16_t>( std::clamp<int32_t>( Y + G, -128, 127 ) );
+			B = static_cast<int16_t>( std::clamp<int32_t>( Y + B, -128, 127 ) );
+
+			if ( !m_status.dataOutputSigned )
+			{
+				R += 128;
+				G += 128;
+				B += 128;
+			}
+
+			const uint32_t BGR = ( static_cast<uint8_t>( B ) << 16 ) | ( static_cast<uint8_t>( G ) << 8 ) | static_cast<uint8_t>( R );
+
+			m_dest[ ( x + xx ) + ( y + yy ) * 16 ] = BGR;
+		}
+	}
+}
+
+void MacroblockDecoder::y_to_mono( const Block& yBlk )
+{
+	for ( size_t i = 0; i < 64; ++i )
+	{
+		int16_t Y = yBlk[ i ];
+		Y = static_cast<int16_t>( SignExtend<9, int16_t>( Y ) ); // clip to signed 9bit range
+		Y = std::clamp<int16_t>( Y, -128, 127 ); // saturate from 9bit to signed 8bit range
+
+		if ( !m_status.dataOutputSigned )
+			Y += 128;
+
+		m_dest[ i ] = static_cast<uint32_t>( Y & 0xff );
+	}
 }
 
 void MacroblockDecoder::ScheduleOutput()
@@ -501,151 +644,6 @@ void MacroblockDecoder::OutputBlock()
 
 	m_state = ( m_remainingHalfWords == 0 ) ? State::Idle : State::DecodingMacroblock;
 	ProcessInput();
-}
-
-bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
-{
-	if ( m_currentK == 64 )
-	{
-		blk.fill( 0 );
-
-		// skip padding
-		uint16_t n;
-		do
-		{
-			if ( m_dataInBuffer.Empty() || m_remainingHalfWords == 0 )
-				return false;
-
-			n = m_dataInBuffer.Pop();
-			--m_remainingHalfWords;
-		}
-		while ( n == EndOfBlock );
-
-		// start filling block
-		m_currentK = 0;
-
-		m_currentQ = ( n >> 10 ) & 0x3f;
-		int32_t val = SignExtend<10, int32_t>( n ) * static_cast<int32_t>( qt[ m_currentK ] );
-
-		if ( m_currentQ == 0 )
-			val = SignExtend<10, int32_t>( n ) * 2;
-
-		val = std::clamp<int32_t>( val, -0x400, 0x3ff );
-
-		if ( m_currentQ > 0 )
-			blk[ ZigZag[ m_currentK ] ] = static_cast<int16_t>( val );
-		else if ( m_currentQ == 0 )
-			blk[ m_currentK ] = static_cast<int16_t>( val );
-	}
-
-	while( !m_dataInBuffer.Empty() && m_remainingHalfWords > 0 && m_currentK < 63 )
-	{
-		uint16_t n = m_dataInBuffer.Pop();
-		--m_remainingHalfWords;
-
-		m_currentK += ( ( n >> 10 ) & 0x3f ) + 1;
-
-		if ( m_currentK >= 64 )
-		{
-			// finished filling block
-			// dbAssert( n == EndOfBlock ); // ensure important data isn't being ognored
-			m_currentK = 64;
-			return true;
-		}
-
-		int32_t val = ( SignExtend<10, int32_t>( n ) * static_cast<int32_t>( qt[ m_currentK ] ) * static_cast<int32_t>( m_currentQ ) + 4 ) / 8;
-
-		if ( m_currentQ == 0 )
-			val = SignExtend<10, int32_t>( n ) * 2;
-
-		val = std::clamp( val, -0x400, 0x3ff );
-		if ( m_currentQ > 0 )
-			blk[ ZigZag[ m_currentK ] ] = static_cast<int16_t>( val );
-		else if ( m_currentQ == 0 )
-			blk[ m_currentK ] = static_cast<int16_t>( val );
-	}
-
-	if ( m_currentK == 63 )
-	{
-		// block was fully defined
-		m_currentK = 64;
-		return true;
-	}
-
-	return false;
-}
-
-void MacroblockDecoder::real_idct_core( Block& blk )
-{
-	std::array<int16_t, 64> temp_buffer;
-
-	int16_t* src = blk.data();
-	int16_t* dst = temp_buffer.data();
-
-	for ( size_t pass = 0; pass < 2; ++pass )
-	{
-		for ( size_t x = 0; x < 8; ++x )
-		{
-			for ( size_t y = 0; y < 8; ++y )
-			{
-				int64_t sum = 0;
-				for ( size_t z = 0; z < 8; ++z )
-				{
-					sum += static_cast<int64_t>( src[ y + z * 8 ] ) * ( m_scaleTable[ x + z * 8 ] / 8 );
-				}
-				dst[ x + y * 8 ] = static_cast<int16_t>( ( sum + 0xfff ) / 0x2000 ); // or so?
-			}
-		}
-		std::swap( src, dst );
-	}
-}
-
-void MacroblockDecoder::yuv_to_rgb( size_t xx, size_t yy, const Block& crBlk, const Block& cbBlk, const Block& yBlk )
-{
-	for ( size_t y = 0; y < 8; ++y )
-	{
-		for ( size_t x = 0; x < 8; ++x )
-		{
-			const size_t crbIndex = ( ( x + xx ) / 2 ) + ( ( y + yy ) / 2 ) * 8; // sample 8x8 color table from 16x16 coordinates
-
-			int16_t R = crBlk[ crbIndex ];
-			int16_t B = cbBlk[ crbIndex ];
-			int16_t G = static_cast<int16_t>( -0.3437f * B + -0.7143f * R );
-			R = static_cast<int16_t>( 1.402f * R );
-			B = static_cast<int16_t>( 1.772f * B );
-
-			int16_t Y = yBlk[ x + y * 8 ];
-			R = static_cast<int16_t>( std::clamp<int32_t>( Y + R, -128, 127 ) );
-			G = static_cast<int16_t>( std::clamp<int32_t>( Y + G, -128, 127 ) );
-			B = static_cast<int16_t>( std::clamp<int32_t>( Y + B, -128, 127 ) );
-
-			if ( !m_status.dataOutputSigned )
-			{
-				R += 128;
-				G += 128;
-				B += 128;
-			}
-
-			const uint32_t BGR = ( static_cast<uint8_t>( B ) << 16 ) | ( static_cast<uint8_t>( G ) << 8 ) | static_cast<uint8_t>( R );
-
-			m_dest[ ( x + xx ) + ( y + yy ) * 16 ] = BGR;
-		}
-	}
-}
-
-void MacroblockDecoder::y_to_mono( const Block& yBlk )
-{
-	for ( size_t i = 0; i < 64; ++i )
-	{
-		int16_t Y = yBlk[ i ];
-		Y = static_cast<int16_t>( SignExtend<9, int16_t>( Y ) ); // clip to signed 9bit range
-		Y = std::clamp<int16_t>( Y, -128, 127 ); // saturate from 9bit to signed 8bit range
-
-		if ( !m_status.dataOutputSigned )
-			Y += 128;
-
-		m_dest[ i ] = static_cast<uint32_t>( Y & 0xff );
-	}
 }
 
 }

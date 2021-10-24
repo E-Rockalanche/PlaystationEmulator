@@ -64,9 +64,11 @@ private:
 
 	enum class Command
 	{
+		NoFunction = 0,
 		DecodeMacroblock = 1,
 		SetQuantTable = 2,
 		SetScaleTable = 3
+		// 5-7 - Invalid, same functionality as NoFunction
 	};
 
 	enum class State
@@ -75,8 +77,7 @@ private:
 		DecodingMacroblock,
 		WritingMacroblock,
 		ReadingQuantTable,
-		ReadingScaleTable,
-		InvalidCommand
+		ReadingScaleTable
 	};
 
 	// not the same order as block index in status register!

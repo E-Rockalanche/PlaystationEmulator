@@ -200,6 +200,8 @@ void Dma::StartDma( Channel channel )
 		{
 			const uint32_t words = state.GetWordCount();
 
+			dbLog( "Dma::StartDma -- Manual" );
+
 			// TODO: chopping
 			if ( toRam )
 				TransferToRam( channel, startAddress & DmaAddressMask, words, addressStep );
@@ -245,6 +247,8 @@ void Dma::StartDma( Channel channel )
 				dbLogWarning( "Dma::StartDma -- cannot do linked list transfer to ram" );
 				return;
 			}
+
+			dbLog( "Dma::StartDma -- LinkedList" );
 
 			uint32_t totalWords = 0;
 			uint32_t currentAddress = state.baseAddress;
@@ -294,6 +298,8 @@ void Dma::TransferToRam( const Channel channel, const uint32_t address, const ui
 	dbExpects( address < RamSize );
 	dbExpects( wordCount > 0 );
 	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
+
+	dbLog( "Dma::TransferToRam -- channel: %u, address: %X, wordCount: %X, increment: %i", channel, address, wordCount, static_cast<int32_t>( addressStep ) );
 
 	if ( channel == Channel::RamOrderTable )
 	{
@@ -367,6 +373,8 @@ void Dma::TransferFromRam( const Channel channel, const uint32_t address, const 
 	dbExpects( address < RamSize );
 	dbExpects( wordCount > 0 );
 	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
+
+	dbLog( "Dma::TransferFromRam -- channel: %u, address: %X, wordCount: %X, increment: %i", channel, address, wordCount, static_cast<int32_t>( addressStep ) );
 
 	const uint32_t* src = reinterpret_cast<const uint32_t*>( m_ram.Data() + address );
 
