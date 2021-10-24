@@ -40,7 +40,7 @@ uint32_t Cop0::Read( uint32_t index ) const noexcept
 		case Register::ProcessorId:					return m_processorId;
 
 		default:
-			dbLog( "Cop0::Read -- reading garbage register [%u]", index );
+			dbLogWarning( "Cop0::Read -- reading garbage register [%u]", index );
 			return 0;
 	}
 }
@@ -79,7 +79,7 @@ void Cop0::Write( uint32_t index, uint32_t value ) noexcept
 			break;
 
 		default:
-			dbLog( "Cop0::Write -- writing to read-only register [%u]", index );
+			dbLogWarning( "Cop0::Write -- writing to read-only register [%u]", index );
 			break;
 	}
 }
@@ -102,7 +102,7 @@ void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, 
 
 void Cop0::PrepareReturnFromException() noexcept
 {
-	dbLog( "Cop0::PrepareReturnFromException()" );
+	dbLogDebug( "Cop0::PrepareReturnFromException()" );
 
 	// restore interrupt enable and user/kernel mode
 	m_systemStatus = ( ( m_systemStatus >> 2 ) & 0x0000000fu ) | ( m_systemStatus & 0xfffffff0u );

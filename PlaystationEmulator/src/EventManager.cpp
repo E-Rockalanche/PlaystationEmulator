@@ -1,5 +1,7 @@
 #include "EventManager.h"
 
+#include <stdx/assert.h>
+
 namespace PSX
 {
 
@@ -43,7 +45,7 @@ void Event::Cancel()
 {
 	if ( m_active )
 	{
-		dbLog( "Event::Cancel -- [%s]", m_name.c_str() );
+		dbLogDebug( "Event::Cancel -- [%s]", m_name.c_str() );
 
 		m_pendingCycles = 0;
 		m_cyclesUntilEvent = 0;
@@ -101,7 +103,7 @@ Event* EventManager::FindEvent( std::string_view name )
 
 void EventManager::Reset()
 {
-	dbLog( "EventManager::Reset" );
+	dbLogDebug( "EventManager::Reset" );
 
 	m_pendingCycles = 0;
 	m_cyclesUntilNextEvent = 0;
@@ -115,8 +117,7 @@ void EventManager::UpdateNextEvent()
 {
 	dbAssert( m_nextEvent ); // an event should have been scheduled
 
-	dbLog( "EventManager::UpdateNextEvent -- [%s]", m_nextEvent->GetName().c_str() );
-
+	dbLogDebug( "EventManager::UpdateNextEvent -- [%s]", m_nextEvent->GetName().c_str() );
 
 	if ( m_pendingCycles > 0 )
 	{
@@ -159,7 +160,7 @@ void EventManager::ScheduleNextEvent()
 void EventManager::RemoveEvent( Event* event )
 {
 	dbExpects( event );
-	dbLog( "EventManager::RemoveEvent -- [%s]", event->GetName().c_str() );
+	dbLogDebug( "EventManager::RemoveEvent -- [%s]", event->GetName().c_str() );
 
 	auto it = std::find( m_events.begin(), m_events.end(), event );
 	dbAssert( it != m_events.end() );

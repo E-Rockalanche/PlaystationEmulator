@@ -11,6 +11,22 @@
 namespace PSX
 {
 
+namespace
+{
+
+const std::array<const char*, 7> ChannelNames
+{
+	"MDEC_IN",
+	"MDEC_OUT",
+	"GPU",
+	"CDROM",
+	"SPU",
+	"PIO",
+	"OTC"
+};
+
+}
+
 void Dma::Reset()
 {
 	for ( auto& channel : m_channels )
@@ -200,7 +216,7 @@ void Dma::StartDma( Channel channel )
 		{
 			const uint32_t words = state.GetWordCount();
 
-			dbLog( "Dma::StartDma -- Manual" );
+			dbLog( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: %X, words: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
 
 			// TODO: chopping
 			if ( toRam )
@@ -218,6 +234,8 @@ void Dma::StartDma( Channel channel )
 			const uint32_t blockSize = state.GetBlockSize();
 			uint32_t blocksRemaining = state.GetBlockCount();
 			uint32_t currentAddress = startAddress;
+
+			dbLog( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: %X, blocks: %X, blockSize: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
 
 			while ( state.request && blocksRemaining > 0 )
 			{
@@ -248,10 +266,11 @@ void Dma::StartDma( Channel channel )
 				return;
 			}
 
-			dbLog( "Dma::StartDma -- LinkedList" );
-
 			uint32_t totalWords = 0;
 			uint32_t currentAddress = state.baseAddress;
+
+			dbLog( "Dma::StartDma -- LinkedList [channel: %s, address: %X]", ChannelNames[ (size_t)channel ], currentAddress );
+
 			do
 			{
 				uint32_t header = m_ram.Read<uint32_t>( currentAddress & DmaAddressMask );
@@ -299,8 +318,6 @@ void Dma::TransferToRam( const Channel channel, const uint32_t address, const ui
 	dbExpects( wordCount > 0 );
 	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
 
-	dbLog( "Dma::TransferToRam -- channel: %u, address: %X, wordCount: %X, increment: %i", channel, address, wordCount, static_cast<int32_t>( addressStep ) );
-
 	if ( channel == Channel::RamOrderTable )
 	{
 		ClearOrderTable( address, wordCount );
@@ -345,7 +362,7 @@ void Dma::TransferToRam( const Channel channel, const uint32_t address, const ui
 		case Channel::Spu:
 		{
 			// TODO
-			// dbLog( "ignoring SPU to RAM DMA transfer" );
+			dbLogDebug( "ignoring SPU to RAM DMA transfer" );
 			break;
 		}
 
@@ -373,8 +390,6 @@ void Dma::TransferFromRam( const Channel channel, const uint32_t address, const 
 	dbExpects( address < RamSize );
 	dbExpects( wordCount > 0 );
 	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
-
-	dbLog( "Dma::TransferFromRam -- channel: %u, address: %X, wordCount: %X, increment: %i", channel, address, wordCount, static_cast<int32_t>( addressStep ) );
 
 	const uint32_t* src = reinterpret_cast<const uint32_t*>( m_ram.Data() + address );
 
@@ -414,7 +429,7 @@ void Dma::TransferFromRam( const Channel channel, const uint32_t address, const 
 		case Channel::Spu:
 		{
 			// TODO
-			// dbLog( "ignoring RAM to SPU DMA transfer" );
+			dbLogDebug( "ignoring RAM to SPU DMA transfer" );
 			break;
 		}
 

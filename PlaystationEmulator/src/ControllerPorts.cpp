@@ -48,7 +48,7 @@ uint32_t ControllerPorts::ReadData() noexcept
 	const uint8_t data = m_rxBufferFull ? m_rxBuffer : 0xff;
 	m_rxBufferFull = false;
 
-	dbLog( "ControllerPorts::Read() -- data [%X]", data );
+	dbLogDebug( "ControllerPorts::Read() -- data [%X]", data );
 	return data | ( data << 8 ) | ( data << 16 ) | ( data << 24 );
 }
 
@@ -71,7 +71,7 @@ void ControllerPorts::WriteData( uint32_t value ) noexcept
 	// Writing to this register starts the transfer (if, or as soon as TXEN=1 and JOY_STAT.2=Ready),
 	// the written value is sent to the controller or memory card, and, simultaneously,
 	// a byte is received (and stored in RX FIFO if JOY_CTRL.1 or JOY_CTRL.2 is set).
-	dbLog( "ControllerPorts::Write() -- data [%X]", value );
+	dbLogDebug( "ControllerPorts::Write() -- data [%X]", value );
 
 	if ( m_txBufferFull )
 		dbLogWarning( "ControllerPorts::WriteData() -- TX buffer is full" );
@@ -84,13 +84,12 @@ void ControllerPorts::WriteData( uint32_t value ) noexcept
 
 void ControllerPorts::WriteControl( uint16_t value ) noexcept
 {
-	dbLog( "ControllerPorts::Write() -- control [%X]", value );
+	dbLogDebug( "ControllerPorts::Write() -- control [%X]", value );
 	m_control = value & Control::WriteMask;
 
 	if ( value & Control::Reset )
 	{
 		// soft reset
-		dbLog( "\tsoft reset" );
 		m_control = 0;
 		m_status = 0;
 		m_mode.value = 0;
@@ -98,7 +97,6 @@ void ControllerPorts::WriteControl( uint16_t value ) noexcept
 
 	if ( value & Control::Acknowledge )
 	{
-		dbLog( "\tacknowledge" );
 		stdx::reset_bits( m_status, Status::RxParityError | Status::InterruptRequest );
 	}
 
@@ -121,8 +119,7 @@ void ControllerPorts::TryTransfer() noexcept
 {
 	if ( ( m_control & Control::TXEnable ) && m_txBufferFull && ( m_state == State::Idle ) )
 	{
-		dbLog( "ControllerPorts::CheckTransfer()" );
-
+		dbLogDebug( "ControllerPorts::TryTransfer -- transferring" );
 		/*
 		if ( m_rxBufferFull )
 			dbBreakMessage( "ControllerPorts::CheckTransfer() -- RX buffer is full" );

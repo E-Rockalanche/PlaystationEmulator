@@ -101,25 +101,25 @@ public:
 
 	uint16_t ReadMode() const noexcept
 	{
-		dbLog( "ControllerPorts::Read() -- mode [%X]", m_mode.value );
+		dbLogDebug( "ControllerPorts::Read() -- mode [%X]", m_mode.value );
 		return m_mode.value;
 	}
 
 	uint16_t ReadControl() const noexcept
 	{
-		dbLog( "ControllerPorts::Read() -- control [%X]", m_control );
+		dbLogDebug( "ControllerPorts::Read() -- control [%X]", m_control );
 		return m_control;
 	}
 
 	uint16_t ReadBaudrateReloadValue() const noexcept
 	{
-		dbLog( "ControllerPorts::Read() -- baudrate reload value [%X]", m_baudrateReloadValue );
+		dbLogDebug( "ControllerPorts::Read() -- baudrate reload value [%X]", m_baudrateReloadValue );
 		return m_baudrateReloadValue;
 	}
 
 	void WriteMode( uint16_t value ) noexcept
 	{
-		dbLog( "ControllerPorts::Write() -- mode [%X]", value );
+		dbLogDebug( "ControllerPorts::Write() -- mode [%X]", value );
 		m_mode.value = static_cast<uint16_t>( value ) & Mode::WriteMask;
 	}
 
@@ -135,7 +135,7 @@ public:
 		// The default BAUD value is 0088h( equivalent to 44h cpu cycles ), and default factor is MUL1, so CLK pulses are 44h cpu cycles LOW,
 		// and 44h cpu cycles HIGH, giving it a transfer rate of circa 250kHz per bit( 33MHz divided by 88h cycles ).
 		// Note: The Baudrate Timer is always running; even if there's no transfer in progress.
-		dbLog( "ControllerPorts::Write() -- baudrate reload value [%X]", value );
+		dbLogDebug( "ControllerPorts::Write() -- baudrate reload value [%X]", value );
 		m_baudrateReloadValue = static_cast<uint16_t>( value );
 		ReloadBaudrateTimer();
 	}

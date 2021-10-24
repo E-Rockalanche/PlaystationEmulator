@@ -58,6 +58,8 @@ enum class SpuRegister : uint32_t
 
 uint16_t Spu::Read( uint32_t offset ) noexcept
 {
+	dbLogDebug( "Spu::Read -- [%X]", offset );
+
 	switch ( static_cast<SpuRegister>( offset ) )
 	{
 		case SpuRegister::VolumeLeft:	return m_mainVolume.left;
@@ -132,6 +134,8 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 
 void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 {
+	dbLogDebug( "Spu::Write -- [%X<=%X]", offset, value );
+
 	static constexpr uint32_t LowMask = 0x0000ffffu;
 	static constexpr uint32_t HighMask = 0xffff0000u;
 

@@ -37,14 +37,15 @@ inline void LogError( const Args&... args )
 
 #define DEBUG true
 
-#define dbLog( ... )	Log( __VA_ARGS__ )
+#define dbLogDebug( ... )	Log( __VA_ARGS__ )
 
 #else
 
-#define dbLog( ... ) EMPTY_BLOCK
+#define dbLogDebug( ... ) EMPTY_BLOCK
 
 #endif
 
+#define dbLog( ... )		Log( __VA_ARGS__ )
 #define dbLogError( ... )	LogError( __VA_ARGS__ )
 #define dbLogWarning( ... )	LogWarning( __VA_ARGS__ )
 
