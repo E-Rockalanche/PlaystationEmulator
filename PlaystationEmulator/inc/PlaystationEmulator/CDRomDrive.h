@@ -7,6 +7,8 @@
 
 #include <stdx/bit.h>
 
+#include <optional>
+
 namespace PSX
 {
 
@@ -51,7 +53,7 @@ private:
 
 	enum class Command : uint8_t
 	{
-		Invalid = 0x00, // reportedly "Sync"
+		// 0x00 - reprtedly "Sync"
 
 		GetStat = 0x01,
 		SetLoc = 0x02, // amm, ass, asect
@@ -76,12 +78,17 @@ private:
 		SeekL = 0x15,
 		SeekP = 0x16,
 
+		// 0x17 - reprtedly "SetClock"
+		// 0x18 - reprtedly "GetClock"
+
 		Test = 0x19, // sub_function
 		GetID = 0x1a,
 		ReadS = 0x1b,
 		Reset = 0x1c,
 		GetQ = 0x1d,
 		ReadTOC = 0x1e,
+
+		// 0x1f-0x4f - invalid
 
 		Secret1 = 0x50,
 		Secret2 = 0x51, // "Licensed by"
@@ -93,6 +100,8 @@ private:
 		SecretLock = 0x57,
 
 		// 0x58-0x5f crashes the HC05 (jumps into a data area)
+
+		// 0x6f-0xff - invalid
 	};
 
 	union Status
@@ -173,6 +182,7 @@ private:
 	void StopMotor() noexcept;
 	void BeginSeeking() noexcept;
 	void BeginReading() noexcept;
+	void BeginPlaying( uint8_t track ) noexcept;
 	void LoadDataFifo() noexcept;
 
 	// send status and interrupt
@@ -197,7 +207,7 @@ private:
 	void SendError( ErrorCode errorCode )
 	{
 		dbLog( "CDRomDrive::SendError -- [%u]", uint32_t( errorCode ) );
-		m_responseBuffer.Push( m_status.value | 0x01 );
+		m_responseBuffer.Push( m_status.value | 0x01 ); // error status bit isn't permanently set
 		m_responseBuffer.Push( static_cast<uint8_t>( errorCode ) );
 		m_interruptFlags = InterruptResponse::Error;
 	}
@@ -206,7 +216,7 @@ private:
 	void SendSecondError( ErrorCode errorCode )
 	{
 		dbLog( "CDRomDrive::SendSecondError -- [%u]", uint32_t( errorCode ) );
-		m_secondResponseBuffer.Push( m_status.value | 0x01 );
+		m_secondResponseBuffer.Push( m_status.value | 0x01 ); // error status bit isn't permanently set
 		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
 		m_queuedInterrupt = InterruptResponse::Error;
 	}
@@ -221,13 +231,7 @@ private:
 		return 20000; // TODO: account for motor spin up time, sector difference, etc
 	}
 
-	cycles_t GetFirstResponseCycles( Command command ) const noexcept
-	{
-		// timing taken from duckstation
-		return ( command == Command::Init )
-			? 120000
-			: ( CanReadDisk() ? 25000 : 15000 );
-	}
+	cycles_t GetFirstResponseCycles( Command command ) const noexcept;
 
 	void ClearSectorBuffers() noexcept
 	{
@@ -237,7 +241,7 @@ private:
 
 	bool CommandTransferBusy() const noexcept
 	{
-		return m_pendingCommand != Command::Invalid;
+		return m_pendingCommand.has_value();
 	}
 
 	bool IsSeeking() const noexcept
@@ -261,8 +265,8 @@ private:
 	uint8_t m_queuedInterrupt = 0;
 
 	// timing
-	Command m_pendingCommand = Command::Invalid;
-	Command m_secondResponseCommand = Command::Invalid;
+	std::optional<Command> m_pendingCommand;
+	std::optional<Command> m_secondResponseCommand;
 
 	Status m_status;
 	ControllerMode m_mode;
@@ -289,7 +293,7 @@ private:
 	struct SectorBuffer
 	{
 		size_t size = 0;
-		std::array<uint8_t, DataBufferSize> bytes;
+		std::array<uint8_t, DataBufferSize> bytes{};
 	};
 
 	std::array<SectorBuffer, NumSectorBuffers> m_sectorBuffers;
@@ -298,7 +302,10 @@ private:
 
 	// async flags
 	bool m_pendingSeek = false; // SetLoc was called, but we haven't called seek yet
-	bool m_pendingRead = false; // Read was called, but we were still seeking
+	bool m_pendingRead = false; // Read was called, but we need to seek
+	bool m_pendingPlay = false; // Play was called, but we need to seek
+
+	static const std::array<uint8_t, 256> ExpectedCommandParameters;
 };
 
 template <typename T>
