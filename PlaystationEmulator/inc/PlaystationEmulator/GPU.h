@@ -119,7 +119,7 @@ private:
 			uint32_t readyToSendVRamToCpu : 1;
 			uint32_t readyToReceiveDmaBlock : 1;
 			uint32_t dmaDirection : 2; // 0=Off, 1=FIFO, 2=CPUtoGP0, 3=GPUREADtoCPU
-			uint32_t drawingEvenOdd : 1; // 0=Even or Vblank, 1=Odd
+			uint32_t evenOddVblank : 1; // 0=Even or Vblank, 1=Odd
 		};
 
 		uint32_t value;
@@ -259,12 +259,12 @@ private:
 	uint16_t m_displayAreaStartY = 0;
 
 	// horizontal display range
-	uint16_t m_horDisplayRange1 = 0;
-	uint16_t m_horDisplayRange2 = 0;
+	uint16_t m_horDisplayRangeStart = 0;
+	uint16_t m_horDisplayRangeEnd = 0;
 
 	// vertical display range
-	uint16_t m_verDisplayRange1 = 0;
-	uint16_t m_verDisplayRange2 = 0;
+	uint16_t m_verDisplayRangeStart = 0;
+	uint16_t m_verDisplayRangeEnd = 0;
 
 	// timing
 	uint32_t m_currentScanline = 0;
@@ -272,6 +272,7 @@ private:
 	float m_dotTimerFraction = 0.0f;
 	bool m_hblank = false;
 	bool m_vblank = false;
+	bool m_drawingEvenOddLine = false;
 
 	mutable cycles_t m_cachedCyclesUntilNextEvent = 0;
 
