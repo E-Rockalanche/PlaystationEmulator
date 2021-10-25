@@ -1,5 +1,7 @@
 #include "Playstation.h"
 #include "Controller.h"
+#include "EventManager.h"
+#include "GPU.h"
 #include "Renderer.h"
 
 #include <Render/Error.h>
@@ -198,6 +200,11 @@ int main( int argc, char** argv )
 			stepFrame = false;
 
 			playstationCore->RunFrame();
+
+			auto& eventManager = playstationCore->GetEventManager();
+			const PSX::cycles_t overUnder = eventManager.GetTotalFrameCycles() - static_cast<PSX::cycles_t>( PSX::CpuCyclesPerSecond / playstationCore->GetGpu().GetRefreshRate() );
+			eventManager.ResetTotalFrameCycles();
+			Log( "Cycles over/under: %i", overUnder );
 		}
 		else
 		{
