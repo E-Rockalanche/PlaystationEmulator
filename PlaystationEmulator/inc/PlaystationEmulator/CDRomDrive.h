@@ -191,8 +191,8 @@ private:
 
 	// event callbacks
 	void ExecuteCommand() noexcept;
-	void ExecuteSecondResponse() noexcept;
-	void ExecuteDrive() noexcept;
+	void ExecuteCommandSecondResponse() noexcept;
+	void ExecuteDriveState() noexcept;
 
 	void SendCommand( Command command ) noexcept;
 	void QueueSecondResponse( Command command, cycles_t cycles ) noexcept;
@@ -207,7 +207,7 @@ private:
 	void BeginSeeking() noexcept;
 	void BeginReading() noexcept;
 	void BeginPlaying( uint8_t track ) noexcept;
-	void LoadDataFifo() noexcept;
+	void RequestData() noexcept;
 
 	// send status and interrupt
 	void SendResponse( uint8_t response = InterruptResponse::First ) noexcept
