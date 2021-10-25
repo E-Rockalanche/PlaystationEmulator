@@ -75,7 +75,6 @@ enum class PrimitiveType
 
 }
 
-
 Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
 	, m_renderer{ renderer }
@@ -121,17 +120,18 @@ void Gpu::Reset()
 	m_displayAreaStartY = 0;
 	m_renderer.SetDisplayStart( 0, 0 );
 
-	m_horDisplayRange1 = 0;
-	m_horDisplayRange2 = 0;
+	m_horDisplayRangeStart = 0;
+	m_horDisplayRangeEnd = 0;
 
-	m_verDisplayRange1 = 0;
-	m_verDisplayRange2 = 0;
+	m_verDisplayRangeStart = 0;
+	m_verDisplayRangeEnd = 0;
 
 	m_currentScanline = 0;
 	m_currentDot = 0.0f;
 	m_dotTimerFraction = 0.0f;
 	m_hblank = false;
 	m_vblank = false;
+	m_drawingEvenOddLine = false;
 
 	m_displayFrame = false;
 
@@ -528,10 +528,10 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_status.value = 0x14802000;
 			m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
 
-			m_horDisplayRange1 = 0x200;
-			m_horDisplayRange2 = 0x200 + 256 * 10;
-			m_verDisplayRange1 = 0x10;
-			m_verDisplayRange2 = 0x10 + 240;
+			m_horDisplayRangeStart = 0x200;
+			m_horDisplayRangeEnd = 0x200 + 256 * 10;
+			m_verDisplayRangeStart = 0x10;
+			m_verDisplayRangeEnd = 0x10 + 240;
 
 			m_texturedRectFlipX = false;
 			m_texturedRectFlipY = false;
@@ -573,7 +573,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x03: // display enable
 			m_status.displayDisable = value & 1;
-			dbLogDebug( "Gpu::WriteGP1() -- enable display: %s", m_status.displayDisable ? "false" : "true" );
+			Log( "Gpu::WriteGP1() -- enable display: %s", m_status.displayDisable ? "false" : "true" );
 			break;
 
 		case 0x04: // DMA direction / data request
@@ -600,17 +600,17 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x06: // horizontal display range
 		{
-			m_horDisplayRange1 = value & 0xfff;
-			m_horDisplayRange2 = ( value >> 12 ) & 0xfff;
-			dbLogDebug( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", m_horDisplayRange1, m_horDisplayRange2 );
+			m_horDisplayRangeStart = value & 0xfff;
+			m_horDisplayRangeEnd = ( value >> 12 ) & 0xfff;
+			dbLogDebug( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", m_horDisplayRangeStart, m_horDisplayRangeEnd );
 			break;
 		}
 
 		case 0x07: // vertical display range
 		{
-			m_verDisplayRange1 = value & 0x3ff;
-			m_verDisplayRange2 = ( value >> 10 ) & 0x3ff;
-			dbLogDebug( "Gpu::WriteGP1() -- set vertical display range [%u, %u]", m_verDisplayRange1, m_verDisplayRange2 );
+			m_verDisplayRangeStart = value & 0x3ff;
+			m_verDisplayRangeEnd = ( value >> 10 ) & 0x3ff;
+			dbLogDebug( "Gpu::WriteGP1() -- set vertical display range [%u]", m_verDisplayRangeEnd - m_verDisplayRangeStart );
 			break;
 		}
 
@@ -989,8 +989,9 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	{
 		m_currentDot -= dotsPerScanline;
 		m_currentScanline = ( m_currentScanline + 1 ) % scanlineCount;
-		if ( !IsInterlaced() )
-			m_status.drawingEvenOdd ^= 1;
+
+		if ( !IsInterlaced() || m_currentScanline == 0 )
+			m_drawingEvenOddLine ^= 1;
 	}
 
 	// check for hblank
@@ -1010,28 +1011,30 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 
 	// check for vblank
 
-	const bool vblank = m_currentScanline >= 240;
+	const bool vblank = m_currentScanline < m_verDisplayRangeStart || m_currentScanline >= m_verDisplayRangeEnd;
 
-	if ( hblankTimer.GetSyncEnable() )
-		hblankTimer.UpdateBlank( vblank );
-
-	if ( !m_vblank && vblank )
+	if ( vblank != m_vblank )
 	{
-		dbLog( "VBlank start" );
+		m_vblank = vblank;
 
-		m_interruptControl.SetInterrupt( Interrupt::VBlank );
+		if ( hblankTimer.GetSyncEnable() )
+			hblankTimer.UpdateBlank( vblank );
 
-		m_displayFrame = true;
-
-		if ( IsInterlaced() )
-			m_status.drawingEvenOdd ^= 1;
+		if ( vblank )
+		{
+			Log( "VBlank start" );
+			m_interruptControl.SetInterrupt( Interrupt::VBlank );
+			m_displayFrame = true;
+		}
+		else
+		{
+			Log( "VBlank end" );
+		}
 	}
-	else if ( !vblank && m_vblank )
-	{
-		dbLog( "VBlank end" );
-	}
 
-	m_vblank = vblank;
+	// In 480-lines mode, bit31 changes per frame. And in 240-lines mode, the bit changes per scanline.
+	// The bit is always zero during Vblank (vertical retrace and upper/lower screen border).
+	m_status.evenOddVblank = m_drawingEvenOddLine && !m_vblank;
 
 	ScheduleNextEvent();
 }
@@ -1063,7 +1066,12 @@ void Gpu::ScheduleNextEvent()
 		}
 	}
 
-	const uint32_t linesUntilVblankChange = ( m_currentScanline < 240 ? 240 : GetScanlines() ) - m_currentScanline;
+	const uint32_t linesUntilVblankChange = ( m_currentScanline < m_verDisplayRangeStart )
+		? ( m_verDisplayRangeStart - m_currentScanline )
+		: ( m_currentScanline < m_verDisplayRangeEnd )
+		? ( m_verDisplayRangeEnd - m_currentScanline )
+		: ( GetScanlines() - m_currentScanline + m_verDisplayRangeStart );
+
 	const float ticksUntilVblankChange = linesUntilVblankChange * GetVideoCyclesPerScanline() - m_currentDot / dotsPerCycle;
 	gpuTicks = std::min( gpuTicks, ticksUntilVblankChange );
 

@@ -33,7 +33,7 @@ void Dma::Reset()
 		channel = {};
 
 	m_controlRegister = ControlRegisterResetValue;
-	m_interruptRegister = {};
+	m_interruptRegister.value = 0;
 }
 
 uint32_t Dma::Read( uint32_t index ) const noexcept
@@ -180,27 +180,6 @@ bool Dma::CanTransferChannel( Channel channel ) const noexcept
 	return false;
 }
 
-uint32_t Dma::GetCyclesForTransfer( Channel channel, uint32_t words ) noexcept
-{
-	/*
-	DMA Transfer Rates
-	DMA0 MDEC.IN     1 clk/word   ;0110h clks per 100h words ;\plus whatever
-	DMA1 MDEC.OUT    1 clk/word   ;0110h clks per 100h words ;/decompression time
-	DMA2 GPU         1 clk/word   ;0110h clks per 100h words ;-plus ...
-	DMA3 CDROM/BIOS  24 clks/word ;1800h clks per 100h words ;\plus single/double
-	DMA3 CDROM/GAMES 40 clks/word ;2800h clks per 100h words ;/speed sector rate
-	DMA4 SPU         4 clks/word  ;0420h clks per 100h words ;-plus ...
-	DMA5 PIO         20 clks/word ;1400h clks per 100h words ;-not actually used
-	DMA6 OTC         1 clk/word   ;0110h clks per 100h words ;-plus nothing
-	*/
-	switch ( channel )
-	{
-		case Channel::CdRom:	return ( words * 0x2800 ) / 0x100;
-		case Channel::Spu:		return ( words * 0x0420 ) / 0x100;
-		default:				return ( words * 0x0110 ) / 0x100;
-	}
-}
-
 void Dma::StartDma( Channel channel )
 {
 	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
@@ -216,7 +195,7 @@ void Dma::StartDma( Channel channel )
 		{
 			const uint32_t words = state.GetWordCount();
 
-			dbLog( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: %X, words: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
+			dbLogDebug( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: %X, words: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
 
 			// TODO: chopping
 			if ( toRam )
@@ -224,8 +203,7 @@ void Dma::StartDma( Channel channel )
 			else
 				TransferFromRam( channel, startAddress & DmaAddressMask, words, addressStep );
 
-			FinishTransfer( channel );
-			m_eventManager.AddCycles( GetCyclesForTransfer( channel, words ) );
+			m_eventManager.AddCycles( GetCyclesForTransfer( words ) );
 			break;
 		}
 
@@ -235,7 +213,7 @@ void Dma::StartDma( Channel channel )
 			uint32_t blocksRemaining = state.GetBlockCount();
 			uint32_t currentAddress = startAddress;
 
-			dbLog( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: %X, blocks: %X, blockSize: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
+			dbLogDebug( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: %X, blocks: %X, blockSize: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
 
 			while ( state.request && blocksRemaining > 0 )
 			{
@@ -246,14 +224,19 @@ void Dma::StartDma( Channel channel )
 
 				currentAddress += blockSize * addressStep;
 				--blocksRemaining;
-				m_eventManager.AddCycles( GetCyclesForTransfer( channel, blockSize ) );
+				m_eventManager.AddCycles( GetCyclesForTransfer( blockSize ) );
 			}
 
 			state.SetBaseAddress( currentAddress );
 			state.blockCount = static_cast<uint16_t>( blocksRemaining );
 
-			if ( blocksRemaining == 0 )
-				FinishTransfer( channel );
+			if ( blocksRemaining > 0 )
+			{
+				if ( state.request )
+					dbLogWarning( "Dma::StartDma -- Request stopped unexpectedly" );
+
+				return;
+			}
 
 			break;
 		}
@@ -269,7 +252,7 @@ void Dma::StartDma( Channel channel )
 			uint32_t totalWords = 0;
 			uint32_t currentAddress = state.baseAddress;
 
-			dbLog( "Dma::StartDma -- LinkedList [channel: %s, address: %X]", ChannelNames[ (size_t)channel ], currentAddress );
+			dbLogDebug( "Dma::StartDma -- LinkedList [channel: %s, address: %X]", ChannelNames[ (size_t)channel ], currentAddress );
 
 			do
 			{
@@ -284,12 +267,12 @@ void Dma::StartDma( Channel channel )
 			while ( currentAddress != LinkedListTerminator );
 
 			state.SetBaseAddress( LinkedListTerminator );
-			FinishTransfer( channel );
-			m_eventManager.AddCycles( GetCyclesForTransfer( channel, totalWords ) );
+			m_eventManager.AddCycles( GetCyclesForTransfer( totalWords ) );
 			break;
 		}
 	}
 
+	FinishTransfer( channel );
 }
 
 void Dma::FinishTransfer( Channel channel ) noexcept
@@ -352,10 +335,7 @@ void Dma::TransferToRam( const Channel channel, const uint32_t address, const ui
 
 		case Channel::CdRom:
 		{
-			for ( uint32_t i = 0; i < wordCount; ++i )
-			{
-				dest[ i ] = m_cdromDrive.ReadDataFifo<uint32_t>();
-			}
+			m_cdromDrive.DmaRead( dest, wordCount );
 			break;
 		}
 

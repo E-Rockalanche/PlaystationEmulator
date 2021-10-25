@@ -66,6 +66,7 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 	m_gpu->SetDma( *m_dma );
 	m_mdec->SetDma( *m_dma );
 	m_spu->SetDma( *m_dma );
+	m_cdromDrive->SetDma( *m_dma );
 
 	Reset();
 
@@ -111,11 +112,15 @@ void Playstation::RunFrame()
 	m_renderer->DisplayFrame();
 }
 
-void Playstation::LoadRom( const char* filename )
+bool Playstation::LoadRom( const char* filename )
 {
 	auto cdrom = std::make_unique<PSX::CDRom>();
 	if ( cdrom->Open( filename ) )
+	{
 		m_cdromDrive->SetCDRom( std::move( cdrom ) );
+		return true;
+	}
+	return false;
 }
 
 void Playstation::HookExe( const char* filename )

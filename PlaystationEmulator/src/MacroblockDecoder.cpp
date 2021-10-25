@@ -89,21 +89,17 @@ void MacroblockDecoder::UpdateStatus()
 {
 	m_status.remainingParameters = static_cast<uint16_t>( ( m_remainingHalfWords + 1 ) / 2 - 1 );
 	m_status.currentBlock = ( m_currentBlock + 4 ) % BlockIndex::Count;
-
-	const bool dataOutRequest = m_enableDataOut && !m_dataOutBuffer.Empty();
-	m_status.dataOutRequest = dataOutRequest;
-
-	const bool dataInRequest = m_enableDataIn && ( m_dataInBuffer.Capacity() >= 64 ); // 8x8 halfwords
-	m_status.dataInRequest = dataInRequest;
-
 	m_status.commandBusy = ( m_state != State::Idle );
-
 	m_status.dataInFifoFull = m_dataInBuffer.Full();
 	m_status.dataOutFifoEmpty = m_dataOutBuffer.Empty();
 
-	// requesting can start DMA right now and change the status register
-	m_dma->SetRequest( Dma::Channel::MDecOut, m_status.dataOutRequest );
-	m_dma->SetRequest( Dma::Channel::MDecIn, m_status.dataInRequest );
+	const bool dataInRequest = m_enableDataIn && ( m_dataInBuffer.Capacity() >= 64 ); // 8x8 halfwords
+	m_status.dataInRequest = dataInRequest;
+	m_dma->SetRequest( Dma::Channel::MDecIn, dataInRequest );
+
+	const bool dataOutRequest = m_enableDataOut && !m_dataOutBuffer.Empty();;
+	m_status.dataOutRequest = dataOutRequest;
+	m_dma->SetRequest( Dma::Channel::MDecOut, dataOutRequest );
 }
 
 uint32_t MacroblockDecoder::ReadData()
@@ -187,10 +183,8 @@ void MacroblockDecoder::DmaOut( uint32_t* output, uint32_t count )
 	}
 
 	// process more data if we were waiting for output fifo to empty
-	if ( m_dataOutBuffer.Empty() && ( m_state == State::DecodingMacroblock ) )
+	if ( m_dataOutBuffer.Empty() )
 		ProcessInput();
-	else
-		UpdateStatus();
 }
 
 void MacroblockDecoder::ProcessInput()
@@ -198,13 +192,15 @@ void MacroblockDecoder::ProcessInput()
 	stdx::scope_exit onExit( [this] { UpdateStatus(); } );
 
 	// keep processing data until there's no more or something returns
-	while ( !m_dataInBuffer.Empty() )
+	for(;;)
 	{
 		switch ( m_state )
 		{
 			case State::Idle:
 			{
-				dbAssert( m_dataInBuffer.Size() >= 2 );
+				if ( m_dataInBuffer.Size() < 2 )
+					return;
+
 				const uint32_t command = m_dataInBuffer.Pop() | ( m_dataInBuffer.Pop() << 16 );
 				StartCommand( command );
 				break;
@@ -220,6 +216,7 @@ void MacroblockDecoder::ProcessInput()
 				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
 				{
 					// didn't get enough data to decode all blocks
+					dbLogWarning( "MacroblockDecoder::ProcessInput -- Not enough data to process blocks" );
 					m_currentBlock = 0;
 					m_currentK = 64;
 					m_state = State::Idle;
@@ -302,9 +299,10 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		{
 			// The command word is followed by 64 unsigned parameter bytes for the Luminance Quant Table (used for Y1..Y4),
 			// and if Command.Bit0 was set, by another 64 unsigned parameter bytes for the Color Quant Table (used for Cb and Cr).
+			dbLog( "MacroblockDecoder::StartCommand -- SetQuantTable [color=%i]", value & 0x01 );
 			m_state = State::ReadingQuantTable;
-			m_color = stdx::any_of<uint32_t>( value, 1 );
-			m_remainingHalfWords = ( 1 + m_color ) * 64 / 2;
+			m_color = value & 0x01;
+			m_remainingHalfWords = ( 1 + m_color ) * 32;
 			break;
 		}
 
@@ -312,6 +310,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		{
 			// The command is followed by 64 signed halfwords with 14bit fractional part, the values should be usually/always the same values
 			// (based on the standard JPEG constants, although, MDEC(3) allows to use other values than that constants).
+			dbLog( "MacroblockDecoder::StartCommand -- SetScaleTable" );
 			m_state = State::ReadingScaleTable;
 			m_remainingHalfWords = 64;
 			break;
@@ -640,7 +639,7 @@ void MacroblockDecoder::OutputBlock()
 		}
 	}
 
-	dbLog( "MacroblockDecoder::OutputBlock -- remaining half-words: %X", m_remainingHalfWords );
+	dbLogDebug( "MacroblockDecoder::OutputBlock -- remaining half-words: %X", m_remainingHalfWords );
 
 	m_state = ( m_remainingHalfWords == 0 ) ? State::Idle : State::DecodingMacroblock;
 	ProcessInput();

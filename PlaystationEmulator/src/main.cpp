@@ -1,5 +1,7 @@
 #include "Playstation.h"
 #include "Controller.h"
+#include "EventManager.h"
+#include "GPU.h"
 #include "Renderer.h"
 
 #include <Render/Error.h>
@@ -37,7 +39,7 @@ int main( int argc, char** argv )
 	SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 3 );
 
 	dbLog( "creating window" );
-	const std::string windowTitle = filename.empty() ? "PSX Emulator" : filename.data();
+	std::string windowTitle = "PSX Emulator";
 	int windowWidth = 640;
 	int windowHeight = 480;
 	const auto windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
@@ -97,9 +99,15 @@ int main( int argc, char** argv )
 	};
 
 	if ( stdx::ends_with( filename, ".bin" ) )
-		playstationCore->LoadRom( filename.data() );
+	{
+		if ( playstationCore->LoadRom( filename.data() ) )
+			windowTitle = filename;
+	}
 	else if ( stdx::ends_with( filename, ".exe" ) )
+	{
 		playstationCore->HookExe( filename.data() );
+		windowTitle = filename;
+	}
 
 	bool quit = false;
 	bool paused = false;
@@ -192,6 +200,11 @@ int main( int argc, char** argv )
 			stepFrame = false;
 
 			playstationCore->RunFrame();
+
+			auto& eventManager = playstationCore->GetEventManager();
+			const PSX::cycles_t overUnder = eventManager.GetTotalFrameCycles() - static_cast<PSX::cycles_t>( PSX::CpuCyclesPerSecond / playstationCore->GetGpu().GetRefreshRate() );
+			eventManager.ResetTotalFrameCycles();
+			Log( "Cycles over/under: %i", overUnder );
 		}
 		else
 		{

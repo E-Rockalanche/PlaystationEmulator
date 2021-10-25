@@ -89,6 +89,8 @@ public:
 	EventManager() = default;
 	~EventManager();
 
+	void Reset();
+
 	EventHandle CreateEvent( std::string name, EventUpdateCallback onUpdate );
 
 	Event* FindEvent( std::string_view name );
@@ -96,14 +98,17 @@ public:
 	// update pending cycles for next event
 	void AddCycles( cycles_t cycles )
 	{
+		dbExpects( cycles > 0 );
 		m_pendingCycles += cycles;
+		m_totalFrameCycles += cycles;
 		while ( m_pendingCycles >= m_cyclesUntilNextEvent )
 			UpdateNextEvent();
 	}
 
 	cycles_t GetPendingCycles() const noexcept { return m_pendingCycles; }
 
-	void Reset();
+	cycles_t GetTotalFrameCycles() const noexcept { return m_totalFrameCycles; }
+	void ResetTotalFrameCycles() noexcept { m_totalFrameCycles = 0; }
 
 private:
 	void UpdateNextEvent();
@@ -116,6 +121,7 @@ private:
 	// cached cycles for nest event
 	cycles_t m_cyclesUntilNextEvent = 0;
 	cycles_t m_pendingCycles = 0;
+	cycles_t m_totalFrameCycles = 0;
 
 	std::vector<Event*> m_events;
 	Event* m_nextEvent = nullptr;

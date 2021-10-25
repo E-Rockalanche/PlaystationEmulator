@@ -80,8 +80,6 @@ private:
 
 		union Control
 		{
-			Control() : value{ 0 } {}
-
 			struct
 			{
 				uint32_t transferDirection : 1; // 0=to ram, 1=from ram
@@ -104,7 +102,7 @@ private:
 				uint32_t unknown : 1;
 				uint32_t : 1;
 			};
-			uint32_t value;
+			uint32_t value = 0;
 
 			static constexpr uint32_t WriteMask = 0x71770703;
 		};
@@ -121,8 +119,6 @@ private:
 
 	union InterruptRegister
 	{
-		InterruptRegister() : value{ 0 } {}
-
 		void UpdateIrqMasterFlag() noexcept
 		{
 			irqMasterFlag = forceIrq || ( irqMasterEnable && ( ( irqEnables & irqFlags ) != 0 ) );
@@ -133,12 +129,13 @@ private:
 			uint32_t unknown : 6;
 			uint32_t : 9;
 			uint32_t forceIrq : 1; // 1=set irqMasterFlag
+
 			uint32_t irqEnables : 7;
 			uint32_t irqMasterEnable : 1;
 			uint32_t irqFlags : 7; // write 1 to reset
 			uint32_t irqMasterFlag : 1; // read only
 		};
-		uint32_t value;
+		uint32_t value = 0;
 
 		static constexpr uint32_t IrqFlagsMask = 0x7f000000;
 		static constexpr uint32_t WriteMask = 0x00ff803f;
@@ -183,7 +180,10 @@ private:
 
 	void FinishTransfer( Channel channel ) noexcept;
 
-	static uint32_t GetCyclesForTransfer( Channel channel, uint32_t words ) noexcept;
+	static uint32_t GetCyclesForTransfer( uint32_t words ) noexcept
+	{
+		return words + ( words * 0x10 ) / 0x100;
+	}
 
 	void ResizeTempBuffer( uint32_t newSize )
 	{
