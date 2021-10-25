@@ -33,7 +33,7 @@ void Dma::Reset()
 		channel = {};
 
 	m_controlRegister = ControlRegisterResetValue;
-	m_interruptRegister = {};
+	m_interruptRegister.value = 0;
 }
 
 uint32_t Dma::Read( uint32_t index ) const noexcept
@@ -195,7 +195,7 @@ void Dma::StartDma( Channel channel )
 		{
 			const uint32_t words = state.GetWordCount();
 
-			dbLog( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: %X, words: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
+			dbLogDebug( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: %X, words: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
 
 			// TODO: chopping
 			if ( toRam )
@@ -213,7 +213,7 @@ void Dma::StartDma( Channel channel )
 			uint32_t blocksRemaining = state.GetBlockCount();
 			uint32_t currentAddress = startAddress;
 
-			dbLog( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: %X, blocks: %X, blockSize: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
+			dbLogDebug( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: %X, blocks: %X, blockSize: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
 
 			while ( state.request && blocksRemaining > 0 )
 			{
@@ -252,7 +252,7 @@ void Dma::StartDma( Channel channel )
 			uint32_t totalWords = 0;
 			uint32_t currentAddress = state.baseAddress;
 
-			dbLog( "Dma::StartDma -- LinkedList [channel: %s, address: %X]", ChannelNames[ (size_t)channel ], currentAddress );
+			dbLogDebug( "Dma::StartDma -- LinkedList [channel: %s, address: %X]", ChannelNames[ (size_t)channel ], currentAddress );
 
 			do
 			{

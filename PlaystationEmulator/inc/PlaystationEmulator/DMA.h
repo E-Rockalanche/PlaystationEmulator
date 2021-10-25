@@ -119,8 +119,6 @@ private:
 
 	union InterruptRegister
 	{
-		InterruptRegister() : value{ 0 } {}
-
 		void UpdateIrqMasterFlag() noexcept
 		{
 			irqMasterFlag = forceIrq || ( irqMasterEnable && ( ( irqEnables & irqFlags ) != 0 ) );
@@ -131,12 +129,13 @@ private:
 			uint32_t unknown : 6;
 			uint32_t : 9;
 			uint32_t forceIrq : 1; // 1=set irqMasterFlag
+
 			uint32_t irqEnables : 7;
 			uint32_t irqMasterEnable : 1;
 			uint32_t irqFlags : 7; // write 1 to reset
 			uint32_t irqMasterFlag : 1; // read only
 		};
-		uint32_t value;
+		uint32_t value = 0;
 
 		static constexpr uint32_t IrqFlagsMask = 0x7f000000;
 		static constexpr uint32_t WriteMask = 0x00ff803f;
