@@ -181,7 +181,10 @@ private:
 
 	void FinishTransfer( Channel channel ) noexcept;
 
-	static uint32_t GetCyclesForTransfer( Channel channel, uint32_t words ) noexcept;
+	static uint32_t GetCyclesForTransfer( uint32_t words ) noexcept
+	{
+		return words + ( words * 0x10 ) / 0x100;
+	}
 
 	void ResizeTempBuffer( uint32_t newSize )
 	{

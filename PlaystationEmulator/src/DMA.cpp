@@ -180,27 +180,6 @@ bool Dma::CanTransferChannel( Channel channel ) const noexcept
 	return false;
 }
 
-uint32_t Dma::GetCyclesForTransfer( Channel channel, uint32_t words ) noexcept
-{
-	/*
-	DMA Transfer Rates
-	DMA0 MDEC.IN     1 clk/word   ;0110h clks per 100h words ;\plus whatever
-	DMA1 MDEC.OUT    1 clk/word   ;0110h clks per 100h words ;/decompression time
-	DMA2 GPU         1 clk/word   ;0110h clks per 100h words ;-plus ...
-	DMA3 CDROM/BIOS  24 clks/word ;1800h clks per 100h words ;\plus single/double
-	DMA3 CDROM/GAMES 40 clks/word ;2800h clks per 100h words ;/speed sector rate
-	DMA4 SPU         4 clks/word  ;0420h clks per 100h words ;-plus ...
-	DMA5 PIO         20 clks/word ;1400h clks per 100h words ;-not actually used
-	DMA6 OTC         1 clk/word   ;0110h clks per 100h words ;-plus nothing
-	*/
-	switch ( channel )
-	{
-		case Channel::CdRom:	return ( words * 0x2800 ) / 0x100;
-		case Channel::Spu:		return ( words * 0x0420 ) / 0x100;
-		default:				return ( words * 0x0110 ) / 0x100;
-	}
-}
-
 void Dma::StartDma( Channel channel )
 {
 	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
@@ -224,8 +203,7 @@ void Dma::StartDma( Channel channel )
 			else
 				TransferFromRam( channel, startAddress & DmaAddressMask, words, addressStep );
 
-			FinishTransfer( channel );
-			m_eventManager.AddCycles( GetCyclesForTransfer( channel, words ) );
+			m_eventManager.AddCycles( GetCyclesForTransfer( words ) );
 			break;
 		}
 
@@ -246,14 +224,19 @@ void Dma::StartDma( Channel channel )
 
 				currentAddress += blockSize * addressStep;
 				--blocksRemaining;
-				m_eventManager.AddCycles( GetCyclesForTransfer( channel, blockSize ) );
+				m_eventManager.AddCycles( GetCyclesForTransfer( blockSize ) );
 			}
 
 			state.SetBaseAddress( currentAddress );
 			state.blockCount = static_cast<uint16_t>( blocksRemaining );
 
-			if ( blocksRemaining == 0 )
-				FinishTransfer( channel );
+			if ( blocksRemaining > 0 )
+			{
+				if ( state.request )
+					dbLogWarning( "Dma::StartDma -- Request stopped unexpectedly" );
+
+				return;
+			}
 
 			break;
 		}
@@ -284,12 +267,12 @@ void Dma::StartDma( Channel channel )
 			while ( currentAddress != LinkedListTerminator );
 
 			state.SetBaseAddress( LinkedListTerminator );
-			FinishTransfer( channel );
-			m_eventManager.AddCycles( GetCyclesForTransfer( channel, totalWords ) );
+			m_eventManager.AddCycles( GetCyclesForTransfer( totalWords ) );
 			break;
 		}
 	}
 
+	FinishTransfer( channel );
 }
 
 void Dma::FinishTransfer( Channel channel ) noexcept

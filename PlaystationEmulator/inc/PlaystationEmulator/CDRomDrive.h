@@ -235,7 +235,7 @@ private:
 
 	cycles_t GetReadCycles() const noexcept
 	{
-		return ( m_mode.doubleSpeed ) ? ( CpuCyclesPerSecond / 150 ) : ( CpuCyclesPerSecond / 75 );
+		return CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) );
 	}
 
 	cycles_t GetSeekCycles() const noexcept
