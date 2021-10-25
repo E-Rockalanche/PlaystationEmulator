@@ -286,7 +286,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 			{
 				case 0: // request register
 				{
-					dbLogDebug( "CDRomDrive::Write() -- request [%X]", value );
+					dbLog( "CDRomDrive::Write() -- data request [%X]", value );
 
 					if ( value & RequestRegister::WantData )
 						LoadDataFifo();
@@ -423,7 +423,10 @@ void CDRomDrive::CheckPendingCommand() noexcept
 void CDRomDrive::CheckInterrupt() noexcept
 {
 	if ( ( m_interruptFlags & m_interruptEnable ) != 0 )
+	{
+		dbLog( "CDRomDrive::CheckInterrupt -- requesting interrupt" );
 		m_interruptControl.SetInterrupt( Interrupt::CDRom );
+	}
 }
 
 void CDRomDrive::ShiftQueuedInterrupt() noexcept
@@ -526,12 +529,13 @@ void CDRomDrive::BeginPlaying( uint8_t track ) noexcept
 
 	if ( track == 0 )
 	{
-		// play from setloc position or current position
+		// TODO: play from setloc position or current position. Set current track from location
 	}
 	else
 	{
 		// play chosen Track
 		m_pendingSeek = true;
+		m_track = track;
 	}
 
 	if ( m_pendingSeek )
@@ -620,13 +624,13 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// The "Ignore Bit" does reportedly force a sector size of 2328 bytes (918h), however, that doesn't seem to be true. Instead, Bit4 seems to cause the controller to ignore the sector size in Bit5
 			// (instead, the size is kept from the most recent Setmode command which didn't have Bit4 set). Also, Bit4 seems to cause the controller to ignore the <exact> Setloc position
 			// (instead, data is randomly returned from the "Setloc position minus 0..3 sectors"). And, Bit4 causes INT1 to return status.Bit3=set (IdError). Purpose of Bit4 is unknown?
-			dbLog( "CDRomDrive::ExecuteCommand -- SetMode" );
 			m_mode.value = m_parameterBuffer.Pop();
+			dbLog( "CDRomDrive::ExecuteCommand -- SetMode [cdda=%i, autoPause: %i, report=%i, xaFilter=%i, ignore=%i, sectorSize=%i, xaadpcm=%i, doubleSpeed=%i]",
+				m_mode.cdda, m_mode.autoPause, m_mode.report, m_mode.xaFilter, m_mode.ignoreBit, m_mode.sectorSize, m_mode.xaadpcm, m_mode.doubleSpeed );
 
 			// TODO: handle speed change
 
 			SendResponse();
-
 			break;
 		}
 
@@ -989,9 +993,9 @@ void CDRomDrive::ExecuteCommand() noexcept
 
 				SendResponse();
 
-				// send start of disk position for now
-				m_responseBuffer.Push( 0 ); // mm
-				m_responseBuffer.Push( 2 ); // ss
+				// send bad track location for now
+				m_responseBuffer.Push( 0x99 ); // mm
+				m_responseBuffer.Push( 0x99 ); // ss
 			}
 			break;
 		}
@@ -1223,7 +1227,7 @@ void CDRomDrive::ExecuteDrive() noexcept
 
 		case DriveState::Seeking:
 		{
-			dbLog( " CDRomDrive::ExecuteDrive -- seek complete" );
+			dbLog( "CDRomDrive::ExecuteDrive -- seek complete" );
 
 			// TODO: check if seek was successful
 
@@ -1232,6 +1236,10 @@ void CDRomDrive::ExecuteDrive() noexcept
 			if ( m_pendingRead )
 			{
 				BeginReading();
+			}
+			else if ( m_pendingPlay )
+			{
+				BeginPlaying( m_track );
 			}
 			else
 			{
@@ -1258,17 +1266,19 @@ void CDRomDrive::ExecuteDrive() noexcept
 				break;
 			}
 
-			if ( state == DriveState::Playing )
+			// TODO: figure out what kind of sector it is first
+
+			if ( state == DriveState::Playing || ( state == DriveState::Reading && m_mode.cdda ) )
 			{
 				// play CD-DA audio
-				dbLogWarning( "Skipping CD-DA sector" );
+				dbLog( "Ignoring CD-DA sector" );
 				if ( m_mode.report )
 				{
 					m_secondResponseBuffer.Push( m_driveStatus.value );
-					m_secondResponseBuffer.Push( 0 ); // track
-					m_secondResponseBuffer.Push( 0 ); // index
+					m_secondResponseBuffer.Push( m_track ); // track
+					m_secondResponseBuffer.Push( m_trackIndex ); // index
 					m_secondResponseBuffer.Push( 0 ); // mm/amm
-					m_secondResponseBuffer.Push( 0 ); // ss+0x80/ass
+					m_secondResponseBuffer.Push( 2 ); // ss+0x80/ass
 					m_secondResponseBuffer.Push( 0 ); // sect/asect
 					m_secondResponseBuffer.Push( 0 ); // peaklo
 					m_secondResponseBuffer.Push( 0 ); // peakhi
@@ -1283,7 +1293,7 @@ void CDRomDrive::ExecuteDrive() noexcept
 				sector.mode2.subHeader.subMode.realTime )
 			{
 				// read XA-ADPCM
-				dbLogWarning( "Skipping XA-ADPCM sector" );
+				dbLog( "Ignoring XA-ADPCM sector" );
 				break;
 			}
 
@@ -1321,15 +1331,8 @@ void CDRomDrive::ExecuteDrive() noexcept
 				buffer.size = CDRom::DataBytesPerSector;
 			}
 
-			if ( m_queuedInterrupt == 0 )
-			{
-				SendSecondResponse( InterruptResponse::ReceivedData );
-			}
-			else if ( state == DriveState::Reading )
-			{
-				dbLogWarning( "CDRomDrive::ExecuteDrive -- delaying data response" );
-				// TODO: try interrupt again later
-			}
+			// TODO: interrupt retry
+			SendSecondResponse( InterruptResponse::ReceivedData );
 			break;
 		}
 
