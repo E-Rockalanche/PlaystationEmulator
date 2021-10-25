@@ -80,8 +80,6 @@ private:
 
 		union Control
 		{
-			Control() : value{ 0 } {}
-
 			struct
 			{
 				uint32_t transferDirection : 1; // 0=to ram, 1=from ram
@@ -104,7 +102,7 @@ private:
 				uint32_t unknown : 1;
 				uint32_t : 1;
 			};
-			uint32_t value;
+			uint32_t value = 0;
 
 			static constexpr uint32_t WriteMask = 0x71770703;
 		};
