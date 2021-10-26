@@ -27,7 +27,7 @@ public:
 
 	VertexArrayObject& operator=( const VertexArrayObject& ) = delete;
 
-	VertexArrayObject& operator=( VertexArrayObject&& other )
+	VertexArrayObject& operator=( VertexArrayObject&& other ) noexcept
 	{
 		Reset();
 		m_vao = other.m_vao;

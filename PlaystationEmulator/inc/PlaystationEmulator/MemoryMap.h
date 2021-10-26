@@ -141,11 +141,25 @@ private:
 	template <typename T, bool Read>
 	void Access( uint32_t address, T& value ) const noexcept;
 
-	// shift value if writing to register with non-aligned address
-	template <typename RegType, typename T>
-	static inline constexpr RegType ShiftValueForRegister( T value, uint32_t address ) noexcept
+	// returns byte shift amount for unaligned register address
+	template <typename RegType>
+	static inline constexpr uint32_t GetShift( uint32_t address ) noexcept
 	{
-		return static_cast<RegType>( value ) << ( address & ( sizeof( RegType ) - 1 ) ) * 8;
+		return ( address % sizeof( RegType ) ) * 8;
+	}
+
+	// return shifted value for unaligned register write
+	template <typename RegType, typename T>
+	static inline constexpr RegType ShiftValueForWrite( T value, uint32_t address ) noexcept
+	{
+		return static_cast<RegType>( value << GetShift<RegType>( address ) );
+	}
+
+	// return shifted value for unaligned register read
+	template <typename T, typename RegType>
+	static inline constexpr T ShiftValueForRead( RegType value, uint32_t address ) noexcept
+	{
+		return static_cast<T>( value >> GetShift<RegType>( address ) );
 	}
 
 	template <typename T, bool Read, typename MemoryType>
@@ -161,9 +175,9 @@ private:
 	inline void AccessComponent32( Component& component, uint32_t offset, T& value ) const noexcept
 	{
 		if constexpr ( Read )
-			value = static_cast<T>( component.Read( offset / 4 ) );
+			value = ShiftValueForRead<T>( component.Read( offset / 4 ), offset );
 		else
-			component.Write( offset / 4, ShiftValueForRegister<uint32_t>( value, offset ) );
+			component.Write( offset / 4, ShiftValueForWrite<uint32_t>( value, offset ) );
 	}
 
 	template <typename T, bool Read>
@@ -227,9 +241,9 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	else if ( Within( address, MemControlRamStart, MemControlRamSize ) )
 	{
 		if constexpr ( Read )
-			value = static_cast<T>( m_memoryControl.ReadRamSize() );
+			value = ShiftValueForRead<T>( m_memoryControl.ReadRamSize(), address );
 		else
-			m_memoryControl.WriteRamSize( ShiftValueForRegister<uint32_t>( value, address ) );
+			m_memoryControl.WriteRamSize( ShiftValueForWrite<uint32_t>( value, address ) );
 	}
 	else if ( Within( address, InterruptControlStart, InterruptControlSize ) )
 	{
@@ -249,9 +263,15 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 		{
 			const uint32_t offset = address - CdRomStart;
 			if ( offset == 2 )
-				value = m_cdRomDrive.ReadDataFifo<T>();
+			{
+				value = m_cdRomDrive.Read( 2 );
+				if constexpr ( sizeof( T ) >= 2 )
+					value |= static_cast<T>( m_cdRomDrive.Read( 2 ) << 8 );
+			}
 			else
+			{
 				value = m_cdRomDrive.Read( offset );
+			}
 		}
 		else
 		{
@@ -275,7 +295,7 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 		if constexpr ( Read )
 			value = static_cast<T>( m_memoryControl.ReadCacheControl() );
 		else
-			m_memoryControl.WriteCacheControl( ShiftValueForRegister<uint32_t>( value, address ) );
+			m_memoryControl.WriteCacheControl( ShiftValueForWrite<uint32_t>( value, address ) );
 	}
 	else if ( Within( address, Expansion1Start, Expansion1Size ) )
 	{
@@ -296,12 +316,12 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	{
 		if constexpr ( Read )
 		{
-			dbLogWarning( "Unhandled memory read [%X]", address );
+			dbBreakMessage( "Unhandled memory read [%X]", address );
 			value = T( -1 );
 		}
 		else
 		{
-			dbLogWarning( "Unhandled memory write [%X <- %X]", address, value );
+			dbBreakMessage( "Unhandled memory write [%X <= %X]", address, value );
 		}
 	}
 }
@@ -337,15 +357,15 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 		{
 			// 32bit registers
 			case 0:
-			case 1:	m_controllerPorts.WriteData( ShiftValueForRegister<uint32_t>( value, offset ) );				break;
+			case 1:	m_controllerPorts.WriteData( ShiftValueForWrite<uint32_t>( value, offset ) );				break;
 			case 2:
 			case 3:																									break; // status is read-only
 
 			// 16bit registers
-			case 4:	m_controllerPorts.WriteMode( ShiftValueForRegister<uint16_t>( value, offset ) );				break;
-			case 5:	m_controllerPorts.WriteControl( ShiftValueForRegister<uint16_t>( value, offset ) );				break;
+			case 4:	m_controllerPorts.WriteMode( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
+			case 5:	m_controllerPorts.WriteControl( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
 			case 6:																									break;
-			case 7:	m_controllerPorts.WriteBaudrateReloadValue( ShiftValueForRegister<uint16_t>( value, offset ) );	break;
+			case 7:	m_controllerPorts.WriteBaudrateReloadValue( ShiftValueForWrite<uint16_t>( value, offset ) );	break;
 
 			default:
 				dbBreak();

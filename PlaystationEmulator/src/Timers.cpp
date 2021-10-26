@@ -179,7 +179,7 @@ bool Timer::TrySignalIrq() noexcept
 {
 	if ( !m_irq || m_mode.irqRepeat )
 	{
-		dbLog( "Timer%u signalled IRQ", m_index );
+		dbLogDebug( "Timer%u signalled IRQ", m_index );
 		m_irq = true;
 		return true;
 	}

@@ -9,7 +9,7 @@ void MemoryControl::Write( uint32_t index, uint32_t value ) noexcept
 	{
 		case Register::Expansion1BaseAddress:
 		case Register::Expansion2BaseAddress:
-			dbLog( "MemoryControl::Write() -- set expansion N base address [%X]", value );
+			dbLogDebug( "MemoryControl::Write() -- set expansion N base address [%X]", value );
 			m_registers[ index ] = 0x1f000000 | ( value & 0x00ffffff );
 			break;
 
@@ -19,12 +19,12 @@ void MemoryControl::Write( uint32_t index, uint32_t value ) noexcept
 		case Register::SpuDelaySize:
 		case Register::CDRomDelaySize:
 		case Register::Expansion2DelaySize:
-			dbLog( "MemoryControl::Write() -- set X delay size [%X]", value );
+			dbLogDebug( "MemoryControl::Write() -- set X delay size [%X]", value );
 			m_registers[ index ] = value & 0xabffffff;
 			break;
 
 		case Register::CommonDelay:
-			dbLog( "MemoryControl::Write() -- set common delay [%X]", value );
+			dbLogDebug( "MemoryControl::Write() -- set common delay [%X]", value );
 			m_registers[ Register::CommonDelay ] = value;
 			break;
 

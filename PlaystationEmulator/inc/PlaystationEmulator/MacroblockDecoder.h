@@ -34,8 +34,6 @@ public:
 private:
 	union Status
 	{
-		Status() noexcept : value{ 0 } {}
-
 		struct
 		{
 			uint32_t remainingParameters : 16;	
@@ -50,7 +48,7 @@ private:
 			uint32_t dataInFifoFull : 1;
 			uint32_t dataOutFifoEmpty : 1;
 		};
-		uint32_t value;
+		uint32_t value = 0;
 	};
 	static_assert( sizeof( Status ) == 4 );
 

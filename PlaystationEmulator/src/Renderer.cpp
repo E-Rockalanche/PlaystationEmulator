@@ -2,6 +2,7 @@
 
 #include "ClutShader.h"
 #include "FullscreenShader.h"
+#include "Output24bitShader.h"
 
 #include <Render/Types.h>
 
@@ -38,12 +39,25 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vertexBuffer.SetData<Vertex>( Render::BufferUsage::StreamDraw, VertexBufferSize );
 	m_vertices.reserve( VertexBufferSize );
 	
-	// create shaders
+	// create fullscreen shader
 	m_fullscreenShader = Render::Shader::Compile( FullscreenVertexShader, FullscreenFragmentShader );
 	dbAssert( m_fullscreenShader.Valid() );
 
+	// create clut shader
 	m_clutShader = Render::Shader::Compile( ClutVertexShader, ClutFragmentShader );
 	dbAssert( m_clutShader.Valid() );
+	m_clutShader.Bind();
+	m_originLoc = m_clutShader.GetUniformLocation( "u_origin" );
+	m_alphaLoc = m_clutShader.GetUniformLocation( "u_alpha" );
+	m_semiTransparentLoc = m_clutShader.GetUniformLocation( "u_semiTransparent" );
+	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
+	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
+
+	// create output 24bpp shader
+	m_output24bppShader = Render::Shader::Compile( Output24bitVertexShader, Output24bitFragmentShader );
+	dbAssert( m_output24bppShader.Valid() );
+	m_output24bppShader.Bind();
+	m_srcRectLoc = m_output24bppShader.GetUniformLocation( "u_srcRect" );
 
 	// set shader attribute locations in VAO
 	constexpr auto Stride = sizeof( Vertex );
@@ -56,12 +70,6 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_drawMode" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::drawMode ) );
 	
 	// get shader uniform locations
-	m_originLoc = m_clutShader.GetUniformLocation( "u_origin" );
-	m_displaySizeLoc = m_clutShader.GetUniformLocation( "u_displaySize" );
-	m_alphaLoc = m_clutShader.GetUniformLocation( "u_alpha" );
-	m_semiTransparentLoc = m_clutShader.GetUniformLocation( "u_semiTransparent" );
-	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
-	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 
 	// VRAM draw texture
 	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
@@ -77,12 +85,6 @@ bool Renderer::Initialize( SDL_Window* window )
 	dbAssert( m_vramReadFrameBuffer.IsComplete() );
 	m_vramReadFrameBuffer.Unbind();
 
-	// initialize shader uniforms
-	glUniform2f( m_originLoc, 0.0f, 0.0f );
-	glUniform2i( m_texWindowMask, 0, 0 );
-	glUniform2i( m_texWindowOffset, 0, 0 );
-	glScissor( 0, 0, 0, 0 );
-
 	// get ready to render!
 	RestoreRenderState();
 
@@ -97,7 +99,6 @@ void Renderer::Reset()
 
 	m_vertices.clear();
 	ResetDirtyArea();
-	m_renderedPrimitive = false;
 }
 
 void Renderer::EnableVRamView( bool enable )
@@ -317,6 +318,7 @@ void Renderer::UpdateScissorRect()
 
 void Renderer::UpdateBlendMode()
 {
+	float alpha = 0;
 	if ( m_uniform.semiTransparent )
 	{
 		glEnable( GL_BLEND );
@@ -325,33 +327,36 @@ void Renderer::UpdateBlendMode()
 			case SemiTransparency::Blend:
 				glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 				glBlendEquation( GL_FUNC_ADD );
-				glUniform1f( m_alphaLoc, 0.5f );
+				alpha = 0.5f;
 				break;
 
 			case SemiTransparency::Add:
 				glBlendFunc( GL_ONE, GL_ONE );
 				glBlendEquation( GL_FUNC_ADD );
-				glUniform1f( m_alphaLoc, 1.0f );
+				alpha = 1.0f;
 				break;
 
 			case SemiTransparency::ReverseSubtract:
 				glBlendFunc( GL_ONE, GL_ONE );
 				glBlendEquation( GL_FUNC_REVERSE_SUBTRACT );
-				glUniform1f( m_alphaLoc, 1.0f );
+				alpha = 1.0f;
 				break;
 
 			case SemiTransparency::AddQuarter:
 				glBlendFunc( GL_SRC_ALPHA, GL_ONE );
 				glBlendEquation( GL_FUNC_ADD );
-				glUniform1f( m_alphaLoc, 0.25f );
+				alpha = 0.25f;
 				break;
 		}
 	}
 	else
 	{
 		glDisable( GL_BLEND );
-		glUniform1f( m_alphaLoc, 1.0f );
+		alpha = 1.0f;
 	}
+
+	m_uniform.alpha = alpha;
+	glUniform1f( m_alphaLoc, alpha );
 }
 
 void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
@@ -380,8 +385,6 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 	}
 
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
-
-	m_renderedPrimitive = true;
 }
 
 void Renderer::PushQuad( const Vertex vertices[ 4 ], bool semiTransparent )
@@ -427,23 +430,25 @@ void Renderer::RestoreRenderState()
 	m_vramDrawFrameBuffer.Bind();
 	m_vramReadTexture.Bind();
 	m_clutShader.Bind();
-	dbCheckRenderErrors();
 
 	glDisable( GL_CULL_FACE );
 
 	glEnable( GL_SCISSOR_TEST );
+	UpdateScissorRect();
 
 	UpdateBlendMode();
 
-	dbCheckRenderErrors();
-
 	// restore uniforms
-	// TODO: use uniform buffer
+	// TODO: use uniform buffer?
 	glUniform2f( m_originLoc, static_cast<GLfloat>( m_uniform.originX ), static_cast<GLfloat>( m_uniform.originY ) );
-	glUniform2f( m_displaySizeLoc, static_cast<GLfloat>( VRamWidth ), static_cast<GLfloat>( VRamHeight ) );
-	dbCheckRenderErrors();
+	glUniform1f( m_alphaLoc, m_uniform.alpha );
+	glUniform1i( m_semiTransparentLoc, m_uniform.semiTransparent );
+	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
+	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
 
 	glViewport( 0, 0, VRamWidth, VRamHeight );
+
+	dbCheckRenderErrors();
 }
 
 void Renderer::DisplayFrame()
@@ -464,16 +469,28 @@ void Renderer::DisplayFrame()
 	}
 	else
 	{
-		m_vramDrawFrameBuffer.Unbind( Render::FrameBufferBinding::Draw );
-		m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Read );
+		m_vramDrawFrameBuffer.Unbind();
 		glViewport( 0, 0, m_displayWidth, m_displayHeight );
 
-		glBlitFramebuffer(
-			// src
-			m_displayX, m_displayY, m_displayX + m_displayWidth, m_displayY + m_displayHeight,
-			// dest (must display upside-down)
-			0, m_displayHeight, m_displayWidth, 0,
-			GL_COLOR_BUFFER_BIT, GL_NEAREST );
+		if ( m_colorDepth == DisplayAreaColorDepth::B24 )
+		{
+			m_noAttributeVAO.Bind();
+			m_vramDrawTexture.Bind();
+			m_output24bppShader.Bind();
+			glUniform4i( m_srcRectLoc, m_displayX, m_displayY, m_displayWidth, m_displayHeight );
+			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+		}
+		else
+		{
+			// TODO: use a shader
+			m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Read );
+			glBlitFramebuffer(
+				// src
+				m_displayX, m_displayY, m_displayX + m_displayWidth, m_displayY + m_displayHeight,
+				// dest (must display upside-down)
+				0, m_displayHeight, m_displayWidth, 0,
+				GL_COLOR_BUFFER_BIT, GL_NEAREST );
+		}
 	}
 
 	dbCheckRenderErrors();
@@ -481,8 +498,6 @@ void Renderer::DisplayFrame()
 	SDL_GL_SwapWindow( m_window );
 
 	RestoreRenderState();
-
-	m_renderedPrimitive = false;
 }
 
 }

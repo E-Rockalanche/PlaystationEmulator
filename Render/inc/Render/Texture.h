@@ -167,9 +167,7 @@ public:
 
 	Texture( const Texture& ) = delete;
 
-	Texture( Texture&& other )
-		: m_texture{ std::exchange( other.m_texture, 0 ) }
-	{}
+	Texture( Texture&& other ) noexcept : m_texture{ std::exchange( other.m_texture, 0 ) } {}
 
 	~Texture()
 	{
@@ -178,7 +176,7 @@ public:
 
 	Texture& operator=( const Texture& ) = delete;
 
-	Texture& operator=( Texture&& other )
+	Texture& operator=( Texture&& other ) noexcept
 	{
 		Reset();
 		m_texture = std::exchange( other.m_texture, 0 );

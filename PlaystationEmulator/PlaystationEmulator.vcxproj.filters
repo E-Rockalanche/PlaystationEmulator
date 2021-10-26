@@ -102,6 +102,12 @@
     <ClInclude Include="inc\PlaystationEmulator\CueSheet.h">
       <Filter>inc</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\Output24bitShader.h">
+      <Filter>inc\shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\Output16bitShader.h">
+      <Filter>inc\shaders</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">

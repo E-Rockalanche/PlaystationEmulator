@@ -55,7 +55,7 @@ public:
 
 	FrameBuffer& operator=( const FrameBuffer& ) = delete;
 
-	FrameBuffer& operator=( FrameBuffer&& other )
+	FrameBuffer& operator=( FrameBuffer&& other ) noexcept
 	{
 		Reset();
 		m_frameBuffer = other.m_frameBuffer;
