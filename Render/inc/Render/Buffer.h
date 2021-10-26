@@ -45,7 +45,7 @@ public:
 
 	Buffer* operator=( const Buffer& ) = delete;
 
-	Buffer& operator=( Buffer&& other )
+	Buffer& operator=( Buffer&& other ) noexcept
 	{
 		Reset();
 		m_buffer = other.m_buffer;
@@ -120,6 +120,12 @@ public:
 		Bind();
 		glBufferSubData( static_cast<GLuint>( Type ), offset * sizeof( T ), size * sizeof( T ), data );
 		dbCheckRenderErrors();
+	}
+
+	void BindBufferBase( GLuint index )
+	{
+		dbExpects( m_buffer != 0 );
+		glBindBufferBase( static_cast<GLenum>( Type ), index, m_buffer );
 	}
 
 private:

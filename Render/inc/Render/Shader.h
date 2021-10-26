@@ -35,7 +35,7 @@ public:
 
 	Shader& operator=( const Shader& ) = delete;
 
-	Shader& operator=( Shader&& other )
+	Shader& operator=( Shader&& other ) noexcept
 	{
 		Reset();
 		m_program = other.m_program;
@@ -78,6 +78,13 @@ public:
 	{
 		dbExpects( m_program != 0 );
 		return glGetUniformLocation( m_program, name );
+	}
+
+	void BindUniformBlock( const char* name, GLuint block )
+	{
+		dbExpects( m_program != 0 );
+		const auto index = glGetUniformBlockIndex( m_program, name );
+		glUniformBlockBinding( m_program, index, block );
 	}
 
 private:
