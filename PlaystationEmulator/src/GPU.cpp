@@ -143,6 +143,7 @@ void Gpu::Reset()
 	m_vramCopyState.reset();
 
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+	m_renderer.SetColorDepth( static_cast<DisplayAreaColorDepth>( m_status.displayAreaColorDepth ) );
 
 	UpdateDmaRequest();
 
@@ -631,8 +632,6 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			newStatus.horizontalResolution2 = ( value >> 6 ) & 1;
 			newStatus.reverseFlag = ( value >> 7 ) & 1;
 
-			// dbAssert( newStatus.displayAreaColorDepth == false ); // 24bit color not supported yet
-
 			// update cycles and renderer if the new status is different
 			if ( newStatus.value != m_status.value )
 			{
@@ -640,6 +639,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 				m_status.value = newStatus.value;
 				m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+				m_renderer.SetColorDepth( static_cast<DisplayAreaColorDepth>( m_status.displayAreaColorDepth ) );
 
 				ScheduleNextEvent();
 			}
@@ -711,7 +711,7 @@ uint32_t Gpu::GpuStatus() noexcept
 		m_clockEvent->UpdateEarly();
 	}
 
-	return m_status.value & ~( static_cast<uint32_t>( m_vblank ) << 31 );
+	return m_status.value;
 }
 
 void Gpu::UpdateDmaRequest() noexcept

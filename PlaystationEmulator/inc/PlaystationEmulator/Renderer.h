@@ -42,6 +42,11 @@ public:
 	void SetSemiTransparency( SemiTransparency semiTransparency );
 	void SetMaskBits( bool setMask, bool checkMask );
 
+	void SetColorDepth( DisplayAreaColorDepth colorDepth )
+	{
+		m_colorDepth = colorDepth;
+	}
+
 	// update vram with pixel buffer
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
 
@@ -56,8 +61,6 @@ public:
 	void PushQuad( const Vertex vertices[ 4 ], bool semiTransparent );
 
 	void DisplayFrame();
-
-	bool DidRenderPrimitive() const noexcept { return m_renderedPrimitive; }
 
 private:
 	// update read texture with dirty area of draw texture
@@ -87,39 +90,42 @@ private:
 	SDL_Window* m_window = nullptr;
 
 	bool m_viewVRam = false;
-	bool m_renderedPrimitive = false;
 
-	// VRAM texture used as render target
 	Render::Texture2D m_vramDrawTexture;
-	Render::FrameBuffer m_vramDrawFrameBuffer;
-
-	// VRAM texture used for reading
 	Render::Texture2D m_vramReadTexture;
+
+	Render::FrameBuffer m_vramDrawFrameBuffer;
 	Render::FrameBuffer m_vramReadFrameBuffer;
 
-	Render::VertexArrayObject m_vramDrawVAO;
-	Render::ArrayBuffer m_vertexBuffer;
-	Render::Shader m_clutShader;
-
 	Render::VertexArrayObject m_noAttributeVAO;
-	Render::Shader m_fullscreenShader;
+	Render::VertexArrayObject m_vramDrawVAO;
 
+	Render::ArrayBuffer m_vertexBuffer;
+
+	Render::Shader m_clutShader;
 	GLint m_originLoc = -1;
-	GLint m_displaySizeLoc = -1;
 	GLint m_alphaLoc = -1;
 	GLint m_semiTransparentLoc = -1;
 	GLint m_texWindowMask = -1;
 	GLint m_texWindowOffset = -1;
+
+	Render::Shader m_fullscreenShader;
+
+	Render::Shader m_output24bppShader;
+	GLint m_srcRectLoc = -1;
 
 	uint32_t m_displayX = 0;
 	uint32_t m_displayY = 0;
 	uint32_t m_displayWidth = 0;
 	uint32_t m_displayHeight = 0;
 
+	// scissor rect
 	GLint m_drawAreaLeft = 0;
 	GLint m_drawAreaTop = 0;
 	GLint m_drawAreaRight = 0;
 	GLint m_drawAreaBottom = 0;
+
+	DisplayAreaColorDepth m_colorDepth = DisplayAreaColorDepth::B15;
 
 	struct Uniform
 	{

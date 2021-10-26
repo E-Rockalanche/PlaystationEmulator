@@ -28,49 +28,54 @@ in vec2 TexCoord;
 
 out vec4 FragColor;
 
-uniform ivec2 u_destPos
-uniform ivec2 u_destSize;
+uniform ivec4 u_srcRect;
+
 uniform sampler2D u_vram;
 
-int FloatTo5bit( float value )
+uint FloatTo5bit( float value )
 {
-	return int( round( value * 31.0 ) );
+	return uint( round( value * 31.0 ) );
 }
 
-int SampleVRam16( ivec2 pos )
+uint SampleVRam16( ivec2 pos )
 {
 	vec4 c = texelFetch( u_vram, pos, 0 );
-	int red = FloatTo5bit( c.r );
-	int green = FloatTo5bit( c.g );
-	int blue = FloatTo5bit( c.b );
-	int maskBit = int( ceil( c.a ) );
+	uint red = FloatTo5bit( c.r );
+	uint green = FloatTo5bit( c.g );
+	uint blue = FloatTo5bit( c.b );
+	uint maskBit = uint( ceil( c.a ) );
 	return ( maskBit << 15 ) | ( blue << 10 ) | ( green << 5 ) | red;
 }
 
 vec3 SampleVRam24( ivec2 pos )
 {
-	int x = ( texCoord.x * 3 ) / 2;
+	int x = ( pos.x * 3 ) / 2;
 
-	int sample1 = SampleVRam16( x, pos.y );
-	int sample2 = SampleVRam16( x + 1, pos.y );
+	uint sample1 = SampleVRam16( ivec2( x, pos.y ) );
+	uint sample2 = SampleVRam16( ivec2( x + 1, pos.y ) );
 
-	int bgr = ( sample1 << 16 ) | sample2;
+	uint r, g, b;
+	if ( ( pos.x & 1 ) == 0 )
+	{
+		r = sample1 & 0xffu;
+		g = sample1 >> 8;
+		b = sample2 & 0xffu;
+	}
+	else
+	{
+		r = sample1 >> 8;
+		g = sample2 & 0xffu;
+		b = sample2 >> 8;
+	}
 
-	if ( pos.x & 1 == 0 )
-		bgr = bgr >> 8;
-
-	float red = ( bgr & 0xff ) / 255.0;
-	float green = ( ( bgr >> 8 ) & 0xff ) / 255.0;
-	float blue = ( ( bgr >> 16 ) & 0xff ) / 255.0;
-
-	return vec3( red, green, blue );
+	return vec3( float( r ) / 255.0, float( g ) / 255.0, float( b ) / 255.0 );
 }
 
 void main()
 {
-	ivec2 texCoord = u_destPos + ivec2( TexCoord * u_destSize );
+	ivec2 pos = u_srcRect.xy + ivec2( TexCoord * u_srcRect.zw );
 
-	FragColor = vec4( SampleVRam24( texCoord ).rgb, 1.0 );
+	FragColor = vec4( SampleVRam24( pos ).rgb, 1.0 );
 }
 
 )glsl";
