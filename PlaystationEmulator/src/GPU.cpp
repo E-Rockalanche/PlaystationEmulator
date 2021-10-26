@@ -578,7 +578,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x03: // display enable
 			m_status.displayDisable = value & 1;
-			Log( "Gpu::WriteGP1() -- enable display: %s", m_status.displayDisable ? "false" : "true" );
+			dbLogDebug( "Gpu::WriteGP1() -- enable display: %s", m_status.displayDisable ? "false" : "true" );
 			break;
 
 		case 0x04: // DMA direction / data request
@@ -1026,13 +1026,13 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 
 		if ( vblank )
 		{
-			Log( "VBlank start" );
+			dbLog( "VBlank start" );
 			m_interruptControl.SetInterrupt( Interrupt::VBlank );
 			m_displayFrame = true;
 		}
 		else
 		{
-			Log( "VBlank end" );
+			dbLog( "VBlank end" );
 		}
 	}
 
