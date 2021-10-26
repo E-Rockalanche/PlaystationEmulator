@@ -105,6 +105,7 @@ void Gpu::Reset()
 	m_textureWindowMaskY = 0;
 	m_textureWindowOffsetX = 0;
 	m_textureWindowOffsetY = 0;
+	m_renderer.SetTextureWindow( 0, 0, 0, 0 );
 
 	m_drawAreaLeft = 0;
 	m_drawAreaTop = 0;
@@ -261,6 +262,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_textureWindowMaskY = ( value >> 5 ) & 0x1f;
 			m_textureWindowOffsetX = ( value >> 10 ) & 0x1f;
 			m_textureWindowOffsetY = ( value >> 15 ) & 0x1f;
+
+			m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
 			break;
 		}
 
@@ -540,6 +543,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_textureWindowMaskY = 0;
 			m_textureWindowOffsetX = 0;
 			m_textureWindowOffsetY = 0;
+			m_renderer.SetTextureWindow( 0, 0, 0, 0 );
 
 			// TODO: does this affect hblanking?
 			m_drawAreaLeft = 0;
