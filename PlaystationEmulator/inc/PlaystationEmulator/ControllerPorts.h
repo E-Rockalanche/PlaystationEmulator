@@ -2,9 +2,7 @@
 
 #include "Defs.h"
 
-#include "FifoBuffer.h"
-
-#include <stdx/bit.h>
+#include <array>
 
 namespace PSX
 {
@@ -22,26 +20,27 @@ public:
 		Baudrate
 	};
 
-	struct Status
+	union Status
 	{
-		enum : uint32_t
+		struct
 		{
-			TxReadyFlag1 = 1 << 0,
-			RxFifoNotEmpty = 1 << 1, // tied to rx buffer
-			TxReadyFlag2 = 1 << 2,
-			RxParityError = 1 << 3,
-			AckInputLevel = 1 << 7, // 0=high, 1=low
-			InterruptRequest = 1 << 9,
-			BaudrateTimerMask = 0x1fffffu << 11
+			uint32_t txReadyStarted : 1;
+			uint32_t rxFifoNotEmpty : 1;
+			uint32_t txReadyFinished : 1;
+			uint32_t rxParityError : 1;
+			uint32_t : 3;
+			uint32_t ackInputLow : 1;
+			uint32_t : 1;
+			uint32_t interruptRequest : 1;
+			uint32_t : 1;
+			uint32_t baudrateTimer : 21;
 		};
+		uint32_t value = 0;
 	};
+	static_assert( sizeof( Status ) == 4 );
 
 	union Mode
 	{
-		static constexpr uint16_t WriteMask = 0b0000000100111111;
-
-		Mode() : value{ 0 } {}
-
 		struct
 		{
 			uint16_t baudrateReloadFactor : 2;
@@ -52,37 +51,39 @@ public:
 			uint16_t clockOutputPolarity : 1;
 			uint16_t : 7; // always 0
 		};
-		uint16_t value;
+		uint16_t value = 0;
+
+		static constexpr uint16_t WriteMask = 0b0000000100111111;
+
+		uint16_t GetCharacterLength() const noexcept { return characterLength + 5; }
 	};
 	static_assert( sizeof( Mode ) == 2 );
 
-	// length in bits
-	enum class CharacterLength
+	union Control
 	{
-		Five,
-		Six,
-		Seven,
-		Eight
-	};
-
-	struct Control
-	{
-		enum : uint16_t
+		struct
 		{
-			TXEnable = 1 << 0,
-			JoyNOutput = 1 << 1,
-			RXEnable = 1 << 2,
-			Acknowledge = 1 << 4,
-			Reset = 1 << 6,
-			RXInterruptMode = 0x3 << 8,
-			TXInterruptEnable = 1 << 10,
-			RXInterruptEnable = 1 << 11,
-			ACKInterruptEnable = 1 << 12,
-			DesiredSlotNumber = 1 << 13,
+			uint16_t txEnable : 1;
+			uint16_t selectLow : 1;
+			uint16_t rxEnable : 1;
+			uint16_t : 1;
+			uint16_t acknowledge : 1;
+			uint16_t : 1;
+			uint16_t reset : 1;
+			uint16_t : 1;
 
-			WriteMask = 0b0011111101111111
+			uint16_t rxInterruptMode : 2;
+			uint16_t txInterruptEnable : 1;
+			uint16_t rxInterruptEnable : 1;
+			uint16_t ackInterruptEnable : 1;
+			uint16_t desiredSlotNumber : 1;
+			uint16_t : 2;
 		};
+		uint16_t value = 0;
+
+		static constexpr uint16_t WriteMask = 0b00111111'01111111;
 	};
+	static_assert( sizeof( Control ) == 2 );
 
 	ControllerPorts( InterruptControl& interruptControl, EventManager& eventManager );
 	~ControllerPorts();
@@ -93,7 +94,7 @@ public:
 
 	uint32_t ReadData() noexcept;
 
-	uint32_t ReadStatus() noexcept;
+	uint32_t ReadStatus() const noexcept { return m_status.value; }
 
 	void WriteData( uint32_t value ) noexcept;
 
@@ -108,7 +109,7 @@ public:
 	uint16_t ReadControl() const noexcept
 	{
 		dbLogDebug( "ControllerPorts::Read() -- control [%X]", m_control );
-		return m_control;
+		return m_control.value;
 	}
 
 	uint16_t ReadBaudrateReloadValue() const noexcept
@@ -150,36 +151,33 @@ private:
 	{
 		Idle,
 		Transferring,
-		PendingAck
+		AckPending,
+		AckLow
+	};
+
+	enum class CurrentDevice
+	{
+		None,
+		Controller,
+		MemoryCard,
 	};
 
 	// values copied from duckstation
 	static constexpr uint32_t ControllerAckCycles = 450;
 	static constexpr uint32_t MemoryCardAckCycles = 170;
+	
+	static constexpr uint32_t AckLowCycles = 100; // from nocash
 
 private:
+	void UpdateStatus() noexcept;
+
 	void ReloadBaudrateTimer() noexcept;
-
-	uint16_t GetRXInterruptMode() const noexcept
-	{
-		return ( m_control << 8 ) & 0x3;
-	}
-
-	bool IsFinishedTransfer() const noexcept
-	{
-		return !m_txBufferFull && ( m_state == State::Idle );
-	}
-
-	bool IsTransferring() const noexcept
-	{
-		return m_state != State::Idle;
-	}
 
 	void TryTransfer() noexcept;
 
 	uint32_t GetTransferCycles() const noexcept
 	{
-		return m_baudrateReloadValue * 8; // baudrate * 8 bits/byte
+		return m_baudrateReloadValue * 8; // ignore character length
 	}
 
 	void DoTransfer();
@@ -192,20 +190,22 @@ private:
 	InterruptControl& m_interruptControl;
 	EventHandle m_communicateEvent;
 
-	uint32_t m_status = 0;
-	uint32_t m_baudrateTimer = 0;
+	// registers
+	Status m_status;
 	Mode m_mode;
-	uint16_t m_control = 0;
+	Control m_control;
 	uint16_t m_baudrateReloadValue = 0;
 
 	State m_state = State::Idle;
+	CurrentDevice m_currentDevice = CurrentDevice::None;
 
 	uint8_t m_txBuffer = 0;
-	uint8_t m_tranferringValue = 0;
 	bool m_txBufferFull = false;
 
 	uint8_t m_rxBuffer = 0;
 	bool m_rxBufferFull = false;
+
+	uint8_t m_tranferringValue = 0;
 
 	std::array<Controller*, 2> m_controllers{};
 };

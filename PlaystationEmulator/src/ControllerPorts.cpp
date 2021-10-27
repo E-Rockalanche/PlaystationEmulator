@@ -17,14 +17,11 @@ ControllerPorts::~ControllerPorts() = default;
 
 void ControllerPorts::Reset()
 {
-	m_status = 0;
-	m_baudrateTimer = 0;
+	m_status.value = 0;
 
 	m_mode.value = 0;
-	m_mode.baudrateReloadFactor = 1;
-	// TODO: mode defaults to 8bit and no parity?
 
-	m_control = 0;
+	m_control.value = 0;
 	m_baudrateReloadValue = 0x0088;
 
 	m_state = State::Idle;
@@ -38,6 +35,8 @@ void ControllerPorts::Reset()
 	for ( auto* controller : m_controllers )
 		if ( controller )
 			controller->Reset();
+
+	UpdateStatus();
 }
 
 uint32_t ControllerPorts::ReadData() noexcept
@@ -45,25 +44,16 @@ uint32_t ControllerPorts::ReadData() noexcept
 	// A data byte can be read when JOY_STAT.1=1. Data should be read only via 8bit memory access
 	// (the 16bit/32bit "preview" feature is rather unusable, and usually there shouldn't be more than 1 byte in the FIFO anyways).
 
-	const uint8_t data = m_rxBufferFull ? m_rxBuffer : 0xff;
-	m_rxBufferFull = false;
+	uint8_t data = 0xff;
+	if ( m_rxBufferFull )
+	{
+		data = m_rxBuffer;
+		m_rxBufferFull = false;
+		UpdateStatus();
+	}
 
 	dbLogDebug( "ControllerPorts::Read() -- data [%X]", data );
 	return data | ( data << 8 ) | ( data << 16 ) | ( data << 24 );
-}
-
-uint32_t ControllerPorts::ReadStatus() noexcept
-{
-	const uint32_t status = m_status |
-		( m_baudrateTimer << 11 ) |
-		( m_rxBufferFull << 1 ) |
-		( (uint32_t)!m_txBufferFull ) |
-		( (uint32_t)IsFinishedTransfer() << 2 );
-
-	// just reset the ack level since we don't emulate the timing for it
-	stdx::reset_bits<uint32_t>( m_status, Status::AckInputLevel );
-
-	return status;
 }
 
 void ControllerPorts::WriteData( uint32_t value ) noexcept
@@ -85,22 +75,60 @@ void ControllerPorts::WriteData( uint32_t value ) noexcept
 void ControllerPorts::WriteControl( uint16_t value ) noexcept
 {
 	dbLogDebug( "ControllerPorts::Write() -- control [%X]", value );
-	m_control = value & Control::WriteMask;
+	m_control.value = value & Control::WriteMask;
 
-	if ( value & Control::Reset )
+	if ( m_control.reset )
 	{
 		// soft reset
-		m_control = 0;
-		m_status = 0;
+		m_control.value = 0;
+		m_status.value = 0;
 		m_mode.value = 0;
+
+		m_txBuffer = 0;
+		m_txBufferFull = false;
+		m_rxBuffer = 0;
+		m_rxBufferFull = false;
+
+		m_state = State::Idle;
+		m_communicateEvent->Cancel();
 	}
 
-	if ( value & Control::Acknowledge )
+	if ( m_control.acknowledge )
 	{
-		stdx::reset_bits( m_status, Status::RxParityError | Status::InterruptRequest );
+		// acknowledge interrupt
+		// TODO: IRQ is not edge triggered. Must wait until ack is high
+		m_status.rxParityError = false;
+		m_status.interruptRequest = false;
 	}
 
-	TryTransfer();
+	if ( !m_control.selectLow )
+	{
+		m_currentDevice = CurrentDevice::None;
+		for ( auto* controller : m_controllers )
+			if ( controller )
+				controller->Reset();
+
+		// TODO: reset memory card transfer state
+	}
+
+	if ( m_control.selectLow && m_control.txEnable )
+	{
+		TryTransfer();
+	}
+	else
+	{
+		m_state = State::Idle;
+		m_communicateEvent->Cancel();
+	}
+
+	UpdateStatus();
+}
+
+void ControllerPorts::UpdateStatus() noexcept
+{
+	m_status.rxFifoNotEmpty = m_rxBufferFull;
+	m_status.txReadyStarted = !m_txBufferFull;
+	m_status.txReadyFinished = m_txBufferFull && ( m_state != State::Transferring );
 }
 
 void ControllerPorts::ReloadBaudrateTimer() noexcept
@@ -112,91 +140,100 @@ void ControllerPorts::ReloadBaudrateTimer() noexcept
 		case 3:	factor = 64;	break;
 		default: factor = 1;	break;
 	}
-	m_baudrateTimer = ( m_baudrateReloadValue * factor ) / 2; // max value will be 21 bits
+	m_status.baudrateTimer = ( m_baudrateReloadValue * factor ) / 2; // max value will be 21 bits
 }
 
 void ControllerPorts::TryTransfer() noexcept
 {
-	if ( ( m_control & Control::TXEnable ) && m_txBufferFull && ( m_state == State::Idle ) )
+	if ( m_txBufferFull && m_control.selectLow && m_control.txEnable && ( m_state == State::Idle ) )
 	{
 		dbLogDebug( "ControllerPorts::TryTransfer -- transferring" );
-		/*
-		if ( m_rxBufferFull )
-			dbBreakMessage( "ControllerPorts::CheckTransfer() -- RX buffer is full" );
-			*/
-
 		m_tranferringValue = m_txBuffer;
 		m_txBufferFull = false;
+		m_control.rxEnable = true;
 		m_state = State::Transferring;
 		m_communicateEvent->Schedule( GetTransferCycles() );
 	}
+
+	UpdateStatus();
 }
 
 void ControllerPorts::DoTransfer()
 {
 	dbExpects( m_state == State::Transferring );
 
-	// the hardware automatically enables receive when /JOYn is low
-	m_control |= Control::RXEnable;
+	uint8_t output = 0xff;
+	bool acked = false;
 
-	uint8_t received = 0xff;
-	bool doAck = false;
+	Controller* controller = m_controllers[ m_control.desiredSlotNumber ];
 
-	if ( stdx::any_of<uint16_t>( m_control, Control::JoyNOutput ) )
+	switch ( m_currentDevice )
 	{
-		// LOW
-
-		auto* controller = m_controllers[ stdx::any_of<uint16_t>( m_control, Control::DesiredSlotNumber ) ];
-		if ( controller )
+		case CurrentDevice::None:
 		{
-			received = controller->Communicate( m_tranferringValue );
-			doAck = true; // TODO: when does the controller actually ack?
+			if ( controller && controller->Communicate( m_tranferringValue, output ) )
+			{
+				m_currentDevice = CurrentDevice::Controller;
+				acked = true;
+			}
+			break;
+		}
+
+		case CurrentDevice::Controller:
+		{
+			if ( controller && controller->Communicate( m_tranferringValue, output ) )
+				acked = true;
+			else
+				m_currentDevice = CurrentDevice::None;
+
+			break;
+		}
+
+		case CurrentDevice::MemoryCard:
+		{
+			// TODO
+			break;
 		}
 	}
-	else
-	{
-		// HIGH
 
-		// TODO: memory cards?
-	}
-
-	m_rxBuffer = received;
+	m_rxBuffer = output;
 	m_rxBufferFull = true;
 
-	if ( doAck )
+	if ( acked )
 	{
-		m_state = State::PendingAck;
+		m_state = State::AckPending;
 		m_communicateEvent->Schedule( ControllerAckCycles ); // TODO: memory card ack cycles
 	}
 	else
 	{
 		EndTransfer();
 	}
+
+	UpdateStatus();
 }
 
 void ControllerPorts::DoAck()
 {
-	dbExpects( m_state == State::PendingAck );
+	dbExpects( m_state == State::AckPending );
 
-	// ack is low
-	m_status |= Status::AckInputLevel;
+	m_status.ackInputLow = true;
 
-	if ( m_control & Control::ACKInterruptEnable )
+	if ( m_control.ackInterruptEnable )
 	{
-		m_status |= Status::InterruptRequest;
+		m_status.interruptRequest = true;
 		m_interruptControl.SetInterrupt( Interrupt::ControllerAndMemoryCard );
 	}
 
-	EndTransfer();
+	m_state = State::AckLow;
+	m_communicateEvent->Schedule( AckLowCycles );
+
+	UpdateStatus();
 }
 
 void ControllerPorts::EndTransfer()
 {
-	// the hardware automatically clears RXEN after the transfer
-	stdx::reset_bits<uint16_t>( m_control, Control::RXEnable );
-
+	m_status.ackInputLow = false;
 	m_state = State::Idle;
-
 	TryTransfer();
 }
 
@@ -205,14 +242,19 @@ void ControllerPorts::UpdateCommunication()
 	switch ( m_state )
 	{
 		case State::Idle:
+			dbBreak();
 			break;
 
 		case State::Transferring:
 			DoTransfer();
 			break;
 
-		case State::PendingAck:
+		case State::AckPending:
 			DoAck();
+			break;
+
+		case State::AckLow:
+			EndTransfer();
 			break;
 	}
 }
