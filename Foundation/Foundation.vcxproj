@@ -227,6 +227,7 @@
     <ClInclude Include="inc\stdx\cast.h" />
     <ClInclude Include="inc\stdx\compiler.h" />
     <ClInclude Include="inc\stdx\flat_unordered_map.h" />
+    <ClInclude Include="inc\stdx\log.h" />
     <ClInclude Include="inc\stdx\scope.h" />
     <ClInclude Include="inc\stdx\string.h" />
   </ItemGroup>

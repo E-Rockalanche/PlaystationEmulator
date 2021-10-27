@@ -52,7 +52,7 @@ class Controller
 public:
 	static constexpr ControllerID ID = ControllerID::DigitalPad;
 
-	uint8_t Communicate( uint8_t value );
+	bool Communicate( uint8_t in, uint8_t& out );
 
 	void Press( Button button )
 	{
@@ -66,12 +66,22 @@ public:
 
 	void Reset()
 	{
-		m_sequence = 0;
+		m_state = State::Idle;
 	}
 
 private:
+	enum class State
+	{
+		Idle,
+		IdLow,
+		IdHigh,
+		ButtonsLow,
+		ButtonsHigh
+	};
 
-	uint32_t m_sequence = 0;
+private:
+
+	State m_state = State::Idle;
 	uint16_t m_buttons = 0xffffu;
 };
 
