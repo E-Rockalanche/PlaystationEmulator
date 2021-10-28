@@ -961,7 +961,7 @@ void Gpu::RenderRectangle() noexcept
 		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width - 1 ), static_cast<uint16_t>( topLeft.v + height - 1 ) };
 
 		const uint16_t clut = static_cast<uint16_t>( value >> 16 );
-		const uint16_t drawMode = m_status.GetDrawMode();
+		const uint16_t drawMode = m_status.GetDrawMode() & ~DisableTextureBit; // ignore texture disable
 		for ( auto& v : vertices )
 		{
 			v.clut = clut;
@@ -970,8 +970,9 @@ void Gpu::RenderRectangle() noexcept
 	}
 	else
 	{
+		const DrawMode drawMode = m_status.GetDrawMode() | DisableTextureBit;
 		for ( auto& v : vertices )
-			v.drawMode = DisableTextureBit;
+			v.drawMode = drawMode;
 	}
 
 	const bool semiTransparent = command & RenderCommand::SemiTransparency;
