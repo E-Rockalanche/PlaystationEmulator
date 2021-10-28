@@ -39,8 +39,10 @@ public:
 	void SetDisplaySize( uint32_t w, uint32_t h );
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
-	void SetSemiTransparency( SemiTransparency semiTransparency );
+	void SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMode );
 	void SetMaskBits( bool setMask, bool checkMask );
+	void SetTexPage( TexPage texPage );
+	void SetClut( ClutAttribute clut );
 
 	void SetColorDepth( DisplayAreaColorDepth colorDepth )
 	{
@@ -76,13 +78,11 @@ private:
 		m_dirtyArea.bottom = 0;
 	}
 
-	void CheckDrawMode( uint16_t drawMode, uint16_t clut );
-
 	void UpdateScissorRect();
 
 	void UpdateBlendMode();
 
-	void SetSemiTransparencyEnabled( bool enabled );
+	void EnableSemiTransparency( bool enabled );
 
 	void DrawBatch();
 
@@ -104,8 +104,8 @@ private:
 
 	Render::Shader m_clutShader;
 	GLint m_originLoc = -1;
-	GLint m_alphaLoc = -1;
-	GLint m_semiTransparentLoc = -1;
+	GLint m_srcBlendLoc = -1;
+	GLint m_destBlendLoc = -1;
 	GLint m_texWindowMask = -1;
 	GLint m_texWindowOffset = -1;
 
@@ -125,7 +125,16 @@ private:
 	GLint m_drawAreaRight = 0;
 	GLint m_drawAreaBottom = 0;
 
+	SemiTransparencyMode m_semiTransparencyMode = SemiTransparencyMode::Blend;
+	bool m_semiTransparencyEnabled = false;
+
 	DisplayAreaColorDepth m_colorDepth = DisplayAreaColorDepth::B15;
+
+	bool m_setMask = false;
+	bool m_checkMask = false;
+
+	TexPage m_texPage;
+	ClutAttribute m_clut;
 
 	struct Uniform
 	{
@@ -140,8 +149,8 @@ private:
 		uint32_t texWindowOffsetX = 0;
 		uint32_t texWindowOffsetY = 0;
 
-		float alpha = 1.0f;
-		bool semiTransparent = false;
+		float srcBlend = 1.0f;
+		float destBlend = 0.0f;
 	};
 
 	Uniform m_uniform;
@@ -149,10 +158,6 @@ private:
 	std::vector<Vertex> m_vertices;
 
 	Rect m_dirtyArea;
-	uint16_t m_lastDrawMode = 0;
-	uint16_t m_lastClut = 0;
-
-	SemiTransparency m_semiTransparency{};
 };
 
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdx/compiler.h>
+
 #include <cstdint>
 
 namespace PSX
@@ -23,7 +25,7 @@ constexpr uint32_t ClutHeight = 1;
 constexpr uint32_t ClutBaseXMult = 16;
 constexpr uint32_t ClutBaseYMult = 1;
 
-enum class SemiTransparency
+enum class SemiTransparencyMode
 {
 	Blend, // B/2 + F/2
 	Add, // B + F
@@ -134,13 +136,51 @@ struct TexCoord
 	uint16_t v = 0;
 };
 
+union ClutAttribute
+{
+	ClutAttribute() = default;
+	ClutAttribute( uint16_t v ) : value{ static_cast<uint16_t>( v & 0x7fff ) } {}
+
+	struct
+	{
+		uint16_t x : 6; // in half-word steps
+		uint16_t y : 9; // in 1-line steps
+		uint16_t : 1;
+	};
+	uint16_t value = 0;
+};
+static_assert( sizeof( ClutAttribute ) == 2 );
+
+union TexPage
+{
+	static constexpr uint16_t WriteMask = 0x09ff;
+
+	TexPage() = default;
+	TexPage( uint16_t v ) : value{ static_cast<uint16_t>( v & WriteMask ) } {}
+
+	struct
+	{
+		uint16_t texturePageBaseX : 4;
+		uint16_t texturePageBaseY : 1;
+		uint16_t semiTransparencymode : 2;
+		uint16_t texturePageColors : 2;
+		uint16_t : 2;
+		uint16_t textureDisable : 1;
+		uint16_t : 4;
+	};
+	uint16_t value = 0;
+};
+static_assert( sizeof( TexPage ) == 2 );
+
+inline constexpr uint16_t TexPageWriteMask = 0x01ff;
+
 struct Vertex
 {
 	Position position;
 	Color color;
 	TexCoord texCoord;
-	uint16_t clut = 0;
-	uint16_t drawMode = ( 1 << 11 ); // disable texture
+	ClutAttribute clut;
+	TexPage texPage;
 };
 
 }

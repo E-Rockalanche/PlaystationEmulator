@@ -48,8 +48,8 @@ bool Renderer::Initialize( SDL_Window* window )
 	dbAssert( m_clutShader.Valid() );
 	m_clutShader.Bind();
 	m_originLoc = m_clutShader.GetUniformLocation( "u_origin" );
-	m_alphaLoc = m_clutShader.GetUniformLocation( "u_alpha" );
-	m_semiTransparentLoc = m_clutShader.GetUniformLocation( "u_semiTransparent" );
+	m_srcBlendLoc = m_clutShader.GetUniformLocation( "u_srcBlend" );
+	m_destBlendLoc = m_clutShader.GetUniformLocation( "u_destBlend" );
 	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 
@@ -67,7 +67,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
-	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_drawMode" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::drawMode ) );
+	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_texPage" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::texPage ) );
 	
 	// get shader uniform locations
 
@@ -171,37 +171,43 @@ void Renderer::SetDrawArea( GLint left, GLint top, GLint right, GLint bottom )
 		m_drawAreaTop = top;
 		m_drawAreaRight = right;
 		m_drawAreaBottom = bottom;
-
 		UpdateScissorRect();
 	}
 }
 
-void Renderer::SetSemiTransparency( SemiTransparency semiTransparency )
+void Renderer::SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMode )
 {
-	if ( m_semiTransparency != semiTransparency )
+	if ( m_semiTransparencyMode != semiTransparencyMode )
 	{
-		if ( m_uniform.semiTransparent )
+		if ( m_semiTransparencyEnabled )
 			DrawBatch();
 
-		m_semiTransparency = semiTransparency;
-		UpdateBlendMode();
+		m_semiTransparencyMode = semiTransparencyMode;
+
+		if ( m_semiTransparencyEnabled )
+			UpdateBlendMode();
 	}
 }
 
 void Renderer::SetMaskBits( bool setMask, bool checkMask )
 {
-	// TODO: stencil
-	(void)setMask;
-	(void)checkMask;
-}
-
-void Renderer::SetSemiTransparencyEnabled( bool enabled )
-{
-	if ( m_uniform.semiTransparent != enabled )
+	if ( m_setMask != setMask || m_checkMask != checkMask )
 	{
 		DrawBatch();
-		m_uniform.semiTransparent = enabled;
-		glUniform1i( m_semiTransparentLoc, enabled );
+
+		m_setMask = setMask;
+		m_checkMask = checkMask;
+		UpdateBlendMode();
+	}
+}
+
+void Renderer::EnableSemiTransparency( bool enabled )
+{
+	if ( m_semiTransparencyEnabled != enabled )
+	{
+		DrawBatch();
+
+		m_semiTransparencyEnabled = enabled;
 		UpdateBlendMode();
 	}
 }
@@ -271,41 +277,45 @@ void Renderer::CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight
 	m_dirtyArea.Grow( destX + destWidth, destY + destHeight );
 }
 
-void Renderer::CheckDrawMode( uint16_t drawMode, uint16_t clut )
+void Renderer::SetTexPage( TexPage texPage )
 {
-	if ( m_lastDrawMode == drawMode && m_lastClut == clut )
-		return; // cached values are the same
-
-	m_lastDrawMode = drawMode;
-	m_lastClut = clut;
+	if ( m_texPage.value == texPage.value )
+		return;
 
 	// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
-	SetSemiTransparency( static_cast<SemiTransparency>( ( drawMode >> 5 ) & 0x3 ) );
+	SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
 
-	if ( stdx::any_of<uint16_t>( drawMode, 1 << 11 ) )
+	if ( texPage.textureDisable )
 		return; // textures are disabled
 
-	const auto colorMode = ( drawMode >> 7 ) & 0x3;
-	dbAssert( colorMode < 3 );
+	m_texPage = texPage;
 
-	const int texBaseX = ( drawMode & 0xf ) * TexturePageBaseXMult;
-	const int texBaseY = ( ( drawMode >> 4 ) & 1 ) * TexturePageBaseYMult;
+	const auto colorMode = texPage.texturePageColors;
+
+	const int texBaseX = texPage.texturePageBaseX * TexturePageBaseXMult;
+	const int texBaseY = texPage.texturePageBaseY * TexturePageBaseYMult;
 	const int texSize = 64 << colorMode;
 	const Rect texRect( texBaseX, texBaseY, texSize, texSize );
 
 	if ( m_dirtyArea.Intersects( texRect ) )
-	{
 		UpdateReadTexture();
-	}
-	else if ( colorMode < 2 )
-	{
-		const int clutBaseX = ( clut & 0x3f ) * ClutBaseXMult;
-		const int clutBaseY = ( ( clut >> 6 ) & 0x1ff ) * ClutBaseYMult;
-		const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+}
 
-		if ( m_dirtyArea.Intersects( clutRect ) )
-			UpdateReadTexture();
-	}
+void Renderer::SetClut( ClutAttribute clut )
+{
+	if ( m_clut.value == clut.value )
+		return;
+
+	const auto colorMode = m_texPage.texturePageColors;
+	if ( colorMode >= 2 )
+		return;
+
+	const int clutBaseX = clut.x * ClutBaseXMult;
+	const int clutBaseY = clut.y * ClutBaseYMult;
+	const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+
+	if ( m_dirtyArea.Intersects( clutRect ) )
+		UpdateReadTexture();
 }
 
 void Renderer::UpdateScissorRect()
@@ -318,45 +328,45 @@ void Renderer::UpdateScissorRect()
 
 void Renderer::UpdateBlendMode()
 {
-	float alpha = 0;
-	if ( m_uniform.semiTransparent )
+	if ( m_semiTransparencyEnabled )
 	{
 		glEnable( GL_BLEND );
-		switch ( m_semiTransparency )
+
+		GLenum rgbEquation = GL_FUNC_ADD;
+		float srcBlend = 1.0f;
+		float destBlend = 1.0f;
+		switch ( m_semiTransparencyMode )
 		{
-			case SemiTransparency::Blend:
-				glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-				glBlendEquation( GL_FUNC_ADD );
-				alpha = 0.5f;
+			case SemiTransparencyMode::Blend:
+				srcBlend = 0.5f;
+				destBlend = 0.5f;
 				break;
 
-			case SemiTransparency::Add:
-				glBlendFunc( GL_ONE, GL_ONE );
-				glBlendEquation( GL_FUNC_ADD );
-				alpha = 1.0f;
+			case SemiTransparencyMode::Add:
 				break;
 
-			case SemiTransparency::ReverseSubtract:
-				glBlendFunc( GL_ONE, GL_ONE );
-				glBlendEquation( GL_FUNC_REVERSE_SUBTRACT );
-				alpha = 1.0f;
+			case SemiTransparencyMode::ReverseSubtract:
+				rgbEquation = GL_FUNC_REVERSE_SUBTRACT;
 				break;
 
-			case SemiTransparency::AddQuarter:
-				glBlendFunc( GL_SRC_ALPHA, GL_ONE );
-				glBlendEquation( GL_FUNC_ADD );
-				alpha = 0.25f;
+			case SemiTransparencyMode::AddQuarter:
+				srcBlend = 0.25;
 				break;
 		}
+
+		glBlendEquationSeparate( rgbEquation, GL_FUNC_ADD );
+		glBlendFuncSeparate( GL_SRC1_ALPHA, GL_SRC1_COLOR, GL_ONE, GL_ZERO );
+
+		m_uniform.srcBlend = srcBlend;
+		m_uniform.destBlend = destBlend;
+
+		glUniform1f( m_srcBlendLoc, srcBlend );
+		glUniform1f( m_destBlendLoc, destBlend );
 	}
 	else
 	{
 		glDisable( GL_BLEND );
-		alpha = 1.0f;
 	}
-
-	m_uniform.alpha = alpha;
-	glUniform1f( m_alphaLoc, alpha );
 }
 
 void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
@@ -370,10 +380,7 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 		return;
 	}
 
-	SetSemiTransparencyEnabled( semiTransparent );
-
-	// updates read texture if sampling from dirty area
-	CheckDrawMode( vertices[ 0 ].drawMode, vertices[ 0 ].clut );
+	EnableSemiTransparency( semiTransparent );
 
 	// grow dirty area
 	for ( size_t i = 0; i < 3; ++i )
@@ -441,8 +448,8 @@ void Renderer::RestoreRenderState()
 	// restore uniforms
 	// TODO: use uniform buffer?
 	glUniform2f( m_originLoc, static_cast<GLfloat>( m_uniform.originX ), static_cast<GLfloat>( m_uniform.originY ) );
-	glUniform1f( m_alphaLoc, m_uniform.alpha );
-	glUniform1i( m_semiTransparentLoc, m_uniform.semiTransparent );
+	glUniform1f( m_srcBlendLoc, m_uniform.srcBlend );
+	glUniform1f( m_destBlendLoc, m_uniform.destBlend );
 	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
 	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
 
