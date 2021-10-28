@@ -43,20 +43,39 @@ constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noex
 	return { w, h };
 }
 
-struct RenderCommand
+union RenderCommand
 {
-	enum : uint32_t
+	RenderCommand() = default;
+	RenderCommand( uint32_t v ) : value{ v } {}
+
+	struct
 	{
-		TextureMode = 1u << 24, // textured polygon/rect only (0=blended, 1=raw)
-		SemiTransparency = 1u << 25, // all render types
-		TextureMapping = 1u << 26, // polygon/rect only
-		RectSizeMask = 0x3u << 27, // rect only
-		NumVertices = 1u << 27, // polygon only (0=3, 1=4)
-		NumLines = 1u << 27, // line only (0=1, 1=poly?)
-		Shading = 1u << 28, // polygon/line only
-		PrimitiveTypeMask = 0x7u << 29
+		uint32_t color : 24;
+
+		uint32_t textureMode : 1; // textured polygon/rect only (0=blended, 1=raw)
+		uint32_t semiTransparency : 1; // all render types
+
+		uint32_t textureMapping : 1; // polygon/rect only
+		uint32_t numVertices : 1; // polygon only (0=3, 1=4)
+		uint32_t shading : 1; // polygon/line only
+
+		uint32_t type : 3;
 	};
+	struct
+	{
+		uint32_t : 27;
+		uint32_t rectSize : 2; // rect only
+		uint32_t : 3;
+	};
+	struct
+	{
+		uint32_t : 27;
+		uint32_t numLines : 1; // line only (0=1, 1=poly?)
+		uint32_t : 4;
+	};
+	uint32_t value = 0;
 };
+static_assert( sizeof( RenderCommand ) == 4 );
 
 enum class RectangleSize
 {
@@ -371,18 +390,12 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 		default:
 		{
-			switch ( static_cast<PrimitiveType>( ( value & RenderCommand::PrimitiveTypeMask ) >> 29 ) )
+			const RenderCommand command{ value };
+			switch ( static_cast<PrimitiveType>( command.type ) )
 			{
 				case PrimitiveType::Polygon:
 				{
-					const bool quad = value & RenderCommand::NumVertices;
-					const bool textureMapping = value & RenderCommand::TextureMapping;
-					const bool shading = value & RenderCommand::Shading;
-
-					uint32_t params = quad ? 4 : 3;
-					params *= 1 + textureMapping + shading;
-					params -= shading; // first color for shaded polygons is in command
-
+					const uint32_t params = ( command.numVertices ? 4 : 3 ) * ( 1 + command.textureMapping + command.shading ) - command.shading;
 					InitCommand( value, params, &Gpu::RenderPolygon );
 					break;
 				}
@@ -391,33 +404,31 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				{
 					m_commandBuffer.Push( value );
 					m_commandFunction = &Gpu::TempFinishCommandParams;
-					if ( value & RenderCommand::NumLines )
+					if ( command.numLines )
 					{
 						SetGP0Mode( &Gpu::GP0_PolyLine );
 					}
 					else
 					{
-						m_remainingParamaters = ( value & RenderCommand::Shading ) ? 3 : 2;
+						m_remainingParamaters = command.shading ? 3 : 2;
 						SetGP0Mode( &Gpu::GP0_Params );
 					}
-
 					break;
 				}
 
 				case PrimitiveType::Rectangle:
 				{
-					const auto rectSize = static_cast<RectangleSize>( ( value & RenderCommand::RectSizeMask ) >> 27 );
-					const bool textureMapping = value & RenderCommand::TextureMapping;
-
-					const uint32_t params = 1 + ( rectSize == RectangleSize::Variable ) + textureMapping;
+					const uint32_t params = 1 + ( command.rectSize == 0 ) + command.textureMapping;
 					InitCommand( value, params, &Gpu::RenderRectangle );
 					break;
 				}
 
 				default:
+				{
 					dbLogWarning( "Gpu::GP0_Command() -- invalid GP0 opcode [%X]", opcode );
 					ClearCommandBuffer();
 					break;
+				}
 			}
 			break;
 		}
@@ -820,27 +831,25 @@ void Gpu::RenderPolygon() noexcept
 {
 	Vertex vertices[ 4 ];
 
-	const uint32_t command = m_commandBuffer.Pop();
-
-	const bool quad = command & RenderCommand::NumVertices;
-	const bool shaded = command & RenderCommand::Shading;
-	const bool textured = command & RenderCommand::TextureMapping;
-	const bool noColorBlending = command & RenderCommand::TextureMode;
+	const RenderCommand command = m_commandBuffer.Pop();
 
 	// vertex 1
 
-	if ( shaded )
-		vertices[ 0 ].color = Color{ command };
+	if ( command.shading )
+	{
+		vertices[ 0 ].color = Color{ command.color };
+	}
 	else
 	{
-		const Color color{ noColorBlending ? 0x808080 : command };
+		const bool noBlend = command.textureMode && command.textureMapping;
+		const Color color{ noBlend ? 0x808080 : command.color };
 		for ( auto& v : vertices )
 			v.color = color;
 	}
 
 	vertices[ 0 ].position = Position{ m_commandBuffer.Pop() };
 
-	if ( textured )
+	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 0 ].texCoord = TexCoord{ value };
@@ -848,53 +857,56 @@ void Gpu::RenderPolygon() noexcept
 		const ClutAttribute clut = static_cast<uint16_t>( value >> 16 );
 		for ( auto& v : vertices )
 			v.clut = clut;
+
+		m_renderer.SetClut( clut );
 	}
 
 	// vertex 2
 
-	if ( shaded )
+	if ( command.shading )
 		vertices[ 1 ].color = Color{ m_commandBuffer.Pop() };
 
 	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
 
-	DrawMode drawMode;
-	if ( textured )
+	TexPage texPage;
+	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
-
-		drawMode = static_cast<uint16_t>( value >> 16 ) & ~DisableTextureBit; // ignore texture disable
+		texPage = static_cast<uint16_t>( value >> 16 );
+		m_status.SetTexPage( texPage );
 	}
 	else
 	{
-		drawMode = m_status.GetDrawMode() | DisableTextureBit;
+		texPage = m_status.GetTexPage();
+		texPage.textureDisable = true;
 	}
 
 	for ( auto& v : vertices )
-		v.drawMode = drawMode;
+		v.texPage = texPage;
 
 	// vetex 3 and 4
 
-	const size_t numVertices = 3u + quad;
+	const size_t numVertices = command.numVertices ? 4 : 3;
 
 	for ( size_t i = 2; i < numVertices; ++i )
 	{
-		if ( shaded )
+		if ( command.shading )
 			vertices[ i ].color = Color{ m_commandBuffer.Pop() };
 
 		vertices[ i ].position = Position{ m_commandBuffer.Pop() };
 
-		if ( textured )
+		if ( command.textureMapping )
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
 
 	// TODO: check for large polygons
 
-	const bool semiTransparent = command & RenderCommand::SemiTransparency;
+	m_renderer.SetTexPage( texPage );
 
-	m_renderer.PushTriangle( vertices, semiTransparent );
-	if ( quad )
-		m_renderer.PushTriangle( vertices + 1, semiTransparent );
+	m_renderer.PushTriangle( vertices, command.semiTransparency );
+	if ( command.numVertices )
+		m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
 
 	ClearCommandBuffer();
 }
@@ -905,20 +917,58 @@ void Gpu::RenderRectangle() noexcept
 
 	Vertex vertices[ 4 ];
 
-	const uint32_t command = m_commandBuffer.Pop();
-	dbAssert( static_cast<PrimitiveType>( command >> 29 ) == PrimitiveType::Rectangle );
+	const RenderCommand command = m_commandBuffer.Pop();
 
-	// set position/dimensions
+	// set color
+	const bool noBlend = command.textureMode && command.textureMapping;
+	const Color color{ noBlend ? 0x808080 : command.color };
+	for ( auto& v : vertices )
+		v.color = color;
+
+	// get position
 	const Position pos{ m_commandBuffer.Pop() };
-	uint32_t width;
-	uint32_t height;
-	switch ( static_cast<RectangleSize>( ( command >> 27 ) & 0x3 ) )
+
+	// get tex coord/set clut
+	TexCoord topLeftTexCoord;
+	TexPage texPage = m_status.GetTexPage();
+	if ( command.textureMapping )
+	{
+		const uint32_t value = m_commandBuffer.Pop();
+
+		topLeftTexCoord = TexCoord{ value };
+
+		const uint16_t clut = static_cast<uint16_t>( value >> 16 );
+		for ( auto& v : vertices )
+		{
+			v.clut = clut;
+			v.texPage = texPage;
+		}
+
+		m_renderer.SetClut( clut );
+	}
+	else
+	{
+		texPage.textureDisable = true;
+		for ( auto& v : vertices )
+			v.texPage = texPage;
+	}
+
+	int16_t width = 0;
+	int16_t height = 0;
+	switch ( static_cast<RectangleSize>( command.rectSize ) )
 	{
 		case RectangleSize::Variable:
 		{
 			const uint32_t sizeParam = m_commandBuffer.Pop();
-			width = sizeParam & VRamWidthMask;
-			height = ( sizeParam >> 16 ) & VRamHeightMask;
+			width = static_cast<int16_t>( sizeParam & VRamWidthMask );
+			height = static_cast<int16_t>( ( sizeParam >> 16 ) & VRamHeightMask );
+
+			if ( width == 0 || height == 0 )
+			{
+				dbLogWarning( "Gpu::RenderRectangle -- rectangle has 0 size" );
+				ClearCommandBuffer();
+				return;
+			}
 			break;
 		}
 
@@ -936,48 +986,24 @@ void Gpu::RenderRectangle() noexcept
 
 		default:
 			dbBreak();
-			width = height = 0;
 			break;
 	}
+
 	vertices[ 0 ].position = pos;
-	vertices[ 1 ].position = Position{ pos.x, pos.y + static_cast<int16_t>( height ) };
-	vertices[ 2 ].position = Position{ pos.x + static_cast<int16_t>( width ), pos.y };
-	vertices[ 3 ].position = Position{ pos.x + static_cast<int16_t>( width ), pos.y + static_cast<int16_t>( height ) };
+	vertices[ 1 ].position = Position{ pos.x, pos.y + height };
+	vertices[ 2 ].position = Position{ pos.x + width, pos.y };
+	vertices[ 3 ].position = Position{ pos.x + width, pos.y + height };
 
-	// set color
-	const bool noColorBlend = command & RenderCommand::TextureMode;
-	const Color color{ noColorBlend ? 0xffffff : command };
-	for ( auto& v : vertices )
-		v.color = color;
-
-	if ( command & RenderCommand::TextureMapping )
+	if ( command.textureMapping )
 	{
-		const uint32_t value = m_commandBuffer.Pop();
-
-		const TexCoord topLeft{ value };
-		vertices[ 0 ].texCoord = topLeft;
-		vertices[ 1 ].texCoord = TexCoord{ topLeft.u, static_cast<uint16_t>( topLeft.v + height - 1 ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width - 1 ), topLeft.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeft.u + width - 1 ), static_cast<uint16_t>( topLeft.v + height - 1 ) };
-
-		const uint16_t clut = static_cast<uint16_t>( value >> 16 );
-		const uint16_t drawMode = m_status.GetDrawMode() & ~DisableTextureBit; // ignore texture disable
-		for ( auto& v : vertices )
-		{
-			v.clut = clut;
-			v.drawMode = drawMode;
-		}
-	}
-	else
-	{
-		const DrawMode drawMode = m_status.GetDrawMode() | DisableTextureBit;
-		for ( auto& v : vertices )
-			v.drawMode = drawMode;
+		vertices[ 0 ].texCoord = topLeftTexCoord;
+		vertices[ 1 ].texCoord = TexCoord{ topLeftTexCoord.u, static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
+		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ), topLeftTexCoord.v };
+		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ), static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
 	}
 
-	const bool semiTransparent = command & RenderCommand::SemiTransparency;
-
-	m_renderer.PushQuad( vertices, semiTransparent );
+	m_renderer.SetTexPage( texPage );
+	m_renderer.PushQuad( vertices, command.semiTransparency );
 
 	ClearCommandBuffer();
 }

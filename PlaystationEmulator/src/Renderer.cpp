@@ -67,7 +67,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
-	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_drawMode" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::drawMode ) );
+	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_texPage" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::texPage ) );
 	
 	// get shader uniform locations
 
@@ -277,41 +277,45 @@ void Renderer::CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight
 	m_dirtyArea.Grow( destX + destWidth, destY + destHeight );
 }
 
-void Renderer::CheckDrawMode( DrawMode drawMode, ClutAttribute clut )
+void Renderer::SetTexPage( TexPage texPage )
 {
-	if ( m_lastDrawMode.value == drawMode.value && m_lastClut.value == clut.value )
-		return; // cached values are the same
-
-	m_lastDrawMode = drawMode;
-	m_lastClut = clut;
+	if ( m_texPage.value == texPage.value )
+		return;
 
 	// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
-	SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( drawMode.semiTransparencymode ) );
+	SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
 
-	if ( drawMode.textureDisable )
+	if ( texPage.textureDisable )
 		return; // textures are disabled
 
-	const auto colorMode = drawMode.texturePageColors;
-	dbAssert( colorMode < 3 );
+	m_texPage = texPage;
 
-	const int texBaseX = drawMode.texturePageBaseX * TexturePageBaseXMult;
-	const int texBaseY = drawMode.texturePageBaseY * TexturePageBaseYMult;
+	const auto colorMode = texPage.texturePageColors;
+
+	const int texBaseX = texPage.texturePageBaseX * TexturePageBaseXMult;
+	const int texBaseY = texPage.texturePageBaseY * TexturePageBaseYMult;
 	const int texSize = 64 << colorMode;
 	const Rect texRect( texBaseX, texBaseY, texSize, texSize );
 
 	if ( m_dirtyArea.Intersects( texRect ) )
-	{
 		UpdateReadTexture();
-	}
-	else if ( colorMode < 2 )
-	{
-		const int clutBaseX = clut.x * ClutBaseXMult;
-		const int clutBaseY = clut.y * ClutBaseYMult;
-		const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+}
 
-		if ( m_dirtyArea.Intersects( clutRect ) )
-			UpdateReadTexture();
-	}
+void Renderer::SetClut( ClutAttribute clut )
+{
+	if ( m_clut.value == clut.value )
+		return;
+
+	const auto colorMode = m_texPage.texturePageColors;
+	if ( colorMode >= 2 )
+		return;
+
+	const int clutBaseX = clut.x * ClutBaseXMult;
+	const int clutBaseY = clut.y * ClutBaseYMult;
+	const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+
+	if ( m_dirtyArea.Intersects( clutRect ) )
+		UpdateReadTexture();
 }
 
 void Renderer::UpdateScissorRect()
@@ -377,9 +381,6 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 	}
 
 	EnableSemiTransparency( semiTransparent );
-
-	// updates read texture if sampling from dirty area
-	CheckDrawMode( vertices[ 0 ].drawMode, vertices[ 0 ].clut );
 
 	// grow dirty area
 	for ( size_t i = 0; i < 3; ++i )

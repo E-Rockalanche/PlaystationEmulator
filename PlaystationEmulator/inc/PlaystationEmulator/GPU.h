@@ -7,6 +7,8 @@
 
 #include <Math/Rectangle.h>
 
+#include <stdx/bit.h>
+
 #include <memory>
 #include <optional>
 
@@ -101,7 +103,7 @@ private:
 			uint32_t checkMaskOnDraw : 1;
 			uint32_t interlaceField : 1;
 			uint32_t reverseFlag : 1;
-			uint32_t textureDisable : 1;
+			uint32_t textureDisable : 1; // only works on new GPUs and/or dev machines?
 
 			uint32_t horizontalResolution2 : 1; // 0=256/320/512/640, 1=368
 			uint32_t horizontalResolution1 : 2; // 0=256, 1=320, 2=512, 3=640
@@ -121,7 +123,8 @@ private:
 		};
 		uint32_t value = 0;
 
-		uint16_t GetDrawMode() const noexcept { return value & 0x1ff; } // texture disable flag only works on new GPUs and dev machines?
+		void SetTexPage( TexPage texPage ) noexcept { stdx::masked_set<uint32_t>( value, 0x01ff, texPage.value ); }
+		TexPage GetTexPage() const noexcept { return value & 0x1ff; }
 
 		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
 		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
@@ -133,8 +136,6 @@ private:
 	using GP0Function = void( Gpu::* )( uint32_t ) noexcept;
 	using GpuReadFunction = uint32_t( Gpu::* )( ) noexcept;
 	using CommandFunction = void( Gpu::* )( ) noexcept;
-
-	static constexpr uint16_t DisableTextureBit = 1u << 11;
 
 private:
 	void WriteGP1( uint32_t value ) noexcept;

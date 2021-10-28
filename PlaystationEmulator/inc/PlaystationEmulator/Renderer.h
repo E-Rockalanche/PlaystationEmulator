@@ -41,6 +41,8 @@ public:
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 	void SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMode );
 	void SetMaskBits( bool setMask, bool checkMask );
+	void SetTexPage( TexPage texPage );
+	void SetClut( ClutAttribute clut );
 
 	void SetColorDepth( DisplayAreaColorDepth colorDepth )
 	{
@@ -75,8 +77,6 @@ private:
 		m_dirtyArea.right = 0;
 		m_dirtyArea.bottom = 0;
 	}
-
-	void CheckDrawMode( DrawMode drawMode, ClutAttribute clut );
 
 	void UpdateScissorRect();
 
@@ -133,8 +133,8 @@ private:
 	bool m_setMask = false;
 	bool m_checkMask = false;
 
-	DrawMode m_lastDrawMode;
-	ClutAttribute m_lastClut;
+	TexPage m_texPage;
+	ClutAttribute m_clut;
 
 	struct Uniform
 	{

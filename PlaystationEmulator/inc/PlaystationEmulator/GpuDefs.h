@@ -139,7 +139,7 @@ struct TexCoord
 union ClutAttribute
 {
 	ClutAttribute() = default;
-	ClutAttribute( uint16_t v ) : value{ v } {}
+	ClutAttribute( uint16_t v ) : value{ static_cast<uint16_t>( v & 0x7fff ) } {}
 
 	struct
 	{
@@ -151,10 +151,12 @@ union ClutAttribute
 };
 static_assert( sizeof( ClutAttribute ) == 2 );
 
-union DrawMode
+union TexPage
 {
-	DrawMode() = default;
-	DrawMode( uint16_t v ) : value{ v } {}
+	static constexpr uint16_t WriteMask = 0x09ff;
+
+	TexPage() = default;
+	TexPage( uint16_t v ) : value{ static_cast<uint16_t>( v & WriteMask ) } {}
 
 	struct
 	{
@@ -162,16 +164,15 @@ union DrawMode
 		uint16_t texturePageBaseY : 1;
 		uint16_t semiTransparencymode : 2;
 		uint16_t texturePageColors : 2;
-		uint16_t dither : 1;
-		uint16_t drawToDisplayArea : 1;
-		uint16_t textureDisable : 1;
-		uint16_t texturedRectangleFlipX : 1;
-		uint16_t texturedRectangleFlipY : 1;
 		uint16_t : 2;
+		uint16_t textureDisable : 1;
+		uint16_t : 4;
 	};
 	uint16_t value = 0;
 };
-static_assert( sizeof( DrawMode ) == 2 );
+static_assert( sizeof( TexPage ) == 2 );
+
+inline constexpr uint16_t TexPageWriteMask = 0x01ff;
 
 struct Vertex
 {
@@ -179,7 +180,7 @@ struct Vertex
 	Color color;
 	TexCoord texCoord;
 	ClutAttribute clut;
-	DrawMode drawMode;
+	TexPage texPage;
 };
 
 }

@@ -10,13 +10,13 @@ in vec2 v_pos;
 in vec2 v_texCoord;
 in vec3 v_color;
 in int v_clut;
-in int v_drawMode;
+in int v_texPage;
 
 out vec3 BlendColor;
 out vec2 TexCoord;
 flat out ivec2 TexPageBase;
 flat out ivec2 ClutBase;
-flat out int DrawMode;
+flat out int TexPage;
 
 uniform vec2 u_origin;
 
@@ -28,7 +28,7 @@ void main()
 	gl_Position = vec4( x, y, 0.0, 1.0 );
 
 	// calculate texture page offset
-	TexPageBase = ivec2( ( v_drawMode & 0xf ) * 64, ( ( v_drawMode >> 4 ) & 0x1 ) * 256 );
+	TexPageBase = ivec2( ( v_texPage & 0xf ) * 64, ( ( v_texPage >> 4 ) & 0x1 ) * 256 );
 
 	// calculate CLUT offset
 	ClutBase = ivec2( ( v_clut & 0x3f ) * 16, v_clut >> 6 );
@@ -37,7 +37,7 @@ void main()
 	TexCoord = v_texCoord;
 
 	// send other texpage info to fragment shader
-	DrawMode = v_drawMode;
+	TexPage = v_texPage;
 }
 )glsl";
 
@@ -48,7 +48,7 @@ in vec3 BlendColor;
 in vec2 TexCoord;
 flat in ivec2 TexPageBase;
 flat in ivec2 ClutBase;
-flat in int DrawMode;
+flat in int TexPage;
 
 layout(location=0, index=0) out vec4 FragColor;
 layout(location=0, index=1) out vec4 ParamColor;
@@ -105,7 +105,7 @@ vec4 LookupTexel()
 	texCoord.x = ( texCoord.x & ~( u_texWindowMask.x * 8 ) ) | ( ( u_texWindowOffset.x & u_texWindowMask.x ) * 8 );
 	texCoord.y = ( texCoord.y & ~( u_texWindowMask.y * 8 ) ) | ( ( u_texWindowOffset.y & u_texWindowMask.y ) * 8 );
 
-	int colorMode = ( DrawMode >> 7 ) & 0x3;
+	int colorMode = ( TexPage >> 7 ) & 0x3;
 	if ( colorMode == 0 )
 	{
 		color = SampleClut( SampleIndex4( texCoord ) ); // get 4bit index
@@ -130,7 +130,7 @@ void main()
 	float srcBlend = u_srcBlend;
 	float destBlend = u_destBlend;
 
-	if ( bool( DrawMode & ( 1 << 11 ) ) )
+	if ( bool( TexPage & ( 1 << 11 ) ) )
 	{
 		// texture disabled
 		color = vec4( BlendColor, 0.0 );
