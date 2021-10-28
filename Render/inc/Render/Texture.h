@@ -258,13 +258,13 @@ public:
 
 	Texture2D() noexcept = default;
 
-	Texture2D( Texture2D&& other )
+	Texture2D( Texture2D&& other ) noexcept
 		: Parent( std::move( other ) )
 		, m_width{ std::exchange( other.m_width, 0 ) }
 		, m_height{ std::exchange( other.m_height, 0 ) }
 	{}
 
-	Texture2D& operator=( Texture2D&& other )
+	Texture2D& operator=( Texture2D&& other ) noexcept
 	{
 		Parent::operator=( std::move( other ) );
 		m_width = std::exchange( other.m_width, 0 );

@@ -50,10 +50,12 @@ flat in ivec2 TexPageBase;
 flat in ivec2 ClutBase;
 flat in int DrawMode;
 
-out vec4 FragColor;
+layout(location=0, index=0) out vec4 FragColor;
+layout(location=0, index=1) out vec4 ParamColor;
 
-uniform float u_alpha;
-uniform bool u_semiTransparent;
+uniform float u_srcBlend;
+uniform float u_destBlend;
+uniform bool u_setMaskBit;
 uniform ivec2 u_texWindowMask;
 uniform ivec2 u_texWindowOffset;
 uniform sampler2D u_vram;
@@ -124,7 +126,9 @@ vec4 LookupTexel()
 void main()
 {
 	vec4 color;
-	bool semiTransparent = u_semiTransparent;
+
+	float srcBlend = u_srcBlend;
+	float destBlend = u_destBlend;
 
 	if ( bool( DrawMode & ( 1 << 11 ) ) )
 	{
@@ -136,19 +140,29 @@ void main()
 		// texture enabled
 		color = LookupTexel();
 
+		// check if pixel is fully transparent
+		// TODO: can fully transparent pixels still set bit15 with setMask on?
 		if ( color == vec4( 0.0 ) )
-			discard; // all zeroes is transparent
+			discard;
 
 		color.rgb *= BlendColor.rgb * 2.0;
-		semiTransparent = semiTransparent && ( color.a > 0.0 );
+
+		if ( color.a == 0 )
+		{
+			// disable semi transparency
+			srcBlend = 1.0;
+			destBlend = 0.0;
+		}
 	}
 
-	if ( semiTransparent )
-		color.a = u_alpha;
-	else
-		color.a = 1.0; // blending might be enabled
+	if ( u_setMaskBit )
+		color.a = 1.0;
 
+	// output color
 	FragColor = color;
+
+	// use alpha for src blend, rgb for dest blend
+	ParamColor = vec4( destBlend, destBlend, destBlend, srcBlend );
 }
 )glsl";
 

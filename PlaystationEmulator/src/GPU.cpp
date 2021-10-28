@@ -96,7 +96,7 @@ void Gpu::Reset()
 	m_status.value = 0;
 	m_status.displayDisable = true;
 
-	m_renderer.SetSemiTransparency( SemiTransparency::Blend );
+	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
 
 	m_texturedRectFlipX = false;
 	m_texturedRectFlipY = false;
@@ -845,7 +845,7 @@ void Gpu::RenderPolygon() noexcept
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 0 ].texCoord = TexCoord{ value };
 
-		const auto clut = static_cast<uint16_t>( value >> 16 );
+		const ClutAttribute clut = static_cast<uint16_t>( value >> 16 );
 		for ( auto& v : vertices )
 			v.clut = clut;
 	}
@@ -857,15 +857,21 @@ void Gpu::RenderPolygon() noexcept
 
 	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
 
+	DrawMode drawMode;
 	if ( textured )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
 
-		const uint16_t drawMode = static_cast<uint16_t>( value >> 16 ) & ~DisableTextureBit; // ignore texture disable
-		for ( auto& v : vertices )
-			v.drawMode = drawMode;
+		drawMode = static_cast<uint16_t>( value >> 16 ) & ~DisableTextureBit; // ignore texture disable
 	}
+	else
+	{
+		drawMode = m_status.GetDrawMode() | DisableTextureBit;
+	}
+
+	for ( auto& v : vertices )
+		v.drawMode = drawMode;
 
 	// vetex 3 and 4
 
@@ -961,6 +967,11 @@ void Gpu::RenderRectangle() noexcept
 			v.clut = clut;
 			v.drawMode = drawMode;
 		}
+	}
+	else
+	{
+		for ( auto& v : vertices )
+			v.drawMode = DisableTextureBit;
 	}
 
 	const bool semiTransparent = command & RenderCommand::SemiTransparency;

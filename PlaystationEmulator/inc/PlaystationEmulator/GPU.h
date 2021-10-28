@@ -89,13 +89,11 @@ private:
 
 	union Status
 	{
-		Status() : value{ 0 } {}
-
 		struct
 		{
 			uint32_t texturePageBaseX : 4; // N*64
 			uint32_t texturePageBaseY : 1; // N*256
-			uint32_t semiTransparency : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
+			uint32_t semiTransparencyMode : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
 			uint32_t texturePageColors : 2; // 0=4bit, 1=8bit, 2=15bit
 			uint32_t dither : 1; // 0=Off/strip LSBs, 1=Dither Enabled
 			uint32_t drawToDisplayArea : 1;
@@ -121,15 +119,14 @@ private:
 			uint32_t dmaDirection : 2; // 0=Off, 1=FIFO, 2=CPUtoGP0, 3=GPUREADtoCPU
 			uint32_t evenOddVblank : 1; // 0=Even or Vblank, 1=Odd
 		};
-
-		uint32_t value;
+		uint32_t value = 0;
 
 		uint16_t GetDrawMode() const noexcept { return value & 0x1ff; } // texture disable flag only works on new GPUs and dev machines?
 
 		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
 		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
 
-		SemiTransparency GetSemiTransparency() const noexcept { return static_cast<SemiTransparency>( semiTransparency ); }
+		SemiTransparencyMode GetSemiTransparencyMode() const noexcept { return static_cast<SemiTransparencyMode>( semiTransparencyMode ); }
 	};
 	static_assert( sizeof( Status ) == 4 );
 
