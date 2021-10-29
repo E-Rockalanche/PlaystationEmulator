@@ -72,15 +72,17 @@ bool Renderer::Initialize( SDL_Window* window )
 	// get shader uniform locations
 
 	// VRAM draw texture
-	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
 	m_vramDrawFrameBuffer = Render::FrameBuffer::Create();
+	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
 	m_vramDrawFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
+	m_depthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::UByte );
+	m_vramDrawFrameBuffer.AttachTexture( Render::AttachmentType::Depth, m_depthBuffer );
 	dbAssert( m_vramDrawFrameBuffer.IsComplete() );
 	m_vramDrawFrameBuffer.Unbind();
 
 	// VRAM read texture
-	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
 	m_vramReadFrameBuffer = Render::FrameBuffer::Create();
+	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
 	m_vramReadFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
 	dbAssert( m_vramReadFrameBuffer.IsComplete() );
 	m_vramReadFrameBuffer.Unbind();
@@ -198,6 +200,7 @@ void Renderer::SetMaskBits( bool setMask, bool checkMask )
 		m_setMask = setMask;
 		m_checkMask = checkMask;
 		UpdateBlendMode();
+		UpdateDepthTest();
 	}
 }
 
@@ -369,6 +372,11 @@ void Renderer::UpdateBlendMode()
 	}
 }
 
+void Renderer::UpdateDepthTest()
+{
+	glDepthFunc( m_checkMask ? GL_GEQUAL : GL_ALWAYS );
+}
+
 void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 {
 	if ( m_vertices.size() + 3 > VertexBufferSize )
@@ -439,11 +447,12 @@ void Renderer::RestoreRenderState()
 	m_clutShader.Bind();
 
 	glDisable( GL_CULL_FACE );
-
 	glEnable( GL_SCISSOR_TEST );
-	UpdateScissorRect();
+	glEnable( GL_DEPTH_TEST );
 
+	UpdateScissorRect();
 	UpdateBlendMode();
+	UpdateDepthTest();
 
 	// restore uniforms
 	// TODO: use uniform buffer?
@@ -464,6 +473,7 @@ void Renderer::DisplayFrame()
 
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
+	glDisable( GL_DEPTH_TEST );
 
 	if ( m_viewVRam )
 	{

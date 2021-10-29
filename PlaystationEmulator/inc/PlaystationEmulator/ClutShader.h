@@ -163,6 +163,9 @@ void main()
 
 	// use alpha for src blend, rgb for dest blend
 	ParamColor = vec4( destBlend, destBlend, destBlend, srcBlend );
+
+	// set depth buffer output
+	gl_FragDepth = color.a;
 }
 )glsl";
 

@@ -79,8 +79,8 @@ private:
 	}
 
 	void UpdateScissorRect();
-
 	void UpdateBlendMode();
+	void UpdateDepthTest();
 
 	void EnableSemiTransparency( bool enabled );
 
@@ -93,6 +93,8 @@ private:
 
 	Render::Texture2D m_vramDrawTexture;
 	Render::Texture2D m_vramReadTexture;
+
+	Render::Texture2D m_depthBuffer;
 
 	Render::FrameBuffer m_vramDrawFrameBuffer;
 	Render::FrameBuffer m_vramReadFrameBuffer;
