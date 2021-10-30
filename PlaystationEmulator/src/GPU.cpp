@@ -778,9 +778,7 @@ void Gpu::FillRectangle() noexcept
 
 	if ( width > 0 && height > 0 )
 	{
-		// TODO: figure out the real conversion of RGB8 to RGB555
-		const uint16_t pixel = ( color.r >> 3 ) | ( ( color.g >> 3 ) << 5 ) | ( ( color.b >> 3 ) << 10 );
-		FillVRam( x, y, width, height, pixel );
+		FillVRam( x, y, width, height, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f );
 	}
 
 	ClearCommandBuffer();
@@ -849,16 +847,16 @@ void Gpu::RenderPolygon() noexcept
 
 	vertices[ 0 ].position = Position{ m_commandBuffer.Pop() };
 
+	TexPage texPage;
+	ClutAttribute clut;
 	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 0 ].texCoord = TexCoord{ value };
 
-		const ClutAttribute clut = static_cast<uint16_t>( value >> 16 );
+		clut = static_cast<uint16_t>( value >> 16 );
 		for ( auto& v : vertices )
 			v.clut = clut;
-
-		m_renderer.SetClut( clut );
 	}
 
 	// vertex 2
@@ -868,20 +866,17 @@ void Gpu::RenderPolygon() noexcept
 
 	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
 
-	TexPage texPage;
 	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
 		texPage = static_cast<uint16_t>( value >> 16 );
-		m_status.SetTexPage( texPage );
 	}
 	else
 	{
 		texPage = m_status.GetTexPage();
 		texPage.textureDisable = true;
 	}
-
 	for ( auto& v : vertices )
 		v.texPage = texPage;
 
@@ -903,6 +898,7 @@ void Gpu::RenderPolygon() noexcept
 	// TODO: check for large polygons
 
 	m_renderer.SetTexPage( texPage );
+	m_renderer.SetClut( clut );
 
 	m_renderer.PushTriangle( vertices, command.semiTransparency );
 	if ( command.numVertices )
@@ -930,21 +926,22 @@ void Gpu::RenderRectangle() noexcept
 
 	// get tex coord/set clut
 	TexCoord topLeftTexCoord;
+
 	TexPage texPage = m_status.GetTexPage();
+	ClutAttribute clut;
+
 	if ( command.textureMapping )
 	{
 		const uint32_t value = m_commandBuffer.Pop();
 
 		topLeftTexCoord = TexCoord{ value };
 
-		const uint16_t clut = static_cast<uint16_t>( value >> 16 );
+		clut = static_cast<uint16_t>( value >> 16 );
 		for ( auto& v : vertices )
 		{
 			v.clut = clut;
 			v.texPage = texPage;
 		}
-
-		m_renderer.SetClut( clut );
 	}
 	else
 	{
@@ -1003,6 +1000,7 @@ void Gpu::RenderRectangle() noexcept
 	}
 
 	m_renderer.SetTexPage( texPage );
+	m_renderer.SetClut( clut );
 	m_renderer.PushQuad( vertices, command.semiTransparency );
 
 	ClearCommandBuffer();
@@ -1136,7 +1134,7 @@ void Gpu::ScheduleNextEvent()
 	m_clockEvent->Schedule( cpuCycles );
 }
 
-void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint16_t value )
+void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, float r, float g, float b )
 {
 	dbExpects( x < VRamWidth );
 	dbExpects( y < VRamHeight );
@@ -1159,16 +1157,16 @@ void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, uin
 		height -= height2;
 	}
 
-	m_renderer.FillVRam( x, y, width, height, value );
+	m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
 
 	if ( width2 > 0 )
-		m_renderer.FillVRam( 0, y, width2, height, value );
+		m_renderer.FillVRam( 0, y, width2, height, r, g, b, 0.0f );
 
 	if ( height2 > 0 )
-		m_renderer.FillVRam( x, 0, width, height2, value );
+		m_renderer.FillVRam( x, 0, width, height2, r, g, b, 0.0f );
 
 	if ( width2 > 0 && height2 > 0 )
-		m_renderer.FillVRam( 0, 0, width2, height2, value );
+		m_renderer.FillVRam( 0, 0, width2, height2, r, g, b, 0.0f );
 }
 
 void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height )

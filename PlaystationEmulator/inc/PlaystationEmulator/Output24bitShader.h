@@ -73,9 +73,9 @@ vec3 SampleVRam24( ivec2 pos )
 
 void main()
 {
-	ivec2 pos = u_srcRect.xy + ivec2( TexCoord * u_srcRect.zw );
+	ivec2 texCoord = u_srcRect.xy + ivec2( TexCoord * u_srcRect.zw );
 
-	FragColor = vec4( SampleVRam24( pos ).rgb, 1.0 );
+	FragColor = vec4( SampleVRam24( texCoord ).rgb, 1.0 );
 }
 
 )glsl";

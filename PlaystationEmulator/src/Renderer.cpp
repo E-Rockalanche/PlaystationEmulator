@@ -235,23 +235,16 @@ void Renderer::ReadVRam( uint16_t* vram )
 	glReadPixels( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
 }
 
-void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint16_t color )
+void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a )
 {
 	// TODO: check draw mode areas
 	DrawBatch();
 
-	auto toFloat = []( uint16_t c ) { return ( c & 31 ) / 31.0f; };
-
-	const float red = toFloat( color );
-	const float green = toFloat( color >> 5 );
-	const float blue = toFloat( color >> 10 );
-	const float alpha = ( color & 0x8000 ) ? 1.0f : 0.0f;
-
-	glClearColor( red, green, blue, alpha );
+	glClearColor( r, g, b, a );
+	glClearDepth( a );
 	glScissor( left, top, width, height );
-	glClear( GL_COLOR_BUFFER_BIT );
+	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
-	glClearColor( 0, 0, 0, 1 );
 	UpdateScissorRect();
 
 	m_dirtyArea.Grow( Rect( left, top, left + width, top + height ) );
@@ -285,13 +278,13 @@ void Renderer::SetTexPage( TexPage texPage )
 	if ( m_texPage.value == texPage.value )
 		return;
 
+	m_texPage = texPage;
+
 	// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
 	SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
 
 	if ( texPage.textureDisable )
 		return; // textures are disabled
-
-	m_texPage = texPage;
 
 	const auto colorMode = texPage.texturePageColors;
 
@@ -308,6 +301,8 @@ void Renderer::SetClut( ClutAttribute clut )
 {
 	if ( m_clut.value == clut.value )
 		return;
+
+	m_clut = clut;
 
 	const auto colorMode = m_texPage.texturePageColors;
 	if ( colorMode >= 2 )

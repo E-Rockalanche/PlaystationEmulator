@@ -42,7 +42,7 @@ public:
 	void SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMode );
 	void SetMaskBits( bool setMask, bool checkMask );
 	void SetTexPage( TexPage texPage );
-	void SetClut( ClutAttribute clut );
+	void SetClut( ClutAttribute clut ); // should set after texPage
 
 	void SetColorDepth( DisplayAreaColorDepth colorDepth )
 	{
@@ -55,7 +55,7 @@ public:
 	// read entire vram from frame buffer
 	void ReadVRam( uint16_t* vram );
 
-	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint16_t color );
+	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a );
 
 	void CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight, GLint destX, GLint destY, GLint destWidth, GLint destHeight );
 
