@@ -56,6 +56,8 @@ layout(location=0, index=1) out vec4 ParamColor;
 uniform float u_srcBlend;
 uniform float u_destBlend;
 uniform bool u_setMaskBit;
+uniform bool u_drawOpaquePixels;
+uniform bool u_drawTransparentPixels;
 uniform ivec2 u_texWindowMask;
 uniform ivec2 u_texWindowOffset;
 uniform sampler2D u_vram;
@@ -149,9 +151,16 @@ void main()
 
 		if ( color.a == 0 )
 		{
+			if ( !u_drawOpaquePixels )
+				discard;
+
 			// disable semi transparency
 			srcBlend = 1.0;
 			destBlend = 0.0;
+		}
+		else if ( !u_drawTransparentPixels )
+		{
+			discard;
 		}
 	}
 

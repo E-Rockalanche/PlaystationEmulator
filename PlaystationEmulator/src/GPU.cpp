@@ -156,7 +156,7 @@ void Gpu::Reset()
 	m_displayFrame = false;
 
 	// clear VRAM
-	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } ); // , uint16_t{ 0x801f } );
+	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
 	m_renderer.UpdateVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
 
 	m_vramCopyState.reset();
@@ -897,8 +897,7 @@ void Gpu::RenderPolygon() noexcept
 
 	// TODO: check for large polygons
 
-	m_renderer.SetTexPage( texPage );
-	m_renderer.SetClut( clut );
+	m_renderer.SetDrawMode( texPage, clut );
 
 	m_renderer.PushTriangle( vertices, command.semiTransparency );
 	if ( command.numVertices )
@@ -999,8 +998,7 @@ void Gpu::RenderRectangle() noexcept
 		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ), static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
 	}
 
-	m_renderer.SetTexPage( texPage );
-	m_renderer.SetClut( clut );
+	m_renderer.SetDrawMode( texPage, clut );
 	m_renderer.PushQuad( vertices, command.semiTransparency );
 
 	ClearCommandBuffer();

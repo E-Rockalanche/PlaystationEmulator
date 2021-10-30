@@ -52,6 +52,8 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_destBlendLoc = m_clutShader.GetUniformLocation( "u_destBlend" );
 	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
+	m_drawOpaquePixelsLoc = m_clutShader.GetUniformLocation( "u_drawOpaquePixels" );
+	m_drawTransparentPixelsLoc = m_clutShader.GetUniformLocation( "u_drawTransparentPixels" );
 
 	// create output 24bpp shader
 	m_output24bppShader = Render::Shader::Compile( Output24bitVertexShader, Output24bitFragmentShader );
@@ -273,12 +275,16 @@ void Renderer::CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight
 	m_dirtyArea.Grow( destX + destWidth, destY + destHeight );
 }
 
-void Renderer::SetTexPage( TexPage texPage )
+void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut )
 {
-	if ( m_texPage.value == texPage.value )
+	if ( m_texPage.value == texPage.value && m_clut.value == clut.value )
 		return;
 
+	if ( m_texPage.textureDisable != texPage.textureDisable )
+		DrawBatch();
+
 	m_texPage = texPage;
+	m_clut = clut;
 
 	// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
 	SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
@@ -294,26 +300,18 @@ void Renderer::SetTexPage( TexPage texPage )
 	const Rect texRect( texBaseX, texBaseY, texSize, texSize );
 
 	if ( m_dirtyArea.Intersects( texRect ) )
+	{
 		UpdateReadTexture();
-}
+	}
+	else if ( colorMode < 2 )
+	{
+		const int clutBaseX = clut.x * ClutBaseXMult;
+		const int clutBaseY = clut.y * ClutBaseYMult;
+		const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
 
-void Renderer::SetClut( ClutAttribute clut )
-{
-	if ( m_clut.value == clut.value )
-		return;
-
-	m_clut = clut;
-
-	const auto colorMode = m_texPage.texturePageColors;
-	if ( colorMode >= 2 )
-		return;
-
-	const int clutBaseX = clut.x * ClutBaseXMult;
-	const int clutBaseY = clut.y * ClutBaseYMult;
-	const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
-
-	if ( m_dirtyArea.Intersects( clutRect ) )
-		UpdateReadTexture();
+		if ( m_dirtyArea.Intersects( clutRect ) )
+			UpdateReadTexture();
+	}
 }
 
 void Renderer::UpdateScissorRect()
@@ -409,8 +407,29 @@ void Renderer::DrawBatch()
 		return;
 
 	m_vertexBuffer.SubData( m_vertices.size(), m_vertices.data() );
-	glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
-	dbCheckRenderErrors();
+
+	if ( m_semiTransparencyEnabled && ( m_semiTransparencyMode == SemiTransparencyMode::ReverseSubtract ) && !m_texPage.textureDisable )
+	{
+		// must do 2 passes for BG-FG with textures since transparency can be disabled per-pixel
+
+		// opaque only
+		glDisable( GL_BLEND );
+		glUniform1i( m_drawTransparentPixelsLoc, false );
+		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
+
+		// transparent only
+		glEnable( GL_BLEND );
+		glUniform1i( m_drawOpaquePixelsLoc, false );
+		glUniform1i( m_drawTransparentPixelsLoc, true );
+		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
+
+		glUniform1i( m_drawOpaquePixelsLoc, true );
+	}
+	else
+	{
+		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
+		dbCheckRenderErrors();
+	}
 
 	m_vertices.clear();
 }
@@ -456,6 +475,8 @@ void Renderer::RestoreRenderState()
 	glUniform1f( m_destBlendLoc, m_uniform.destBlend );
 	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
 	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
+	glUniform1i( m_drawOpaquePixelsLoc, true );
+	glUniform1i( m_drawTransparentPixelsLoc, true );
 
 	glViewport( 0, 0, VRamWidth, VRamHeight );
 
