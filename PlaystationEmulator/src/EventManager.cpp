@@ -147,14 +147,20 @@ void EventManager::ScheduleNextEvent()
 
 			return lhs->GetLocalRemainingCycles() < rhs->GetLocalRemainingCycles();
 		} );
-	dbAssert( it != m_events.end() ); // timers and GPU events are always active
 
-	m_nextEvent = *it;
-	dbAssert( m_nextEvent->IsActive() );
-	dbAssert( m_nextEvent->m_cyclesUntilEvent > 0 );
+	if ( it == m_events.end() )
+		return;
+
+	Event* event = *it;
+	if ( !event->IsActive() )
+		return;
+
+	dbAssert( event->m_cyclesUntilEvent > 0 );
+
+	m_nextEvent = event;
 
 	// cache cycles until event
-	m_cyclesUntilNextEvent = m_nextEvent->GetLocalRemainingCycles();
+	m_cyclesUntilNextEvent = event->GetLocalRemainingCycles();
 }
 
 void EventManager::RemoveEvent( Event* event )

@@ -68,29 +68,39 @@ public:
 		uint8_t mode;
 	};
 
-	struct SubMode
+	union SubMode
 	{
-		uint8_t endOfRecord : 1;	// all volume descriptors, and all sectors with EOF
+		struct
+		{
+			uint8_t endOfRecord : 1;	// all volume descriptors, and all sectors with EOF
 
-		// Sector type
-		uint8_t video : 1;
-		uint8_t audio : 1;
-		uint8_t data : 1;
+			// Sector type
+			uint8_t video : 1;
+			uint8_t audio : 1;
+			uint8_t data : 1;
 
-		uint8_t trigger : 1;		// for application use
-		uint8_t form2 : 1;			// 0: 0x800 data bytes, 1: 0x914 data bytes
-		uint8_t realTime : 1;
-		uint8_t endOfFile : 1;		// or end of directory, path table, volume terminator
+			uint8_t trigger : 1;		// for application use
+			uint8_t form2 : 1;			// 0: 0x800 data bytes, 1: 0x914 data bytes
+			uint8_t realTime : 1;
+			uint8_t endOfFile : 1;		// or end of directory, path table, volume terminator
+		};
+		uint8_t value;
 	};
+	static_assert( sizeof( SubMode ) == 1 );
 
-	struct CodingInfo
+	union CodingInfo
 	{
-		uint8_t monoStereo : 2;		// 0=Mono, 1=Stereo, 2-3=Reserved
-		uint8_t sampleRate : 2;		// 0=37800Hz, 1=18900Hz, 2-3=Reserved
-		uint8_t bitsPerSample : 2;	// 0=Normal/4bit, 1=8bit, 2-3=Reserved
-		uint8_t emphasis : 1;		// 0=Normal/Off, 1=Emphasis
-		uint8_t : 1;
+		struct
+		{
+			uint8_t monoStereo : 2;		// 0=Mono, 1=Stereo, 2-3=Reserved
+			uint8_t sampleRate : 2;		// 0=37800Hz, 1=18900Hz, 2-3=Reserved
+			uint8_t bitsPerSample : 2;	// 0=Normal/4bit, 1=8bit, 2-3=Reserved
+			uint8_t emphasis : 1;		// 0=Normal/Off, 1=Emphasis
+			uint8_t : 1;
+		};
+		uint8_t value;
 	};
+	static_assert( sizeof( CodingInfo ) == 1 );
 
 	struct SubHeader
 	{
@@ -156,9 +166,7 @@ public:
 
 		uint32_t GetLogicalSector() const noexcept
 		{
-			const auto physicalSector = minute * SectorsPerMinute + second * SectorsPerSecond + sector;
-			dbAssert( physicalSector >= 2 * SectorsPerSecond );
-			return physicalSector - 2 * SectorsPerSecond;
+			return minute * SectorsPerMinute + second * SectorsPerSecond + sector;
 		}
 
 		uint8_t minute = 0;
@@ -183,9 +191,10 @@ public:
 		m_file.close();
 	}
 
-	void Seek( uint32_t sector )
+	void Seek( uint32_t logicalSector )
 	{
-		m_file.seekg( static_cast<std::streampos>( sector ) * BytesPerSector );
+		uint32_t physicalSector = ( logicalSector <= SectorsPerSecond * 2 ) ? 0 : logicalSector - SectorsPerSecond * 2;
+		m_file.seekg( static_cast<std::streampos>( physicalSector ) * BytesPerSector );
 	}
 
 	bool ReadSector( Sector& sector )

@@ -106,8 +106,11 @@ int main( int argc, char** argv )
 	else if ( stdx::ends_with( filename, ".exe" ) )
 	{
 		playstationCore->HookExe( filename.data() );
+		playstationCore->LoadRom( "roms/CrashBandicoot.bin" ); // for cdrom testing
 		windowTitle = filename;
 	}
+
+	playstationCore->Reset();
 
 	bool quit = false;
 	bool paused = false;

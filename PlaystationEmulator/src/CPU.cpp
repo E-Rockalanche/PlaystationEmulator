@@ -510,7 +510,7 @@ void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction instr ) noexcept
 	// TODO: the contents of coprocessor control register rd of coprocessor unit are loaded into general register rt
 
 	if ( instr.z() == 2 )
-		m_registers.Set( instr.rt(), m_gte.ReadControl( instr.rd() ) );
+		m_registers.Load( instr.rt(), m_gte.ReadControl( instr.rd() ) );
 	else
 		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable );
 }

@@ -233,6 +233,15 @@ private:
 		m_interruptFlags = InterruptResponse::Error;
 	}
 
+	// send status, error code, and interrupt
+	void SendSecondError( ErrorCode errorCode, uint8_t statusErrorBits = DriveStatusError::Error ) noexcept
+	{
+		dbLog( "CDRomDrive::SendError -- [%u]", uint32_t( errorCode ) );
+		m_secondResponseBuffer.Push( m_driveStatus.value | statusErrorBits ); // error status bit isn't permanently set
+		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
+		m_queuedInterrupt = InterruptResponse::Error;
+	}
+
 	cycles_t GetReadCycles() const noexcept
 	{
 		return CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) );
@@ -256,10 +265,9 @@ private:
 		return m_pendingCommand.has_value();
 	}
 
-	bool IsSeeking() const noexcept
-	{
-		return m_driveState == DriveState::Seeking;
-	}
+	bool IsSeeking() const noexcept { return m_driveState == DriveState::Seeking; }
+	bool IsReading() const noexcept { return m_driveState == DriveState::Reading; }
+	bool IsPlaying() const noexcept { return m_driveState == DriveState::Playing; }
 
 private:
 	InterruptControl& m_interruptControl;
@@ -311,6 +319,14 @@ private:
 	std::array<SectorBuffer, NumSectorBuffers> m_sectorBuffers;
 	uint32_t m_readSectorBuffer = 0;
 	uint32_t m_writeSectorBuffer = 0;
+
+	struct SectorHeaders
+	{
+		CDRom::Header header;
+		CDRom::SubHeader subHeader;
+	};
+
+	std::optional<SectorHeaders> m_currentSectorHeaders;
 
 	// async flags
 	bool m_pendingSeek = false; // SetLoc was called, but we haven't called seek yet

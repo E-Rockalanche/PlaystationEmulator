@@ -136,6 +136,7 @@ void CDRomDrive::Reset()
 	m_secondResponseCommand = std::nullopt;
 
 	m_driveStatus.value = 0;
+	m_driveStatus.motorOn = ( m_cdrom != nullptr );
 	m_mode.value = 0;
 
 	m_xaFile = 0;
@@ -302,7 +303,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 					dbLogDebug( "CDRomDrive::Write() -- interrupt flag [%X]", value );
 					m_interruptFlags = m_interruptFlags & ~value; // write 1 to ack/reset
 
-					m_responseBuffer.Clear();
+					// m_responseBuffer.Clear();
 
 					if ( value & InterruptFlag::ResetParameterFifo )
 						m_parameterBuffer.Clear();
@@ -345,12 +346,28 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 
 void CDRomDrive::SetCDRom( std::unique_ptr<CDRom> cdrom )
 {
+	dbLog( "CDRomDrive::SetCDRom" );
+
+	if ( m_cdrom )
+	{
+		StopMotor();
+		m_currentSectorHeaders.reset();
+		m_pendingCommand.reset();
+		m_commandEvent->Cancel();
+		m_secondResponseCommand.reset();
+		m_secondResponseEvent->Cancel();
+		m_queuedInterrupt = 0;
+
+		SendSecondError( ErrorCode::DriveDoorOpened, DriveStatusError::IdError );
+	}
+
 	m_cdrom = std::move( cdrom );
 
 	if ( m_cdrom )
 		StartMotor();
-	else
-		StopMotor();
+
+	if ( m_interruptFlags == 0 )
+		ShiftQueuedInterrupt();
 }
 
 void CDRomDrive::DmaRead( uint32_t* data, uint32_t count )
@@ -472,11 +489,10 @@ void CDRomDrive::BeginSeeking() noexcept
 	uint32_t seekCycles = GetSeekCycles();
 
 	if ( m_driveState == DriveState::Seeking )
-	{
-		dbLogWarning( "CDRomDrive::BeginSeeking -- drive state is already seeking" );
-		// TODO: update seek position and recalculate new seek cycles
 		seekCycles = m_driveEvent->GetRemainingCycles();
-	}
+
+	if ( !m_driveStatus.motorOn )
+		seekCycles += ( m_driveState == DriveState::StartingMotor ) ? m_driveEvent->GetRemainingCycles() : CpuCyclesPerSecond;
 
 	if ( !m_pendingSeek )
 		dbLogWarning( "CDRomDrive::BeginSeeking -- no seek location set" );
@@ -487,7 +503,9 @@ void CDRomDrive::BeginSeeking() noexcept
 	m_driveStatus.play = false;
 	m_driveStatus.seek = true;
 
-	ScheduleDriveEvent( DriveState::Seeking, GetSeekCycles() );
+	m_currentSectorHeaders.reset();
+
+	ScheduleDriveEvent( DriveState::Seeking, seekCycles );
 
 	dbAssert( m_cdrom );
 	m_cdrom->Seek( m_seekLocation.GetLogicalSector() );
@@ -556,6 +574,8 @@ void CDRomDrive::BeginPlaying( uint8_t track ) noexcept
 	ClearSectorBuffers();
 	m_readSectorBuffer = 0;
 	m_writeSectorBuffer = 0;
+
+	m_currentSectorHeaders.reset();
 
 	ScheduleDriveEvent( DriveState::Playing, GetReadCycles() );
 }
@@ -738,6 +758,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// Aborts Reading and Playing, the motor is kept spinning, and the drive head maintains the current location within reasonable error
 			dbLog( "CDRomDrive::ExecuteCommand -- pause" );
 
+			// send first response before clearing status bits
 			SendResponse();
 
 			m_driveState = DriveState::Idle;
@@ -902,23 +923,23 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// decode only Subchannel position data( but no header / subheader data ), accordingly GetlocL won't work during seek (however, GetlocP does work during Seek).
 			dbLog( "CDRomDrive::GetLocL" );
 
-			if ( !CanReadDisk() || IsSeeking() )
+			if ( !m_currentSectorHeaders.has_value() )
 			{
 				SendError( ErrorCode::CannotRespondYet );
 			}
 			else
 			{
-				// return 4 byte sector header
-				m_responseBuffer.Push( BinaryToBCD( m_seekLocation.minute ) );
-				m_responseBuffer.Push( BinaryToBCD( m_seekLocation.second ) );
-				m_responseBuffer.Push( BinaryToBCD( m_seekLocation.sector ) );
-				m_responseBuffer.Push( 0 ); // mode?
+				auto& header = m_currentSectorHeaders->header;
+				m_responseBuffer.Push( header.minute );
+				m_responseBuffer.Push( header.second );
+				m_responseBuffer.Push( header.sector );
+				m_responseBuffer.Push( header.mode );
 
-				// return 4 byte subheader of the current sector
-				m_responseBuffer.Push( m_xaFile );
-				m_responseBuffer.Push( m_xaChannel );
-				m_responseBuffer.Push( 0 ); // sm?
-				m_responseBuffer.Push( 0 ); // ci?
+				auto& subHeader = m_currentSectorHeaders->subHeader;
+				m_responseBuffer.Push( subHeader.file );
+				m_responseBuffer.Push( subHeader.channel );
+				m_responseBuffer.Push( subHeader.subMode.value );
+				m_responseBuffer.Push( subHeader.codingInfo.value );
 
 				m_interruptFlags = InterruptResponse::First;
 			}
@@ -1229,9 +1250,10 @@ void CDRomDrive::ExecuteDriveState() noexcept
 		{
 			dbLog( "CDRomDrive::ExecuteDriveState -- seek complete" );
 
-			// TODO: check if seek was successful
+			// TODO: process sector header
 
 			m_driveStatus.seek = false;
+			m_driveStatus.motorOn = true;
 
 			if ( m_pendingRead )
 			{
@@ -1254,8 +1276,6 @@ void CDRomDrive::ExecuteDriveState() noexcept
 		case DriveState::Playing:
 		{
 			dbLog( "CDRomDrive::ExecuteDriveState -- read complete" );
-
-			m_driveStatus.read = false;
 
 			ScheduleDriveEvent( state, GetReadCycles() );
 
@@ -1286,6 +1306,8 @@ void CDRomDrive::ExecuteDriveState() noexcept
 				}
 				break;
 			}
+
+			m_currentSectorHeaders = SectorHeaders{ sector.header, sector.mode2.subHeader };
 
 			if ( ( sector.header.mode == 2 ) &&
 				m_mode.xaadpcm &&
@@ -1325,8 +1347,7 @@ void CDRomDrive::ExecuteDriveState() noexcept
 					case 2:		readSectorData( sector.mode2.form1.data.data() );	break;
 					case 3:		readSectorData( sector.mode2.form2.data.data() );	break;
 
-					default:
-						dbBreak();
+					default:	dbBreak();											break;
 				}
 				buffer.size = CDRom::DataBytesPerSector;
 			}
