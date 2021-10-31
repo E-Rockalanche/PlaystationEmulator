@@ -253,6 +253,7 @@
     <ClInclude Include="inc\PlaystationEmulator\SPU.h" />
     <ClInclude Include="inc\PlaystationEmulator\Timers.h" />
     <ClInclude Include="inc\PlaystationEmulator\Defs.h" />
+    <ClInclude Include="inc\PlaystationEmulator\VRamCopyShader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\PlaystationEmulator\Playstation.cpp" />
