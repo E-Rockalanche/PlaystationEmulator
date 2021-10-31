@@ -87,13 +87,12 @@ private:
 		{
 			dbExpects( index < 32 );
 
-			// TODO: Why did I do it this way? I should be able to just set the register and clear the load delay if it's the same index
-
-			// update register early so we can overwrite any delayed load
-			m_registers[ m_loadDelay.index ] = m_loadDelay.value;
+			m_registers[ index ] = value;
 			m_registers[ Zero ] = 0;
 
-			m_loadDelay = { index, value };
+			// overwrite load delay if for the same register
+			if ( m_loadDelay.index == index )
+				m_loadDelay.index = 0;
 		}
 
 		// emulates delayed load

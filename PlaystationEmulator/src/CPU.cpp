@@ -466,9 +466,10 @@ inline void MipsR3000Cpu::BranchGreaterEqualZero( Instruction instr ) noexcept
 
 inline void MipsR3000Cpu::BranchGreaterEqualZeroAndLink( Instruction instr ) noexcept
 {
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) >= 0, instr.offset() );
+
 	// store return address after delay slot
 	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
-	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) >= 0, instr.offset() );
 }
 
 void MipsR3000Cpu::BranchGreaterThanZero( Instruction instr ) noexcept
@@ -490,9 +491,10 @@ inline void MipsR3000Cpu::BranchLessThanZeroAndLink( Instruction instr ) noexcep
 {
 	// R31 should not be used as the branch address
 
+	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) < 0, instr.offset() );
+
 	// store return address after delay slot
 	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
-	BranchImp( static_cast<int32_t>( m_registers[ instr.rs() ] ) < 0, instr.offset() );
 }
 
 void MipsR3000Cpu::BranchNotEqual( Instruction instr ) noexcept
@@ -594,10 +596,10 @@ void MipsR3000Cpu::Jump( Instruction instr ) noexcept
 
 void MipsR3000Cpu::JumpAndLink( Instruction instr ) noexcept
 {
+	JumpImp( instr.target() );
 	// store return address after delay slot
 	// PC is already after delay slot
 	m_registers.Set( Registers::ReturnAddress, m_currentPC + 8 );
-	JumpImp( instr.target() );
 }
 
 void MipsR3000Cpu::JumpAndLinkRegister( Instruction instr ) noexcept
@@ -605,8 +607,8 @@ void MipsR3000Cpu::JumpAndLinkRegister( Instruction instr ) noexcept
 	// store return address after delay slot
 	// PC is already after delay slot
 	m_inBranch = true;
-	m_registers.Set( instr.rd(), m_currentPC + 8 );
 	m_nextPC = m_registers[ instr.rs() ];
+	m_registers.Set( instr.rd(), m_currentPC + 8 );
 
 	CheckProgramCounterAlignment();
 }
