@@ -677,8 +677,8 @@ void MipsR3000Cpu::LoadWordLeft( Instruction instr ) noexcept
 		uint8_t regBytes[ 4 ];
 	};
 
-	if ( m_registers.GetOutputIndex() == instr.rt() )
-		reg = m_registers.GetOutputValue();
+	if ( m_registers.GetLoadDelayIndex() == instr.rt() )
+		reg = m_registers.GetLoadDelayValue();
 	else
 		reg = m_registers[ instr.rt() ];
 
@@ -704,8 +704,8 @@ void MipsR3000Cpu::LoadWordRight( Instruction instr ) noexcept
 		uint8_t regBytes[ 4 ];
 	};
 
-	if ( m_registers.GetOutputIndex() == instr.rt() )
-		reg = m_registers.GetOutputValue();
+	if ( m_registers.GetLoadDelayIndex() == instr.rt() )
+		reg = m_registers.GetLoadDelayValue();
 	else
 		reg = m_registers[ instr.rt() ];
 

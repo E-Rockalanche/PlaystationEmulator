@@ -79,7 +79,7 @@ private:
 
 		inline uint32_t operator[]( uint32_t index ) const noexcept
 		{
-			return m_input[ index ];
+			return m_registers[ index ];
 		}
 
 		// immediately updates register
@@ -87,63 +87,72 @@ private:
 		{
 			dbExpects( index < 32 );
 
-			// update input early so we can overwrite any delayed load
-			m_input[ m_output.index ] = m_output.value;
-			m_input[ Zero ] = 0;
+			// TODO: Why did I do it this way? I should be able to just set the register and clear the load delay if it's the same index
 
-			m_output = { index, value };
+			// update register early so we can overwrite any delayed load
+			m_registers[ m_loadDelay.index ] = m_loadDelay.value;
+			m_registers[ Zero ] = 0;
+
+			m_loadDelay = { index, value };
 		}
 
 		// emulates delayed load
 		inline void Load( uint32_t index, uint32_t value ) noexcept
 		{
 			dbExpects( index < 32 );
-			dbExpects( m_delayedLoad.index == 0 && m_delayedLoad.value == 0 );
+			dbExpects( m_newLoadDelay.index == 0 );
+			if ( index != 0 )
+			{
+				m_newLoadDelay.index = index;
+				m_newLoadDelay.value = value;
 
-			m_delayedLoad = { index, value };
-
-			// loading into the same register twice in a row drops the first one
-			if ( m_output.index == index )
-				m_output = { 0, 0 };
+				// loading into the same register twice in a row drops the first one
+				if ( m_loadDelay.index == index )
+					m_loadDelay.index = 0;
+			}
 		}
 
 		void Reset() noexcept
 		{
-			m_input.fill( 0 );
-			m_output = { 0, 0 };
-			m_delayedLoad = { 0, 0 };
+			m_registers.fill( 0 );
+			m_loadDelay = { 0, 0 };
+			m_newLoadDelay = { 0, 0 };
 		}
 
 		inline void Update() noexcept
 		{
-			m_input[ m_output.index ] = m_output.value;
-			m_input[ Zero ] = 0; // zero register is always 0
-			m_output = m_delayedLoad;
-			m_delayedLoad = { 0, 0 };
+			if ( m_loadDelay.index != 0 )
+				m_registers[ m_loadDelay.index ] = m_loadDelay.value;
+
+			m_loadDelay = m_newLoadDelay;
+			m_newLoadDelay.index = 0;
 		}
 
 		inline void Flush() noexcept
 		{
-			m_input[ m_output.index ] = m_output.value;
-			m_input[ Zero ] = 0; // zero register is always 0
-			m_delayedLoad = { 0, 0 };
+			if ( m_loadDelay.index != 0 )
+				m_registers[ m_loadDelay.index ] = m_loadDelay.value;
+
+			m_newLoadDelay.index = 0;
 		}
 
 		// used by LWL and LWR to emulate special hardware that allows for both instructions to be used without a NOP inbetween
-		uint32_t GetOutputIndex() const noexcept { return m_output.index; }
-		uint32_t GetOutputValue() const noexcept { return m_output.value; }
+		uint32_t GetLoadDelayIndex() const noexcept { return m_loadDelay.index; }
+		uint32_t GetLoadDelayValue() const noexcept { return m_loadDelay.value; }
 
 	private:
-		struct DelayedLoad
+		struct LoadDelay
 		{
 			uint32_t index = 0;
 			uint32_t value = 0;
 		};
 
 	private:
-		std::array<uint32_t, 32> m_input{}; // current register values
-		DelayedLoad m_output; // new register value to update after instruction
-		DelayedLoad m_delayedLoad; // delayed load which will update register after next instruction
+		std::array<uint32_t, 32>	m_registers{};
+		//								^
+		LoadDelay					m_loadDelay;
+		//								^
+		LoadDelay					m_newLoadDelay;
 	};
 
 	class InstructionCache
