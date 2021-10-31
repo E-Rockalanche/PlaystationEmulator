@@ -87,10 +87,6 @@ private:
 		{
 			dbExpects( index < 32 );
 
-			// DEBUG
-			// dbAssert( value != 0xbfc02200 );
-			dbAssert( value != 0x3c03a001 );
-
 			// update input early so we can overwrite any delayed load
 			m_input[ m_output.index ] = m_output.value;
 			m_input[ Zero ] = 0;
@@ -103,10 +99,6 @@ private:
 		{
 			dbExpects( index < 32 );
 			dbExpects( m_delayedLoad.index == 0 && m_delayedLoad.value == 0 );
-
-			// DEBUG
-			// dbAssert( value != 0xbfc02200 );
-			dbAssert( value != 0x3c03a001 );
 
 			m_delayedLoad = { index, value };
 
