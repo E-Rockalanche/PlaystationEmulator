@@ -230,9 +230,11 @@
     <ClInclude Include="inc\stdx\log.h" />
     <ClInclude Include="inc\stdx\scope.h" />
     <ClInclude Include="inc\stdx\string.h" />
+    <ClInclude Include="inc\System\CommandLine.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp" />
+    <ClCompile Include="src\System\CommandLine.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -22,7 +22,7 @@ namespace PSX
 Playstation::Playstation() = default;
 Playstation::~Playstation() = default;
 
-bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
+bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 {
 	m_renderer = std::make_unique<Renderer>();
 	if ( !m_renderer->Initialize( window ) )
@@ -34,7 +34,7 @@ bool Playstation::Initialize( SDL_Window* window, const char* biosFilename )
 	m_bios = std::make_unique<Bios>();
 	if ( !LoadBios( biosFilename, *m_bios ) )
 	{
-		LogError( "Failed to load BIOS [%s]", biosFilename );
+		LogError( "Failed to load BIOS [%s]", biosFilename.c_str() );
 		return false;
 	}
 
@@ -95,38 +95,46 @@ void Playstation::RunFrame()
 {
 	static constexpr uint32_t HookAddress = 0x80030000;
 
-	while ( !m_gpu->GetDisplayFrame() )
+	if ( m_exeFilename.empty() )
 	{
-		if ( m_exeFilename && m_cpu->GetPC() == HookAddress )
+		while ( !m_gpu->GetDisplayFrame() )
+			m_cpu->Tick();
+	}
+	else
+	{
+		while ( !m_gpu->GetDisplayFrame() )
 		{
-			LoadExecutable( m_exeFilename, *m_cpu, *m_ram );
-			m_exeFilename = nullptr;
-		}
+			if ( !m_exeFilename.empty() && m_cpu->GetPC() == HookAddress )
+			{
+				LoadExecutable( m_exeFilename, *m_cpu, *m_ram );
+				m_exeFilename.clear();
+			}
 
-		m_cpu->Tick();
+			m_cpu->Tick();
+		}
 	}
 
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
 }
 
-bool Playstation::LoadRom( const char* filename )
+bool Playstation::LoadRom( const fs::path& filename )
 {
 	auto cdrom = std::make_unique<PSX::CDRom>();
 	if ( cdrom->Open( filename ) )
 	{
-		Log( "Playstation::LoadRom -- loaded %s", filename );
+		Log( "Playstation::LoadRom -- loaded %s", filename.c_str() );
 		m_cdromDrive->SetCDRom( std::move( cdrom ) );
 		return true;
 	}
 	else
 	{
-		Log( "Playstation::LoadRom -- failed to load %s", filename );
+		Log( "Playstation::LoadRom -- failed to load %s", filename.c_str() );
 		return false;
 	}
 }
 
-void Playstation::HookExe( const char* filename )
+void Playstation::HookExe( const fs::path& filename )
 {
 	m_exeFilename = filename;
 }

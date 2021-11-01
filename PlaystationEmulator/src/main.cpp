@@ -6,6 +6,8 @@
 
 #include <Render/Error.h>
 
+#include <System/CommandLine.h>
+
 #include <SDL.h>
 #include <glad/glad.h>
 
@@ -26,7 +28,11 @@ void PrintSdlError( const char* message )
 
 int main( int argc, char** argv )
 {
-	const std::string_view filename = ( argc >= 2 ) ? argv[ 1 ] : "";
+	CommandLine::Initialize( argc, argv );
+
+	const auto romFilename = CommandLine::Get().FindOption( "rom" );
+	const auto exeFilename = CommandLine::Get().FindOption( "exe" );
+	const std::string_view biosFilename = CommandLine::Get().GetOption( "bios", "bios.bin" );
 
 	dbLog( "initializing SDL" );
 	if ( SDL_Init( SDL_INIT_VIDEO ) < 0 )
@@ -73,7 +79,7 @@ int main( int argc, char** argv )
 	dbCheckRenderErrors();
 
 	auto playstationCore = std::make_unique<PSX::Playstation>();
-	if ( !playstationCore->Initialize( window, "bios.bin" ) )
+	if ( !playstationCore->Initialize( window, biosFilename ) )
 		return 1;
 
 	// controller mapping
@@ -98,16 +104,13 @@ int main( int argc, char** argv )
 		{ SDLK_f, PSX::Button::R2 },
 	};
 
-	if ( stdx::ends_with( filename, ".bin" ) )
+	if ( romFilename.has_value() && playstationCore->LoadRom( *romFilename ) )
+		windowTitle = *romFilename;
+
+	if ( exeFilename.has_value() )
 	{
-		if ( playstationCore->LoadRom( filename.data() ) )
-			windowTitle = filename;
-	}
-	else if ( stdx::ends_with( filename, ".exe" ) )
-	{
-		playstationCore->HookExe( filename.data() );
-		playstationCore->LoadRom( "roms/CrashBandicoot.bin" ); // for cdrom testing
-		windowTitle = filename;
+		playstationCore->HookExe( *exeFilename );
+		windowTitle = *exeFilename;
 	}
 
 	playstationCore->Reset();

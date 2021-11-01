@@ -4,7 +4,10 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
+
+namespace fs = std::filesystem;
 
 namespace PSX
 {
@@ -175,7 +178,7 @@ public:
 	};
 
 public:
-	bool Open( const char* filename )
+	bool Open( const fs::path& filename )
 	{
 		m_file.open( filename, std::ios::binary );
 		return m_file.is_open();

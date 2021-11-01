@@ -2,6 +2,10 @@
 
 #include "Memory.h"
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 namespace PSX
 {
 
@@ -9,7 +13,7 @@ constexpr uint32_t BiosSize = 512 * 1024;
 
 using Bios = Memory<BiosSize>;
 
-bool LoadBios( const char* filename, Bios& bios );
+bool LoadBios( const fs::path& filename, Bios& bios );
 
 void LogKernalCallA( uint32_t call, uint32_t pc );
 void LogKernalCallB( uint32_t call, uint32_t pc );

@@ -13,7 +13,7 @@ public:
 	Playstation();
 	~Playstation();
 
-	bool Initialize( SDL_Window* window, const char* biosFilename );
+	bool Initialize( SDL_Window* window, const fs::path& biosFilename );
 
 	void Reset();
 
@@ -21,9 +21,9 @@ public:
 
 	void RunFrame();
 
-	bool LoadRom( const char* filename );
+	bool LoadRom( const fs::path& filename );
 
-	void HookExe( const char* filename );
+	void HookExe( const fs::path& filename );
 
 	float GetRefreshRate() const;
 
@@ -64,7 +64,7 @@ private:
 	std::unique_ptr<Spu> m_spu;
 	std::unique_ptr<Timers> m_timers;
 
-	const char* m_exeFilename = nullptr;
+	fs::path m_exeFilename;
 };
 
 }

@@ -8,7 +8,7 @@
 namespace PSX
 {
 
-bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram )
+bool LoadExecutable( const fs::path& filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram )
 {
 	std::ifstream fin( filename, std::ios::binary );
 	if ( !fin.is_open() )

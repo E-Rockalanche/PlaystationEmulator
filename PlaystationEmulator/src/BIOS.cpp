@@ -8,7 +8,7 @@
 namespace PSX
 {
 
-bool LoadBios( const char* filename, Bios& bios )
+bool LoadBios( const fs::path& filename, Bios& bios )
 {
 	std::ifstream fin( filename, std::ios::binary );
 	if ( !fin.is_open() )

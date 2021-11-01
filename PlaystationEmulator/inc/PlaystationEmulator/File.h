@@ -4,7 +4,10 @@
 #include "RAM.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <string_view>
+
+namespace fs = std::filesystem;
 
 namespace PSX
 {
@@ -37,6 +40,6 @@ struct ExeHeader
 };
 static_assert( sizeof( ExeHeader ) == 0x800 );
 
-bool LoadExecutable( const char* filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram );
+bool LoadExecutable( const fs::path& filename, PSX::MipsR3000Cpu& cpu, PSX::Ram& ram );
 
 }
