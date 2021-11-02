@@ -131,6 +131,7 @@
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -242,6 +243,7 @@
     <ClInclude Include="inc\PlaystationEmulator\InterruptControl.h" />
     <ClInclude Include="inc\PlaystationEmulator\MacroblockDecoder.h" />
     <ClInclude Include="inc\PlaystationEmulator\Memory.h" />
+    <ClInclude Include="inc\PlaystationEmulator\MemoryCard.h" />
     <ClInclude Include="inc\PlaystationEmulator\MemoryControl.h" />
     <ClInclude Include="inc\PlaystationEmulator\MemoryMap.h" />
     <ClInclude Include="inc\PlaystationEmulator\ControllerPorts.h" />
@@ -271,6 +273,7 @@
     <ClCompile Include="src\Instruction.cpp" />
     <ClCompile Include="src\MacroblockDecoder.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\MemoryCard.cpp" />
     <ClCompile Include="src\MemoryControl.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
     <ClCompile Include="src\SPU.cpp" />

@@ -3,6 +3,7 @@
 #include "Controller.h"
 #include "EventManager.h"
 #include "InterruptControl.h"
+#include "MemoryCard.h"
 
 namespace PSX
 {
@@ -32,9 +33,14 @@ void ControllerPorts::Reset()
 	m_rxBuffer = 0;
 	m_rxBufferFull = false;
 
-	for ( auto* controller : m_controllers )
-		if ( controller )
-			controller->Reset();
+	for ( size_t i = 0; i < 2; ++i )
+	{
+		if ( m_controllers[ i ] )
+			m_controllers[ i ]->Reset();
+
+		if ( m_memCards[ i ] )
+			m_memCards[ i ]->Reset();
+	}
 
 	UpdateStatus();
 }
@@ -104,11 +110,15 @@ void ControllerPorts::WriteControl( uint16_t value ) noexcept
 	if ( !m_control.selectLow )
 	{
 		m_currentDevice = CurrentDevice::None;
-		for ( auto* controller : m_controllers )
-			if ( controller )
-				controller->Reset();
 
-		// TODO: reset memory card transfer state
+		for ( size_t i = 0; i < 2; ++i )
+		{
+			if ( m_controllers[ i ] )
+				m_controllers[ i ]->ResetTransfer();
+
+			if ( m_memCards[ i ] )
+				m_memCards[ i ]->ResetTransfer();
+		}
 	}
 
 	if ( m_control.selectLow && m_control.txEnable )
@@ -166,6 +176,7 @@ void ControllerPorts::DoTransfer()
 	bool acked = false;
 
 	Controller* controller = m_controllers[ m_control.desiredSlotNumber ];
+	MemoryCard* memCard = m_memCards[ m_control.desiredSlotNumber ];
 
 	switch ( m_currentDevice )
 	{
@@ -174,6 +185,11 @@ void ControllerPorts::DoTransfer()
 			if ( controller && controller->Communicate( m_tranferringValue, output ) )
 			{
 				m_currentDevice = CurrentDevice::Controller;
+				acked = true;
+			}
+			else if ( memCard && memCard->Communicate( m_tranferringValue, output ) )
+			{
+				m_currentDevice = CurrentDevice::MemoryCard;
 				acked = true;
 			}
 			break;
@@ -191,8 +207,10 @@ void ControllerPorts::DoTransfer()
 
 		case CurrentDevice::MemoryCard:
 		{
-			// TODO
-			break;
+			if ( memCard && memCard->Communicate( m_tranferringValue, output ) )
+				acked = true;
+			else
+				m_currentDevice = CurrentDevice::None;
 		}
 	}
 
@@ -202,7 +220,8 @@ void ControllerPorts::DoTransfer()
 	if ( acked )
 	{
 		m_state = State::AckPending;
-		m_communicateEvent->Schedule( ControllerAckCycles ); // TODO: memory card ack cycles
+		const cycles_t ackCycles = ( m_currentDevice == CurrentDevice::Controller ) ? ControllerAckCycles : MemoryCardAckCycles;
+		m_communicateEvent->Schedule( ackCycles );
 	}
 	else
 	{

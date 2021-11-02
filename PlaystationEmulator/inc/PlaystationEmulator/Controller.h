@@ -52,7 +52,7 @@ class Controller
 public:
 	static constexpr ControllerID ID = ControllerID::DigitalPad;
 
-	bool Communicate( uint8_t in, uint8_t& out );
+	bool Communicate( uint8_t input, uint8_t& output );
 
 	void Press( Button button )
 	{
@@ -66,6 +66,11 @@ public:
 
 	void Reset()
 	{
+		ResetTransfer();
+	}
+
+	void ResetTransfer()
+	{
 		m_state = State::Idle;
 	}
 
@@ -78,6 +83,8 @@ private:
 		ButtonsLow,
 		ButtonsHigh
 	};
+
+	static constexpr uint8_t HighZ = 0xff;
 
 private:
 

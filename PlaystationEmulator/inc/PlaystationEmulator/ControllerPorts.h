@@ -146,6 +146,11 @@ public:
 		m_controllers[ slot ] = controller;
 	}
 
+	void SetMemoryCard( size_t slot, MemoryCard* memCard )
+	{
+		m_memCards[ slot ] = memCard;
+	}
+
 private:
 	enum class State
 	{
@@ -162,11 +167,10 @@ private:
 		MemoryCard,
 	};
 
-	// values copied from duckstation
-	static constexpr uint32_t ControllerAckCycles = 450;
+	static constexpr uint32_t ControllerAckCycles = 338;
 	static constexpr uint32_t MemoryCardAckCycles = 170;
 	
-	static constexpr uint32_t AckLowCycles = 100; // from nocash
+	static constexpr uint32_t AckLowCycles = 100; // nocash docs
 
 private:
 	void UpdateStatus() noexcept;
@@ -177,7 +181,7 @@ private:
 
 	uint32_t GetTransferCycles() const noexcept
 	{
-		return m_baudrateReloadValue * 8; // ignore character length
+		return m_baudrateReloadValue * 8; // ignore reload factor and character length
 	}
 
 	void DoTransfer();
@@ -208,6 +212,7 @@ private:
 	uint8_t m_tranferringValue = 0;
 
 	std::array<Controller*, 2> m_controllers{};
+	std::array<MemoryCard*, 2> m_memCards{};
 };
 
 }

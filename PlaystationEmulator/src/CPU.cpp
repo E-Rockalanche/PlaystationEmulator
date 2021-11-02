@@ -88,15 +88,6 @@ void MipsR3000Cpu::InterceptBios( uint32_t pc )
 		}
 	};
 
-	auto FileWrite = [&]
-	{
-		// const auto fd = m_registers[ Registers::Arg0 ];
-		const char* str = (const char*)ToRealAddress( m_registers[ Registers::Arg1 ] );
-		const auto length = m_registers[ Registers::Arg2 ];
-		for ( uint32_t i = 0; i < length; ++i )
-			LogCharacter( str[ i ] );
-	};
-
 	auto FilePutC = [&]
 	{
 		const auto c = static_cast<char>( m_registers[ Registers::Arg0 ] );
@@ -122,7 +113,6 @@ void MipsR3000Cpu::InterceptBios( uint32_t pc )
 	{
 		switch ( call )
 		{
-			case 0x03:	FileWrite();	break;
 			case 0x09:	FilePutC();		break;
 			case 0x3c:	PutChar();		break;
 			case 0x3e:	PutS();			break;
@@ -132,7 +122,6 @@ void MipsR3000Cpu::InterceptBios( uint32_t pc )
 	{
 		switch ( call )
 		{
-			case 0x35:	FileWrite();	break;
 			case 0x3b:	FilePutC();		break;
 			case 0x3d:	PutChar();		break;
 			case 0x3f:	PutS();			break;

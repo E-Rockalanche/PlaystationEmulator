@@ -111,6 +111,9 @@
     <ClInclude Include="inc\PlaystationEmulator\VRamCopyShader.h">
       <Filter>inc\shaders</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationEmulator\MemoryCard.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">
@@ -168,6 +171,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\MacroblockDecoder.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\MemoryCard.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

@@ -9,7 +9,7 @@ bool Controller::Communicate( uint8_t input, uint8_t& output )
 	{
 		case State::Idle:
 		{
-			output = 0xff;
+			output = HighZ;
 			if ( input == 0x01 )
 			{
 				m_state = State::IdLow;
@@ -28,7 +28,7 @@ bool Controller::Communicate( uint8_t input, uint8_t& output )
 			}
 			else
 			{
-				output = 0xff;
+				output = HighZ;
 				return false;
 			}
 		}
@@ -53,11 +53,11 @@ bool Controller::Communicate( uint8_t input, uint8_t& output )
 			m_state = State::Idle;
 			return false;
 		}
-
-		default:
-			dbBreak();
-			return false;
 	}
+
+	dbBreak();
+	output = HighZ;
+	return false;
 }
 
 }

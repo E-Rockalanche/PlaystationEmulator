@@ -70,7 +70,7 @@ bool LoadExecutable( const fs::path& filename, PSX::MipsR3000Cpu& cpu, PSX::Ram&
 		cpu.DebugSetRegister( 30, header.stackPointerBase ); // TODO: is this right?
 	}
 
-	dbLog( "loaded %s", filename );
+	dbLog( "loaded %s", filename.c_str() );
 
 	return true;
 }

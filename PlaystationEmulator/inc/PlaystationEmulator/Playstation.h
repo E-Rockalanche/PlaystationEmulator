@@ -18,6 +18,7 @@ public:
 	void Reset();
 
 	void SetController( size_t slot, Controller* controller );
+	void SetMemoryCard( size_t slot, MemoryCard* memCard );
 
 	void RunFrame();
 

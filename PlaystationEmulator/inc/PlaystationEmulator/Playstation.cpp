@@ -91,6 +91,11 @@ void Playstation::SetController( size_t slot, Controller* controller )
 	m_controllerPorts->SetController( slot, controller );
 }
 
+void Playstation::SetMemoryCard( size_t slot, MemoryCard* memCard )
+{
+	m_controllerPorts->SetMemoryCard( slot, memCard );
+}
+
 void Playstation::RunFrame()
 {
 	static constexpr uint32_t HookAddress = 0x80030000;

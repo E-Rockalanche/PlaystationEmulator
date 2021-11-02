@@ -2,6 +2,7 @@
 #include "Controller.h"
 #include "EventManager.h"
 #include "GPU.h"
+#include "MemoryCard.h"
 #include "Renderer.h"
 
 #include <Render/Error.h>
@@ -32,6 +33,8 @@ int main( int argc, char** argv )
 
 	const auto romFilename = CommandLine::Get().FindOption( "rom" );
 	const auto exeFilename = CommandLine::Get().FindOption( "exe" );
+	const auto memCard1Filename = CommandLine::Get().FindOption( "memcard1" );
+	const auto memCard2Filename = CommandLine::Get().FindOption( "memcard2" );
 	const std::string_view biosFilename = CommandLine::Get().GetOption( "bios", "bios.bin" );
 
 	dbLog( "initializing SDL" );
@@ -112,6 +115,34 @@ int main( int argc, char** argv )
 		playstationCore->HookExe( *exeFilename );
 		windowTitle = *exeFilename;
 	}
+
+	// set memory cards
+
+	std::unique_ptr<PSX::MemoryCard> memCard1;
+	std::unique_ptr<PSX::MemoryCard> memCard2;
+
+	if ( memCard1Filename.has_value() )
+	{
+		memCard1 = PSX::MemoryCard::Load( *memCard1Filename );
+	}
+	else if ( romFilename.has_value() )
+	{
+		fs::path saveFilename{ *romFilename };
+		saveFilename.replace_extension( "save" );
+
+		// try to load existing memory card
+		memCard1 = PSX::MemoryCard::Load( saveFilename );
+
+		// create new memory card
+		if ( memCard1 == nullptr )
+			memCard1 = PSX::MemoryCard::Create( std::move( saveFilename ) );
+	}
+
+	if ( memCard2Filename.has_value() )
+		memCard2 = PSX::MemoryCard::Load( *memCard2Filename );
+
+	playstationCore->SetMemoryCard( 0, memCard1.get() );
+	playstationCore->SetMemoryCard( 1, memCard2.get() );
 
 	playstationCore->Reset();
 
@@ -231,6 +262,12 @@ int main( int argc, char** argv )
 		const float curFps = std::min<float>( 1000.0f / elapsed, refreshRate );
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
 	}
+
+	if ( memCard1 && memCard1->Written() )
+		memCard1->Save();
+
+	if ( memCard2 && memCard2->Written() )
+		memCard2->Save();
 
 	playstationCore.reset();
 
