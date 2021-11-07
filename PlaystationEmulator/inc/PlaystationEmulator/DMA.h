@@ -191,6 +191,8 @@ private:
 			m_tempBuffer = std::make_unique<uint32_t[]>( newSize );
 	}
 
+	void AddBulkCycles( cycles_t cycles );
+
 private:
 	Ram& m_ram;
 	Gpu& m_gpu;

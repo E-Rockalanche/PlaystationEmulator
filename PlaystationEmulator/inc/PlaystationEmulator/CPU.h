@@ -34,7 +34,7 @@ public:
 
 	void Reset();
 
-	void Tick() noexcept;
+	void RunUntilEvent() noexcept;
 
 	void DebugSetProgramCounter( uint32_t address )
 	{

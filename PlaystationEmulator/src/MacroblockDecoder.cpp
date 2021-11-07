@@ -215,8 +215,7 @@ void MacroblockDecoder::ProcessInput()
 				}
 				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
 				{
-					// didn't get enough data to decode all blocks
-					dbLogWarning( "MacroblockDecoder::ProcessInput -- Not enough data to process blocks" );
+					// didn't get enough data to decode all blocks. Probably because of dummy data at the end
 					m_currentBlock = 0;
 					m_currentK = 64;
 					m_state = State::Idle;

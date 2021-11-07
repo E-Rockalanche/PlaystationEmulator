@@ -105,7 +105,7 @@ void Playstation::RunFrame()
 	if ( m_exeFilename.empty() )
 	{
 		while ( !m_gpu->GetDisplayFrame() )
-			m_cpu->Tick();
+			m_cpu->RunUntilEvent();
 	}
 	else
 	{
@@ -117,7 +117,7 @@ void Playstation::RunFrame()
 				m_exeFilename.clear();
 			}
 
-			m_cpu->Tick();
+			m_cpu->RunUntilEvent();
 		}
 	}
 

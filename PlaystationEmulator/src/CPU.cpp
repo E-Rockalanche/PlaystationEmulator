@@ -29,41 +29,46 @@ void MipsR3000Cpu::Reset()
 	m_gte.Reset();
 }
 
-void MipsR3000Cpu::Tick() noexcept
+void MipsR3000Cpu::RunUntilEvent() noexcept
 {
-	// the MIPS cpu is pipelined. The next instruction is fetched while the current one executes
-	// this causes instructions after branches and jumps to always be executed
-
-	m_inDelaySlot = m_inBranch;
-	m_inBranch = false;
-
-	if ( m_cop0.ShouldTriggerInterrupt() )
+	while ( !m_eventManager.ReadyForNextEvent() )
 	{
-		// update current PC now so we can save the proper return address
+		// the MIPS cpu is pipelined. The next instruction is fetched while the current one executes
+		// this causes instructions after branches and jumps to always be executed
+
+		m_inDelaySlot = m_inBranch;
+		m_inBranch = false;
+
+		if ( m_cop0.ShouldTriggerInterrupt() )
+		{
+			// update current PC now so we can save the proper return address
+			m_currentPC = m_pc;
+			RaiseException( Cop0::ExceptionCode::Interrupt );
+		}
+
 		m_currentPC = m_pc;
-		RaiseException( Cop0::ExceptionCode::Interrupt );
+		m_pc = m_nextPC;
+		m_nextPC += 4;
+
+		const auto instruction = m_memoryMap.FetchInstruction( m_currentPC );
+		if ( instruction.has_value() )
+		{
+			InterceptBios( m_currentPC );
+
+			ExecuteInstruction( *instruction );
+
+			m_registers.Update();
+
+			// on average: 1 cycle to execute instruction, 1 cycle for memory load
+			m_eventManager.AddCycles( 1 ); // TODO: more accurate CPU timing
+		}
+		else
+		{
+			RaiseException( Cop0::ExceptionCode::AddressErrorLoad );
+		}
 	}
 
-	m_currentPC = m_pc;
-	m_pc = m_nextPC;
-	m_nextPC += 4;
-
-	const auto instruction = m_memoryMap.FetchInstruction( m_currentPC );
-	if ( instruction.has_value() )
-	{
-		InterceptBios( m_currentPC );
-
-		ExecuteInstruction( *instruction );
-
-		m_registers.Update();
-
-		// on average: 1 cycle to execute instruction, 1 cycle for memory load
-		m_eventManager.AddCycles( 1 ); // TODO: more accurate CPU timing
-	}
-	else
-	{
-		RaiseException( Cop0::ExceptionCode::AddressErrorLoad );
-	}
+	m_eventManager.UpdateNextEvent();
 }
 
 

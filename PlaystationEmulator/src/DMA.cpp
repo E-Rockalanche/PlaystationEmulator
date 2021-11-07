@@ -203,7 +203,7 @@ void Dma::StartDma( Channel channel )
 			else
 				TransferFromRam( channel, startAddress & DmaAddressMask, words, addressStep );
 
-			m_eventManager.AddCycles( GetCyclesForTransfer( words ) );
+			AddBulkCycles( GetCyclesForTransfer( words ) );
 			break;
 		}
 
@@ -224,7 +224,7 @@ void Dma::StartDma( Channel channel )
 
 				currentAddress += blockSize * addressStep;
 				--blocksRemaining;
-				m_eventManager.AddCycles( GetCyclesForTransfer( blockSize ) );
+				AddBulkCycles( GetCyclesForTransfer( blockSize ) );
 			}
 
 			state.SetBaseAddress( currentAddress );
@@ -267,7 +267,7 @@ void Dma::StartDma( Channel channel )
 			while ( currentAddress != LinkedListTerminator );
 
 			state.SetBaseAddress( LinkedListTerminator );
-			m_eventManager.AddCycles( GetCyclesForTransfer( totalWords ) );
+			AddBulkCycles( GetCyclesForTransfer( totalWords ) );
 			break;
 		}
 	}
@@ -428,6 +428,13 @@ void Dma::ClearOrderTable( uint32_t address, uint32_t wordCount )
 		address = nextAddress;
 	}
 	m_ram.Write<uint32_t>( address, LinkedListTerminator );
+}
+
+void Dma::AddBulkCycles( cycles_t cycles )
+{
+	m_eventManager.AddCycles( cycles );
+	if ( m_eventManager.ReadyForNextEvent() )
+		m_eventManager.UpdateNextEvent();
 }
 
 }
