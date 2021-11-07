@@ -39,6 +39,13 @@ class Renderer;
 class Spu;
 class Timers;
 
+template <size_t> class Memory;
+using Bios = Memory<512 * 1024>;
+using Ram = Memory<2 * 1024 * 1024>;
+using Scratchpad = Memory<1024>;
+
+struct Instruction;
+
 using EventHandle = std::unique_ptr<Event>;
 
 template <size_t N, typename To, typename From>

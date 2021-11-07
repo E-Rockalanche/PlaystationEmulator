@@ -9,6 +9,7 @@
 
 #include <array>
 #include <optional>
+#include <string>
 
 namespace PSX
 {
@@ -24,11 +25,8 @@ public:
 	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
 	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
 
-	MipsR3000Cpu( MemoryMap& memoryMap, Ram& ram, Bios& bios, Scratchpad& scratchpad, InterruptControl& interruptControl, EventManager& eventManager )
+	MipsR3000Cpu( MemoryMap& memoryMap, InterruptControl& interruptControl, EventManager& eventManager )
 		: m_memoryMap{ memoryMap }
-		, m_ram{ ram }
-		, m_bios{ bios }
-		, m_scratchpad{ scratchpad }
 		, m_interruptControl{ interruptControl }
 		, m_eventManager{ eventManager }
 		, m_cop0{ interruptControl }
@@ -154,52 +152,6 @@ private:
 		LoadDelay					m_newLoadDelay;
 	};
 
-	class InstructionCache
-	{
-	public:
-		void Reset()
-		{
-			for ( auto& flags : m_flags )
-				flags.valid = 0;
-		}
-
-		// return true if instruction at address is cached
-		// simulates pre-fetching of next words from RAM by updating cache flags
-		bool CheckAndPrefetch( uint32_t address ) noexcept
-		{
-			dbExpects( address % 4 == 0 ); // instructions must be word-aligned
-
-			const uint32_t index = ( address >> 2 ) & 0x3u;
-			const uint32_t line = ( address >> 4 ) & 0xffu;
-			const uint32_t tag = ( address >> 12 );
-
-			Flags& flags = m_flags[ line ];
-
-			const bool inCache = ( flags.tag == tag ) && ( flags.valid & ( 1u << index ) );
-
-			// pre-fetch next instructions (CPU probably doesn't do this if address was cached)
-			flags.tag = tag;
-			flags.valid = ( 0x3u << index ) & 0x3u;
-
-			return inCache;
-		}
-
-		void Write( uint32_t index, uint32_t )
-		{
-			m_flags[ index ].valid = 0;
-		}
-
-	private:
-		struct Flags
-		{
-			Flags() : tag{ 0 }, valid{ 0 } {}
-
-			uint32_t tag : 20;
-			uint32_t valid : 4;
-		};
-		std::array<Flags, 256> m_flags;
-	};
-
 private:
 	// skip instruction in branch delay slot and flush pipeline
 	void SetProgramCounter( uint32_t address )
@@ -214,10 +166,6 @@ private:
 	}
 
 	void InterceptBios( uint32_t pc );
-
-	const uint8_t* ToRealAddress( uint32_t address ) const noexcept;
-
-	Instruction FetchInstruction( uint32_t address ) noexcept;
 
 	void ExecuteInstruction( Instruction instr ) noexcept;
 
@@ -461,9 +409,6 @@ private:
 
 private:
 	MemoryMap& m_memoryMap;
-	Ram& m_ram;
-	Bios& m_bios;
-	Scratchpad& m_scratchpad;
 	InterruptControl& m_interruptControl;
 	EventManager& m_eventManager;
 
@@ -481,8 +426,6 @@ private:
 
 	uint32_t m_hi = 0;
 	uint32_t m_lo = 0;
-
-	InstructionCache m_instructionCache;
 
 	std::string m_consoleOutput; // flushes on newline character
 };
@@ -541,7 +484,7 @@ void MipsR3000Cpu::StoreImp( uint32_t address, T value ) noexcept
 		else
 		{
 			// dbLog( "write cache [%X <= %X]", address, value );
-			m_instructionCache.Write( address / 16, value );
+			m_memoryMap.WriteICache( address, value );
 		}
 	}
 	else

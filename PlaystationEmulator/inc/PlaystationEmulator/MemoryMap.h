@@ -1,17 +1,6 @@
 #pragma once
 
-#include "BIOS.h"
-#include "CDRomDrive.h"
-#include "ControllerPorts.h"
-#include "DMA.h"
-#include "DualSerialPort.h"
-#include "InterruptControl.h"
-#include "GPU.h"
-#include "MacroblockDecoder.h"
-#include "MemoryControl.h"
-#include "RAM.h"
-#include "SPU.h"
-#include "Timers.h"
+#include "Defs.h"
 
 #include <stdx/assert.h>
 
@@ -103,24 +92,43 @@ public:
 		, m_timers{ timers }
 	{}
 
+	void Reset()
+	{
+		m_icacheFlags.fill( ICacheFlags() );
+	}
+
 	template <typename T>
 	T Read( uint32_t address ) const noexcept
 	{
-		T value;
-		Access<T, true>( address, value );
-		return value;
+		using UT = std::make_unsigned_t<T>;
+		UT value;
+		Access<UT, true>( address, value );
+		return static_cast<T>( value );
 	}
 
 	template <typename T>
 	void Write( uint32_t address, T value ) const noexcept
 	{
-		Access<T, false>( address, value );
+		using UT = std::make_unsigned_t<T>;
+		Access<UT, false>( address, *reinterpret_cast<UT*>( &value ) );
 	}
 
 	void SetDualSerialPort( DualSerialPort* dualSerialPort ) noexcept
 	{
 		m_dualSerialPort = dualSerialPort;
 	}
+
+	std::optional<Instruction> FetchInstruction( uint32_t address ) noexcept;
+
+	void WriteICache( uint32_t address, uint32_t ) noexcept
+	{
+		dbExpects( address / 16 < m_icacheFlags.size() );
+		m_icacheFlags[ address / 16 ].valid = 0;
+		// TODO: write to icache
+	}
+
+	// convert PSX address to physical address
+	const uint8_t* GetRealAddress( uint32_t address ) const noexcept;
 
 private:
 	// masks help strip region bits from virtual address to make a physical address
@@ -135,6 +143,14 @@ private:
 		0x1fffffff,
 		// KSEG2
 		0xffffffff, 0xffffffff
+	};
+
+	struct ICacheFlags
+	{
+		ICacheFlags() : tag{ 0 }, valid{ 0 } {}
+
+		uint32_t tag : 20;
+		uint32_t valid : 4;
 	};
 
 private:
@@ -186,13 +202,9 @@ private:
 	template <typename T, bool Read>
 	void AccessSpu( uint32_t offset, T& value ) const noexcept;
 
-	static inline constexpr bool Within( uint32_t address, uint32_t start, uint32_t size ) noexcept
-	{
-		return ( start <= address && address < start + size );
-	}
+	bool CheckAndPrefetchICache( uint32_t address ) noexcept;
 
 private:
-
 	Bios& m_bios;
 	CDRomDrive& m_cdRomDrive;
 	ControllerPorts& m_controllerPorts;
@@ -207,206 +219,8 @@ private:
 	Timers& m_timers;
 
 	DualSerialPort* m_dualSerialPort = nullptr;
+
+	std::array<ICacheFlags, 256> m_icacheFlags;
 };
-
-template <typename T, bool Read>
-void MemoryMap::Access( uint32_t address, T& value ) const noexcept
-{
-	// upper 3 bits determine segment
-	// convert virtual address to physical address
-	address &= RegionMasks[ address >> 29 ];
-
-	if ( address <= RamMirrorSize ) // ram starts at 0
-	{
-		AccessMemory<T, Read>( m_ram, address & ( RamSize - 1 ), value );
-	}
-	else if ( Within( address, BiosStart, BiosSize ) )
-	{
-		// read only
-		if constexpr ( Read )
-			value = m_bios.Read<T>( address - BiosStart );
-	}
-	else if ( Within( address, ScratchpadStart, ScratchpadSize ) )
-	{
-		AccessMemory<T, Read>( m_scratchpad, address - ScratchpadStart, value );
-	}
-	else if ( Within( address, MemControlStart, MemControlSize ) )
-	{
-		AccessComponent32<T, Read>( m_memoryControl, address - MemControlStart, value );
-	}
-	else if ( Within( address, ControllerStart, ControllerSize ) )
-	{
-		AccessControllerPort<T, Read>( address - ControllerStart, value );
-	}
-	else if ( Within( address, MemControlRamStart, MemControlRamSize ) )
-	{
-		if constexpr ( Read )
-			value = ShiftValueForRead<T>( m_memoryControl.ReadRamSize(), address );
-		else
-			m_memoryControl.WriteRamSize( ShiftValueForWrite<uint32_t>( value, address ) );
-	}
-	else if ( Within( address, InterruptControlStart, InterruptControlSize ) )
-	{
-		AccessComponent32<T, Read>( m_interruptControl, address - InterruptControlStart, value );
-	}
-	else if ( Within( address, DmaStart, DmaSize ) )
-	{
-		AccessComponent32<T, Read>( m_dma, address - DmaStart, value );
-	}
-	else if ( Within( address, TimersStart, TimersSize ) )
-	{
-		AccessComponent32<T, Read>( m_timers, address - TimersStart, value );
-	}
-	else if ( Within( address, CdRomStart, CdRomSize ) )
-	{
-		if constexpr ( Read )
-		{
-			const uint32_t offset = address - CdRomStart;
-			if ( offset == 2 )
-			{
-				value = m_cdRomDrive.Read( 2 );
-				if constexpr ( sizeof( T ) >= 2 )
-					value |= static_cast<T>( m_cdRomDrive.Read( 2 ) << 8 );
-			}
-			else
-			{
-				value = m_cdRomDrive.Read( offset );
-			}
-		}
-		else
-		{
-			m_cdRomDrive.Write( address - CdRomStart, static_cast<uint8_t>( value ) );
-		}
-	}
-	else if ( Within( address, GpuStart, GpuSize ) )
-	{
-		AccessComponent32<T, Read>( m_gpu, address - GpuStart, value );
-	}
-	else if ( Within( address, MdecStart, MdecSize ) )
-	{
-		AccessComponent32<T, Read>( m_mdec, address - MdecStart, value );
-	}
-	else if ( Within( address, SpuStart, SpuSize ) )
-	{
-		AccessSpu<T, Read>( address - SpuStart, value );
-	}
-	else if ( Within( address, CacheControlStart, CacheControlSize ) )
-	{
-		if constexpr ( Read )
-			value = static_cast<T>( m_memoryControl.ReadCacheControl() );
-		else
-			m_memoryControl.WriteCacheControl( ShiftValueForWrite<uint32_t>( value, address ) );
-	}
-	else if ( Within( address, Expansion1Start, Expansion1Size ) )
-	{
-		// TODO
-		if constexpr ( Read )
-			value = T( -1 );
-	}
-	else if ( Within( address, Expansion2Start, Expansion2Size ) )
-	{
-		if constexpr ( Read )
-			value = m_dualSerialPort
-				? static_cast<T>( m_dualSerialPort->Read( address - Expansion2Start ) )
-				: T( -1 );
-		else if ( m_dualSerialPort )
-			m_dualSerialPort->Write( address - Expansion2Start, static_cast<uint8_t>( value ) );
-	}
-	else
-	{
-		if constexpr ( Read )
-		{
-			dbBreakMessage( "Unhandled memory read [%X]", address );
-			value = T( -1 );
-		}
-		else
-		{
-			dbBreakMessage( "Unhandled memory write [%X <= %X]", address, value );
-		}
-	}
-}
-
-template <typename T, bool Read>
-void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
-{
-	if constexpr ( Read )
-	{
-		switch ( offset / 2 )
-		{
-			// 32bit registers
-			case 0:
-			case 1:	value = static_cast<T>( m_controllerPorts.ReadData() );					break;
-			case 2:
-			case 3:	value = static_cast<T>( m_controllerPorts.ReadStatus() );				break;
-
-			// 16bit registers
-			case 4:	value = static_cast<T>( m_controllerPorts.ReadMode() );					break;
-			case 5:	value = static_cast<T>( m_controllerPorts.ReadControl() );				break;
-			case 6:	value = T( -1 );														break;
-			case 7:	value = static_cast<T>( m_controllerPorts.ReadBaudrateReloadValue() );	break;
-
-			default:
-				dbBreak();
-				value = static_cast<T>( -1 );
-				break;
-		}
-	}
-	else
-	{
-		switch ( offset / 2 )
-		{
-			// 32bit registers
-			case 0:
-			case 1:	m_controllerPorts.WriteData( ShiftValueForWrite<uint32_t>( value, offset ) );				break;
-			case 2:
-			case 3:																									break; // status is read-only
-
-			// 16bit registers
-			case 4:	m_controllerPorts.WriteMode( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
-			case 5:	m_controllerPorts.WriteControl( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
-			case 6:																									break;
-			case 7:	m_controllerPorts.WriteBaudrateReloadValue( ShiftValueForWrite<uint16_t>( value, offset ) );	break;
-
-			default:
-				dbBreak();
-				break;
-		}
-	}
-}
-
-template <typename T, bool Read>
-void MemoryMap::AccessSpu( uint32_t offset, T& value ) const noexcept
-{
-	dbExpects( offset % 2 == 0 );
-
-	if constexpr ( Read )
-	{
-		if constexpr ( sizeof( T ) == 4 )
-		{
-			const uint32_t low = m_spu.Read( offset );
-			const uint32_t high = m_spu.Read( offset + 2 );
-			value = static_cast<T>( low | ( high << 16 ) );
-		}
-		else
-		{
-			value = static_cast<T>( m_spu.Read( offset ) );
-		}
-	}
-	else
-	{
-		if constexpr ( sizeof( T ) == 4 )
-		{
-			m_spu.Write( offset, static_cast<uint16_t>( value ) );
-			m_spu.Write( offset + 2, static_cast<uint16_t>( value >> 16 ) );
-		}
-		else
-		{
-			m_spu.Write( offset, static_cast<uint16_t>( value ) );
-		}
-	}
-
-
-		
-}
 
 }

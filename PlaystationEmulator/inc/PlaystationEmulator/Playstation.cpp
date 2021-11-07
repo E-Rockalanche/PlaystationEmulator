@@ -7,11 +7,13 @@
 #include "ControllerPorts.h"
 #include "CPU.h"
 #include "DMA.h"
+#include "DualSerialPort.h"
 #include "EventManager.h"
 #include "File.h"
 #include "GPU.h"
 #include "MacroblockDecoder.h"
 #include "MemoryControl.h"
+#include "RAM.h"
 #include "Renderer.h"
 #include "SPU.h"
 #include "Timers.h"
@@ -58,7 +60,7 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 	m_memoryMap = std::make_unique<MemoryMap>( *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_memoryControl, *m_ram, *m_scratchpad, *m_spu, *m_timers );
 
-	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_ram, *m_bios, *m_scratchpad, *m_interruptControl, *m_eventManager );
+	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_interruptControl, *m_eventManager );
 
 	// resolve circular dependancy
 	m_timers->SetGpu( *m_gpu );

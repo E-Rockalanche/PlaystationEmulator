@@ -1,8 +1,9 @@
 #pragma once
 
-#include "BIOS.h"
 #include "Defs.h"
-#include "RAM.h"
+
+#include <filesystem>
+namespace fs = std::filesystem;
 
 namespace PSX
 {

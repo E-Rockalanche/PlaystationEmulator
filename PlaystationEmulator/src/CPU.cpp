@@ -1,5 +1,6 @@
 #include "CPU.h"
 
+#include "BIOS.h"
 #include "EventManager.h"
 #include "MemoryMap.h"
 
@@ -26,8 +27,6 @@ void MipsR3000Cpu::Reset()
 
 	m_cop0.Reset();
 	m_gte.Reset();
-
-	m_instructionCache.Reset();
 }
 
 void MipsR3000Cpu::Tick() noexcept
@@ -38,7 +37,7 @@ void MipsR3000Cpu::Tick() noexcept
 	m_inDelaySlot = m_inBranch;
 	m_inBranch = false;
 
-	if ( STDX_unlikely( m_cop0.ShouldTriggerInterrupt() ) )
+	if ( m_cop0.ShouldTriggerInterrupt() )
 	{
 		// update current PC now so we can save the proper return address
 		m_currentPC = m_pc;
@@ -49,16 +48,22 @@ void MipsR3000Cpu::Tick() noexcept
 	m_pc = m_nextPC;
 	m_nextPC += 4;
 
-	InterceptBios( m_currentPC );
+	const auto instruction = m_memoryMap.FetchInstruction( m_currentPC );
+	if ( instruction.has_value() )
+	{
+		InterceptBios( m_currentPC );
 
-	Instruction instruction = FetchInstruction( m_currentPC );
+		ExecuteInstruction( *instruction );
 
-	ExecuteInstruction( instruction );
+		m_registers.Update();
 
-	m_registers.Update();
-
-	// on average: 1 cycle to execute instruction, 1 cycle for memory load
-	m_eventManager.AddCycles( 1 ); // TODO: more accurate CPU timing
+		// on average: 1 cycle to execute instruction, 1 cycle for memory load
+		m_eventManager.AddCycles( 1 ); // TODO: more accurate CPU timing
+	}
+	else
+	{
+		RaiseException( Cop0::ExceptionCode::AddressErrorLoad );
+	}
 }
 
 
@@ -102,7 +107,7 @@ void MipsR3000Cpu::InterceptBios( uint32_t pc )
 
 	auto PutS = [&]
 	{
-		const char* str = (const char*)ToRealAddress( m_registers[ Registers::Arg0 ] );
+		const char* str = (const char*)m_memoryMap.GetRealAddress( m_registers[ Registers::Arg0 ] );
 		while ( *str != '\0' )
 			LogCharacter( *str++ );
 
@@ -127,47 +132,6 @@ void MipsR3000Cpu::InterceptBios( uint32_t pc )
 			case 0x3f:	PutS();			break;
 		}
 	}
-}
-
-const uint8_t* MipsR3000Cpu::ToRealAddress( uint32_t address ) const noexcept
-{
-	// convert to physical address
-	address &= 0x1fffffff;
-
-	if ( address < MemoryMap::RamMirrorSize )
-		return m_ram.Data() + ( address %  MemoryMap::RamSize );
-	else if ( MemoryMap::BiosStart <= address && address < MemoryMap::BiosStart + MemoryMap::BiosSize )
-		return m_bios.Data() + ( address - MemoryMap::BiosStart );
-	else if ( MemoryMap::ScratchpadStart <= address && address < MemoryMap::ScratchpadStart + MemoryMap::ScratchpadSize )
-		return m_scratchpad.Data() + ( address - MemoryMap::ScratchpadStart );
-	else
-		return nullptr;
-}
-
-Instruction MipsR3000Cpu::FetchInstruction( uint32_t address ) noexcept
-{
-	Instruction result;
-
-	// convert to physical address
-	address &= 0x1fffffff;
-
-	if ( address < MemoryMap::RamMirrorSize )
-	{
-		result = Instruction{ m_ram.Read<uint32_t>( address % MemoryMap::RamSize ) };
-		// m_cycleScheduler.AddCycles( m_instructionCache.CheckAndPrefetch( address ) ? 1 : 2 );
-	}
-	else if ( MemoryMap::BiosStart <= address && address < MemoryMap::BiosStart + MemoryMap::BiosSize )
-	{
-		result = Instruction{ m_bios.Read<uint32_t>( address - MemoryMap::BiosStart ) };
-		// m_cycleScheduler.AddCycles( m_instructionCache.CheckAndPrefetch( address ) ? 1 : 12 );
-	}
-	else
-	{
-		RaiseException( Cop0::ExceptionCode::BusErrorInstructionFetch );
-		dbBreak(); // this def isn't right. Return a NOP at least so nothing bad happens before we start the exception handler
-	}
-
-	return result;
 }
 
 void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept

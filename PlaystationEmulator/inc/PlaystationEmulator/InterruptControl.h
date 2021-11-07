@@ -13,10 +13,12 @@ enum class Interrupt : uint32_t
 	Gpu = 1 << 1,
 	CDRom = 1 << 2,
 	Dma = 1 << 3,
+
 	Timer0 = 1 << 4,
 	Timer1 = 1 << 5,
 	Timer2 = 1 << 6,
 	ControllerAndMemoryCard = 1 << 7,
+
 	Sio = 1 << 8,
 	Spu = 1 << 9,
 	ControllerLightpen = 1 << 10
