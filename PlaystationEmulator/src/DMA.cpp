@@ -27,6 +27,22 @@ const std::array<const char*, 7> ChannelNames
 
 }
 
+Dma::Dma( Ram& ram,
+	Gpu& gpu,
+	CDRomDrive& cdromDRive,
+	MacroblockDecoder& mdec,
+	InterruptControl& interruptControl,
+	EventManager& eventManager )
+	: m_ram{ ram }
+	, m_gpu{ gpu }
+	, m_cdromDrive{ cdromDRive }
+	, m_mdec{ mdec }
+	, m_interruptControl{ interruptControl }
+	, m_eventManager{ eventManager }
+{
+	m_resumeDmaEvent = eventManager.CreateEvent( "DMA Resume Event", [this]( cycles_t ) { ResumeDma(); } );
+}
+
 void Dma::Reset()
 {
 	for ( auto& channel : m_channels )
@@ -180,7 +196,7 @@ bool Dma::CanTransferChannel( Channel channel ) const noexcept
 	return false;
 }
 
-void Dma::StartDma( Channel channel )
+Dma::DmaResult Dma::StartDma( Channel channel )
 {
 	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
 	state.control.startTrigger = false;
@@ -189,21 +205,38 @@ void Dma::StartDma( Channel channel )
 	const bool toRam = state.control.transferDirection == false;
 	const uint32_t addressStep = state.control.memoryAddressStep ? BackwardStep : ForwardStep;
 
+	DmaResult result = DmaResult::WaitRequest;
+	cycles_t totalCycles = 0;
+
 	switch ( state.GetSyncMode() )
 	{
 		case SyncMode::Manual:
 		{
-			const uint32_t words = state.GetWordCount();
+			const uint32_t totalWords = state.GetWordCount();
+			uint32_t words = totalWords;
 
 			dbLogDebug( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: %X, words: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
 
-			// TODO: chopping
-			if ( toRam )
-				TransferToRam( channel, startAddress & DmaAddressMask, words, addressStep );
-			else
-				TransferFromRam( channel, startAddress & DmaAddressMask, words, addressStep );
+			result = DmaResult::Finished;
+			if ( state.control.choppingEnable )
+			{
+				const uint32_t choppingWords = GetWordsForCycles( state.GetChoppingDmaWindowSize() );
+				if ( choppingWords < words )
+				{
+					words = choppingWords;
+					result = DmaResult::Chopping;
+				}
 
-			AddBulkCycles( GetCyclesForTransfer( words ) );
+				state.wordCount = static_cast<uint16_t>( totalWords - words );
+				state.SetBaseAddress( state.baseAddress + words * addressStep );
+			}
+
+			if ( toRam )
+				TransferToRam( channel, startAddress, words, addressStep );
+			else
+				TransferFromRam( channel, startAddress, words, addressStep );
+
+			totalCycles += GetCyclesForWords( words );
 			break;
 		}
 
@@ -215,27 +248,33 @@ void Dma::StartDma( Channel channel )
 
 			dbLogDebug( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: %X, blocks: %X, blockSize: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
 
-			while ( state.request && blocksRemaining > 0 )
+			cycles_t remainingCycles = state.control.choppingEnable ? state.GetChoppingDmaWindowSize() : InfiniteCycles;
+
+			while ( state.request && blocksRemaining > 0 && remainingCycles > 0 )
 			{
 				if ( toRam )
-					TransferToRam( channel, currentAddress & DmaAddressMask, blockSize, addressStep );
+					TransferToRam( channel, currentAddress, blockSize, addressStep );
 				else
-					TransferFromRam( channel, currentAddress & DmaAddressMask, blockSize, addressStep );
+					TransferFromRam( channel, currentAddress, blockSize, addressStep );
 
 				currentAddress += blockSize * addressStep;
 				--blocksRemaining;
-				AddBulkCycles( GetCyclesForTransfer( blockSize ) );
+
+				const cycles_t blockCycles = GetCyclesForWords( blockSize );
+				remainingCycles -= blockCycles;
+				totalCycles += blockCycles;
 			}
 
 			state.SetBaseAddress( currentAddress );
 			state.blockCount = static_cast<uint16_t>( blocksRemaining );
 
-			if ( blocksRemaining > 0 )
+			if ( blocksRemaining == 0 )
 			{
-				if ( state.request )
-					dbLogWarning( "Dma::StartDma -- Request stopped unexpectedly" );
-
-				return;
+				result = DmaResult::Finished;
+			}
+			else if ( state.request )
+			{
+				result = DmaResult::Chopping;
 			}
 
 			break;
@@ -246,33 +285,69 @@ void Dma::StartDma( Channel channel )
 			if ( toRam )
 			{
 				dbLogWarning( "Dma::StartDma -- cannot do linked list transfer to ram" );
-				return;
+				return DmaResult::Finished;
 			}
 
-			uint32_t totalWords = 0;
+			// cycles taken from duckstation
+			static constexpr cycles_t ProcessHeaderCycles = 10;
+			static constexpr cycles_t ProcessBlockCycles = 5;
+
 			uint32_t currentAddress = state.baseAddress;
 
 			dbLogDebug( "Dma::StartDma -- LinkedList [channel: %s, address: %X]", ChannelNames[ (size_t)channel ], currentAddress );
 
-			do
+			cycles_t remainingCycles = state.control.choppingEnable ? state.GetChoppingDmaWindowSize() : InfiniteCycles;
+
+			while ( state.request && remainingCycles > 0 && currentAddress != LinkedListTerminator )
 			{
+				cycles_t curCycles = ProcessHeaderCycles;
+
 				uint32_t header = m_ram.Read<uint32_t>( currentAddress & DmaAddressMask );
 				const uint32_t wordCount = header >> 24;
 				if ( wordCount > 0 )
-					TransferFromRam( channel, ( currentAddress + 4 ) & DmaAddressMask, wordCount, ForwardStep );
+				{
+					TransferFromRam( channel, currentAddress + 4, wordCount, ForwardStep );
+					curCycles += ProcessBlockCycles + GetCyclesForWords( wordCount );
+				}
 
 				currentAddress = header & 0x00ffffffu;
-				totalWords += wordCount + 1; // +1 for header?
-			}
-			while ( currentAddress != LinkedListTerminator );
 
-			state.SetBaseAddress( LinkedListTerminator );
-			AddBulkCycles( GetCyclesForTransfer( totalWords ) );
+				totalCycles += curCycles;
+				remainingCycles -= curCycles;
+			}
+
+			state.SetBaseAddress( currentAddress );
+
+			if ( currentAddress == LinkedListTerminator )
+			{
+				result = DmaResult::Finished;
+			}
+			else if ( state.request )
+			{
+				result = DmaResult::Chopping;
+			}
+
 			break;
 		}
 	}
 
-	FinishTransfer( channel );
+	m_eventManager.AddCycles( totalCycles );
+
+	switch ( result )
+	{
+		case DmaResult::Finished:
+			FinishTransfer( channel );
+			break;
+
+		case DmaResult::Chopping:
+			m_resumeDmaEvent->Schedule( state.GetChoppingCpuWindowSize() );
+			break;
+
+		case DmaResult::WaitRequest:
+			break;
+	}
+
+	return result;
 }
 
 void Dma::FinishTransfer( Channel channel ) noexcept
@@ -295,11 +370,11 @@ void Dma::FinishTransfer( Channel channel ) noexcept
 	}
 }
 
-void Dma::TransferToRam( const Channel channel, const uint32_t address, const uint32_t wordCount, const uint32_t addressStep )
+void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, uint32_t addressStep )
 {
-	dbExpects( address < RamSize );
-	dbExpects( wordCount > 0 );
 	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
+
+	address &= DmaAddressMask;
 
 	if ( channel == Channel::RamOrderTable )
 	{
@@ -365,11 +440,11 @@ void Dma::TransferToRam( const Channel channel, const uint32_t address, const ui
 }
 
 
-void Dma::TransferFromRam( const Channel channel, const uint32_t address, const uint32_t wordCount, const uint32_t addressStep )
+void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount, uint32_t addressStep )
 {
-	dbExpects( address < RamSize );
-	dbExpects( wordCount > 0 );
 	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
+
+	address &= DmaAddressMask;
 
 	const uint32_t* src = reinterpret_cast<const uint32_t*>( m_ram.Data() + address );
 
@@ -435,6 +510,35 @@ void Dma::AddBulkCycles( cycles_t cycles )
 	m_eventManager.AddCycles( cycles );
 	if ( m_eventManager.ReadyForNextEvent() )
 		m_eventManager.UpdateNextEvent();
+}
+
+void Dma::ResumeDma()
+{
+	struct ResumeEntry
+	{
+		Channel channel{};
+		uint32_t priority = 0;
+	};
+	std::array<ResumeEntry, ChannelCount> m_resumeChannels;
+	size_t resumeCount = 0;
+
+	for ( size_t i = 0; i < ChannelCount; ++i )
+	{
+		const auto channel = static_cast<Channel>( i );
+		if ( CanTransferChannel( channel ) )
+			m_resumeChannels[ resumeCount++ ] = { channel, GetChannelPriority( channel ) };
+	}
+
+	std::sort(
+		m_resumeChannels.data(),
+		m_resumeChannels.data() + resumeCount,
+		[]( auto& lhs, auto& rhs ) { return lhs.priority > rhs.priority; } );
+
+	for ( size_t i = 0; i < resumeCount; ++i )
+	{
+		if ( StartDma( static_cast<Channel>( i ) ) == DmaResult::Chopping )
+			break;
+	}
 }
 
 }

@@ -25,6 +25,14 @@ public:
 		ExtensionPort,
 		RamOrderTable
 	};
+	static constexpr size_t ChannelCount = 7;
+
+	enum class DmaResult
+	{
+		Chopping,
+		WaitRequest,
+		Finished
+	};
 
 public:
 	Dma( Ram& ram,
@@ -32,14 +40,7 @@ public:
 		CDRomDrive& cdromDRive,
 		MacroblockDecoder& mdec,
 		InterruptControl& interruptControl,
-		EventManager& eventManager )
-		: m_ram{ ram }
-		, m_gpu{ gpu }
-		, m_cdromDrive{ cdromDRive }
-		, m_mdec{ mdec }
-		, m_interruptControl{ interruptControl }
-		, m_eventManager{ eventManager }
-	{}
+		EventManager& eventManager );
 
 	void Reset();
 
@@ -171,7 +172,8 @@ private:
 
 	bool CanTransferChannel( Channel channel ) const noexcept;
 
-	void StartDma( Channel channel );
+	// returns false if chopping
+	DmaResult StartDma( Channel channel );
 
 	void TransferToRam( Channel channel, uint32_t address, uint32_t words, uint32_t addressStep );
 	void TransferFromRam( Channel channel, uint32_t address, uint32_t words, uint32_t addressStep );
@@ -180,9 +182,15 @@ private:
 
 	void FinishTransfer( Channel channel ) noexcept;
 
-	static uint32_t GetCyclesForTransfer( uint32_t words ) noexcept
+	static constexpr cycles_t GetCyclesForWords( uint32_t words ) noexcept
 	{
-		return words + ( words * 0x10 ) / 0x100;
+		return static_cast<cycles_t>( ( words * 0x110 ) / 0x100 );
+	}
+
+	static constexpr uint32_t GetWordsForCycles( cycles_t cycles ) noexcept
+	{
+		dbExpects( cycles >= 0 );
+		return static_cast<uint32_t>( ( cycles * 0x100 ) / 0x110 );
 	}
 
 	void ResizeTempBuffer( uint32_t newSize )
@@ -193,6 +201,8 @@ private:
 
 	void AddBulkCycles( cycles_t cycles );
 
+	void ResumeDma();
+
 private:
 	Ram& m_ram;
 	Gpu& m_gpu;
@@ -201,7 +211,9 @@ private:
 	InterruptControl& m_interruptControl;
 	EventManager& m_eventManager;
 
-	std::array<ChannelState, 7> m_channels;
+	EventHandle m_resumeDmaEvent;
+
+	std::array<ChannelState, ChannelCount> m_channels;
 
 	uint32_t m_controlRegister = 0;
 	InterruptRegister m_interruptRegister;
