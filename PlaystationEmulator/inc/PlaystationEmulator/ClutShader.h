@@ -23,8 +23,8 @@ uniform vec2 u_origin;
 void main()
 {
 	// calculate normalized screen coordinate
-	float x = ( 2.0 * ( v_pos.x + u_origin.x ) / 1024 ) - 1.0;
-	float y = ( 2.0 * ( v_pos.y + u_origin.y ) / 512 ) - 1.0;
+	float x = ( 2.0 * ( v_pos.x + u_origin.x ) / 1024.0 ) - 1.0;
+	float y = ( 2.0 * ( v_pos.y + u_origin.y ) / 512.0 ) - 1.0;
 	gl_Position = vec4( x, y, 0.0, 1.0 );
 
 	// calculate texture page offset

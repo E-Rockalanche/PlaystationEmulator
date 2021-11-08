@@ -377,7 +377,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 		}
 
 		case 0x03: // unknown. Takes up space in FIFO
-			dbBreak();
 			break;
 
 		case 0x00:

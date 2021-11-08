@@ -49,12 +49,12 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 		m_currentPC = m_pc;
 		m_pc = m_nextPC;
 		m_nextPC += 4;
+		
+		InterceptBios( m_currentPC );
 
 		const auto instruction = m_memoryMap.FetchInstruction( m_currentPC );
 		if ( instruction.has_value() )
 		{
-			InterceptBios( m_currentPC );
-
 			ExecuteInstruction( *instruction );
 
 			m_registers.Update();
