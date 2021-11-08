@@ -75,7 +75,7 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 
 void MipsR3000Cpu::InterceptBios( uint32_t pc )
 {
-	if ( pc == HookAddress && !m_exeFilename.empty() )
+	if ( !m_exeFilename.empty() && pc == HookAddress )
 	{
 		LoadExecutable( m_exeFilename, *this, m_memoryMap.GetRam() );
 		m_exeFilename.clear();
