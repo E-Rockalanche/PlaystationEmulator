@@ -149,6 +149,7 @@ int main( int argc, char** argv )
 	bool quit = false;
 	bool paused = false;
 	bool stepFrame = false;
+	bool fullscreen = false;
 
 	float avgFps = 0.0f;
 	static constexpr float FpsSmoothing = 0.9f;
@@ -202,6 +203,13 @@ int main( int argc, char** argv )
 						case SDLK_F9:
 							// load state
 							break;
+
+						case SDLK_F11:
+						{
+							fullscreen = !fullscreen;
+							SDL_SetWindowFullscreen( window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0 );
+							break;
+						}
 					}
 
 					auto it = controllerMapping.find( key );

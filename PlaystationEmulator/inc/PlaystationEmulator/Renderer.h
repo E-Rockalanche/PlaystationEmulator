@@ -87,6 +87,7 @@ private:
 
 private:
 	SDL_Window* m_window = nullptr;
+	bool m_stretchToFit = true;
 
 	bool m_viewVRam = false;
 
@@ -115,7 +116,10 @@ private:
 	Render::Shader m_fullscreenShader;
 
 	Render::Shader m_output24bppShader;
-	GLint m_srcRectLoc = -1;
+	GLint m_srcRect24Loc = -1;
+
+	Render::Shader m_output16bppShader;
+	GLint m_srcRect16Loc = -1;
 
 	uint32_t m_displayX = 0;
 	uint32_t m_displayY = 0;

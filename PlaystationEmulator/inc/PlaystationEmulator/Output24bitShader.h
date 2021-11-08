@@ -47,15 +47,16 @@ uint SampleVRam16( ivec2 pos )
 	return ( maskBit << 15 ) | ( blue << 10 ) | ( green << 5 ) | red;
 }
 
-vec3 SampleVRam24( ivec2 pos )
+vec3 SampleVRam24( ivec2 base, ivec2 offset )
 {
-	int x = ( pos.x * 3 ) / 2;
+	int x = base.x + ( offset.x * 3 ) / 2;
+	int y = base.y + offset.y;
 
-	uint sample1 = SampleVRam16( ivec2( x, pos.y ) );
-	uint sample2 = SampleVRam16( ivec2( x + 1, pos.y ) );
+	uint sample1 = SampleVRam16( ivec2( x, y ) );
+	uint sample2 = SampleVRam16( ivec2( x + 1, y ) );
 
 	uint r, g, b;
-	if ( ( pos.x & 1 ) == 0 )
+	if ( ( offset.x & 1 ) == 0 )
 	{
 		r = sample1 & 0xffu;
 		g = sample1 >> 8;
@@ -73,9 +74,10 @@ vec3 SampleVRam24( ivec2 pos )
 
 void main()
 {
-	ivec2 texCoord = u_srcRect.xy + ivec2( TexCoord * u_srcRect.zw );
-
-	FragColor = vec4( SampleVRam24( texCoord ).rgb, 1.0 );
+	ivec2 base =  u_srcRect.xy;
+	ivec2 offset = ivec2( TexCoord * u_srcRect.zw );
+	vec3 sample = SampleVRam24( base, offset );
+	FragColor = vec4( sample.rgb, 1.0 );
 }
 
 )glsl";

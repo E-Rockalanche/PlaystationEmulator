@@ -28,14 +28,13 @@ in vec2 TexCoord;
 
 out vec4 FragColor;
 
-uniform ivec2 u_srcPos;
-uniform ivec2 u_srcSize;
+uniform ivec4 u_srcRect;
+
 uniform sampler2D u_vram;
 
 void main()
 {
-	ivec2 texCoord = u_srcPos + ivec2( TexCoord * u_srcSize );
-
+	ivec2 texCoord = u_srcRect.xy + ivec2( TexCoord * u_srcRect.zw );
 	FragColor = vec4( texelFetch( u_vram, texCoord, 0 ).rgb, 1.0 );
 }
 

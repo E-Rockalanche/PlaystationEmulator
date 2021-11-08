@@ -2,6 +2,7 @@
 
 #include "ClutShader.h"
 #include "FullscreenShader.h"
+#include "Output16bitShader.h"
 #include "Output24bitShader.h"
 
 #include <Render/Types.h>
@@ -24,9 +25,6 @@ bool Renderer::Initialize( SDL_Window* window )
 	dbExpects( window );
 	m_window = window;
 
-	// TEMP
-	SDL_SetWindowSize( window, VRamWidth, VRamHeight );
-
 	// create no attribute VAO for fullscreen quad rendering
 	m_noAttributeVAO = Render::VertexArrayObject::Create();
 
@@ -46,7 +44,6 @@ bool Renderer::Initialize( SDL_Window* window )
 	// create clut shader
 	m_clutShader = Render::Shader::Compile( ClutVertexShader, ClutFragmentShader );
 	dbAssert( m_clutShader.Valid() );
-	m_clutShader.Bind();
 	m_originLoc = m_clutShader.GetUniformLocation( "u_origin" );
 	m_srcBlendLoc = m_clutShader.GetUniformLocation( "u_srcBlend" );
 	m_destBlendLoc = m_clutShader.GetUniformLocation( "u_destBlend" );
@@ -58,8 +55,12 @@ bool Renderer::Initialize( SDL_Window* window )
 	// create output 24bpp shader
 	m_output24bppShader = Render::Shader::Compile( Output24bitVertexShader, Output24bitFragmentShader );
 	dbAssert( m_output24bppShader.Valid() );
-	m_output24bppShader.Bind();
-	m_srcRectLoc = m_output24bppShader.GetUniformLocation( "u_srcRect" );
+	m_srcRect24Loc = m_output24bppShader.GetUniformLocation( "u_srcRect" );
+
+	// create output 16bpp shader
+	m_output16bppShader = Render::Shader::Compile( Output16bitVertexShader, Output16bitFragmentShader );
+	dbAssert( m_output16bppShader.Valid() );
+	m_srcRect16Loc = m_output16bppShader.GetUniformLocation( "u_srcRect" );
 
 	// set shader attribute locations in VAO
 	constexpr auto Stride = sizeof( Vertex );
@@ -107,12 +108,6 @@ void Renderer::Reset()
 
 void Renderer::EnableVRamView( bool enable )
 {
-	if ( !m_viewVRam && enable )
-		SDL_SetWindowSize( m_window, VRamWidth, VRamHeight );
-
-	if ( m_viewVRam && !enable )
-		SDL_SetWindowSize( m_window, m_displayWidth, m_displayHeight );
-
 	m_viewVRam = enable;
 }
 
@@ -138,14 +133,8 @@ void Renderer::SetDisplayStart( uint32_t x, uint32_t y )
 
 void Renderer::SetDisplaySize( uint32_t w, uint32_t h )
 {
-	if ( m_displayWidth != w || m_displayHeight != h )
-	{
-		m_displayWidth = w;
-		m_displayHeight = h;
-
-		if ( !m_viewVRam && w > 0 && h > 0 )
-			SDL_SetWindowSize( m_window, w, h );
-	}
+	m_displayWidth = w;
+	m_displayHeight = h;
 }
 
 void Renderer::SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY )
@@ -491,9 +480,10 @@ void Renderer::DisplayFrame()
 	glDisable( GL_BLEND );
 	glDisable( GL_DEPTH_TEST );
 
+	m_vramDrawFrameBuffer.Unbind();
+
 	if ( m_viewVRam )
 	{
-		m_vramDrawFrameBuffer.Unbind();
 		m_noAttributeVAO.Bind();
 		m_fullscreenShader.Bind();
 		m_vramDrawTexture.Bind();
@@ -502,28 +492,36 @@ void Renderer::DisplayFrame()
 	}
 	else
 	{
-		m_vramDrawFrameBuffer.Unbind();
-		glViewport( 0, 0, m_displayWidth, m_displayHeight );
+		int winWidth = 0;
+		int winHeight = 0;
+		SDL_GetWindowSize( m_window, &winWidth, &winHeight );
+
+		float renderScale = std::min( (float)winWidth / (float)m_displayWidth, (float)winHeight / (float)m_displayHeight );
+		if ( !m_stretchToFit )
+			renderScale = std::max( 1.0f, std::floor( renderScale ) );
+
+		const int renderWidth = static_cast<int>( m_displayWidth * renderScale );
+		const int renderHeight = static_cast<int>( m_displayHeight * renderScale );
+		const int renderX = ( winWidth - renderWidth ) / 2;
+		const int renderY = ( winHeight - renderHeight ) / 2;
+
+		glViewport( renderX, renderY, renderWidth, renderHeight );
+
+		m_noAttributeVAO.Bind();
+		m_vramDrawTexture.Bind();
 
 		if ( m_colorDepth == DisplayAreaColorDepth::B24 )
 		{
-			m_noAttributeVAO.Bind();
-			m_vramDrawTexture.Bind();
 			m_output24bppShader.Bind();
-			glUniform4i( m_srcRectLoc, m_displayX, m_displayY, m_displayWidth, m_displayHeight );
-			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+			glUniform4i( m_srcRect24Loc, m_displayX, m_displayY, m_displayWidth, m_displayHeight );
 		}
 		else
 		{
-			// TODO: use a shader
-			m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Read );
-			glBlitFramebuffer(
-				// src
-				m_displayX, m_displayY, m_displayX + m_displayWidth, m_displayY + m_displayHeight,
-				// dest (must display upside-down)
-				0, m_displayHeight, m_displayWidth, 0,
-				GL_COLOR_BUFFER_BIT, GL_NEAREST );
+			m_output16bppShader.Bind();
+			glUniform4i( m_srcRect16Loc, m_displayX, m_displayY, m_displayWidth, m_displayHeight );
 		}
+
+		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
 
 	dbCheckRenderErrors();
