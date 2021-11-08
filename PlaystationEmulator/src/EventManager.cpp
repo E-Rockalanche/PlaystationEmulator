@@ -21,7 +21,7 @@ void Event::UpdateEarly()
 
 	if ( updateCycles > 0 )
 	{
-		Update( updateCycles );
+		m_manager.UpdateEvent( this, updateCycles );
 		m_manager.ScheduleNextEvent();
 	}
 }
@@ -131,14 +131,25 @@ void EventManager::UpdateNextEvent()
 	dbAssert( event->IsActive() );
 	dbExpects( event->GetLocalRemainingCycles() <= 0 );
 
-	event->Update();
+	UpdateEvent( event, event->m_cyclesUntilEvent );
 
-	if ( m_nextEvent == nullptr )
-		ScheduleNextEvent();
+	ScheduleNextEvent();
+}
+
+void EventManager::UpdateEvent( Event* event, cycles_t cycles )
+{
+	dbAssert( !m_updating );
+	m_updating = true;
+
+	event->Update( cycles );
+	m_updating = false;
 }
 
 void EventManager::ScheduleNextEvent()
 {
+	if ( m_updating )
+		return; // event will be scheduled after update
+
 	// find next event
 	auto it = std::min_element( m_events.begin(), m_events.end(), []( const Event* lhs, const Event* rhs )
 		{

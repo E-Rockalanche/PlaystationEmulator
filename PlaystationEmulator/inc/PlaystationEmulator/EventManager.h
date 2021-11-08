@@ -63,7 +63,6 @@ private:
 
 	// Update event with given cycles. Called by EventManager
 	void Update( cycles_t cycles );
-	void Update() { Update( m_cyclesUntilEvent ); }
 
 	// Get remaining cycles until event triggers (will be negative if event is late) (does not include pending cycles in event manager)
 	cycles_t GetLocalRemainingCycles() const noexcept
@@ -98,6 +97,7 @@ public:
 	// drive cycles until we are ready to update event
 	void AddCycles( cycles_t cycles ) noexcept
 	{
+		dbExpects( cycles > 0 );
 		m_pendingCycles += cycles;
 	}
 
@@ -117,6 +117,8 @@ public:
 private:
 	void ScheduleNextEvent();
 
+	void UpdateEvent( Event* event, cycles_t cycles );
+
 	void RemoveEvent( Event* event );
 
 private:
@@ -126,6 +128,8 @@ private:
 
 	std::vector<Event*> m_events;
 	Event* m_nextEvent = nullptr;
+
+	bool m_updating = false;
 };
 
 }
