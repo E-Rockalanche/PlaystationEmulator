@@ -476,11 +476,19 @@ void Renderer::DisplayFrame()
 {
 	DrawBatch();
 
+	// reset render state
+	m_vramDrawFrameBuffer.Unbind();
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
 	glDisable( GL_DEPTH_TEST );
 
-	m_vramDrawFrameBuffer.Unbind();
+	// clear window
+	int winWidth = 0;
+	int winHeight = 0;
+	SDL_GetWindowSize( m_window, &winWidth, &winHeight );
+	glViewport( 0, 0, winWidth, winHeight );
+	glClearColor( 0, 0, 0, 1 );
+	glClear( GL_COLOR_BUFFER_BIT );
 
 	if ( m_viewVRam )
 	{
@@ -492,10 +500,6 @@ void Renderer::DisplayFrame()
 	}
 	else
 	{
-		int winWidth = 0;
-		int winHeight = 0;
-		SDL_GetWindowSize( m_window, &winWidth, &winHeight );
-
 		float renderScale = std::min( (float)winWidth / (float)m_displayWidth, (float)winHeight / (float)m_displayHeight );
 		if ( !m_stretchToFit )
 			renderScale = std::max( 1.0f, std::floor( renderScale ) );
