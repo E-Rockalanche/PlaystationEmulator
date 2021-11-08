@@ -45,11 +45,15 @@ Dma::Dma( Ram& ram,
 
 void Dma::Reset()
 {
+	m_resumeDmaEvent->Cancel();
+
 	for ( auto& channel : m_channels )
 		channel = {};
 
 	m_controlRegister = ControlRegisterResetValue;
 	m_interruptRegister.value = 0;
+	m_tempBuffer.reset();
+	m_tempBufferSize = 0;
 }
 
 uint32_t Dma::Read( uint32_t index ) const noexcept
@@ -212,11 +216,11 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 	{
 		case SyncMode::Manual:
 		{
-			const uint32_t totalWords = state.GetWordCount();
-			uint32_t words = totalWords;
+			const uint32_t words = state.GetWordCount();
 
 			dbLogDebug( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: %X, words: %X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
 
+			/*
 			result = DmaResult::Finished;
 			if ( state.control.choppingEnable )
 			{
@@ -230,6 +234,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 				state.wordCount = static_cast<uint16_t>( totalWords - words );
 				state.SetBaseAddress( state.baseAddress + words * addressStep );
 			}
+			*/
 
 			if ( toRam )
 				TransferToRam( channel, startAddress, words, addressStep );
@@ -237,6 +242,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 				TransferFromRam( channel, startAddress, words, addressStep );
 
 			totalCycles += GetCyclesForWords( words );
+			result = DmaResult::Finished;
 			break;
 		}
 
@@ -503,13 +509,6 @@ void Dma::ClearOrderTable( uint32_t address, uint32_t wordCount )
 		address = nextAddress;
 	}
 	m_ram.Write<uint32_t>( address, LinkedListTerminator );
-}
-
-void Dma::AddBulkCycles( cycles_t cycles )
-{
-	m_eventManager.AddCycles( cycles );
-	if ( m_eventManager.ReadyForNextEvent() )
-		m_eventManager.UpdateNextEvent();
 }
 
 void Dma::ResumeDma()

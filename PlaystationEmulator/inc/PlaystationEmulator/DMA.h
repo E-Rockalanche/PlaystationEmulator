@@ -190,7 +190,7 @@ private:
 	static constexpr uint32_t GetWordsForCycles( cycles_t cycles ) noexcept
 	{
 		dbExpects( cycles >= 0 );
-		return static_cast<uint32_t>( ( cycles * 0x100 ) / 0x110 );
+		return static_cast<uint32_t>( ( cycles * 0x100 + 0x10 ) / 0x110 );
 	}
 
 	void ResizeTempBuffer( uint32_t newSize )
@@ -198,8 +198,6 @@ private:
 		if ( newSize > m_tempBufferSize )
 			m_tempBuffer = std::make_unique<uint32_t[]>( newSize );
 	}
-
-	void AddBulkCycles( cycles_t cycles );
 
 	void ResumeDma();
 
