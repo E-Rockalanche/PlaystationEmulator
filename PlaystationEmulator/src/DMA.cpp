@@ -337,7 +337,8 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 		}
 	}
 
-	m_eventManager.AddCycles( totalCycles );
+	if ( totalCycles > 0 )
+		m_eventManager.AddCycles( totalCycles );
 
 	switch ( result )
 	{
