@@ -60,6 +60,11 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	{
 		AccessControllerPort<T, Read>( address - ControllerStart, value );
 	}
+	else if ( Within( address, SerialPortStart, SerialPortSize ) )
+	{
+		if constexpr ( Read )
+			value = T( -1 );
+	}
 	else if ( Within( address, MemControlRamStart, MemControlRamSize ) )
 	{
 		if constexpr ( Read )

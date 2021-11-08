@@ -31,7 +31,10 @@ public:
 		MemControlRamSize = 4,
 
 		ControllerStart = 0x1f801040,
-		ControllerSize = 0x20,
+		ControllerSize = 0x10,
+
+		SerialPortStart = 0x1f801050,
+		SerialPortSize = 0x10,
 
 		InterruptControlStart = 0x1f801070,
 		InterruptControlSize = 8,
