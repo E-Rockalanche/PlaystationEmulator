@@ -8,8 +8,11 @@
 #include "MemoryMap.h"
 
 #include <array>
+#include <filesystem>
 #include <optional>
 #include <string>
+
+namespace fs = std::filesystem;
 
 namespace PSX
 {
@@ -20,10 +23,6 @@ public:
 
 	bool EnableKernelLogging = false;
 	bool EnableCpuLogging = false;
-
-	static constexpr uint32_t ResetVector = 0xbfc00000;
-	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
-	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
 
 	MipsR3000Cpu( MemoryMap& memoryMap, InterruptControl& interruptControl, EventManager& eventManager )
 		: m_memoryMap{ memoryMap }
@@ -52,7 +51,17 @@ public:
 
 	uint32_t GetPC() const noexcept { return m_pc; }
 
+	void SetHookExecutable( fs::path filename )
+	{
+		m_exeFilename = std::move( filename );
+	}
+
 private:
+
+	static constexpr uint32_t ResetVector = 0xbfc00000;
+	static constexpr uint32_t DebugBreakVector = 0x80000040; // COP0 break
+	static constexpr uint32_t InterruptVector = 0x80000080; // used for general interrupts and exceptions
+	static constexpr uint32_t HookAddress = 0x80030000; // address at which an exe can be loaded
 
 	class Registers
 	{
@@ -428,6 +437,8 @@ private:
 	uint32_t m_lo = 0;
 
 	std::string m_consoleOutput; // flushes on newline character
+
+	fs::path m_exeFilename;
 };
 
 inline void MipsR3000Cpu::CheckProgramCounterAlignment() noexcept

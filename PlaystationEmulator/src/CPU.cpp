@@ -2,6 +2,7 @@
 
 #include "BIOS.h"
 #include "EventManager.h"
+#include "File.h"
 #include "MemoryMap.h"
 
 #include <stdx/assert.h>
@@ -74,6 +75,13 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 
 void MipsR3000Cpu::InterceptBios( uint32_t pc )
 {
+	if ( pc == HookAddress && !m_exeFilename.empty() )
+	{
+		LoadExecutable( m_exeFilename, *this, m_memoryMap.GetRam() );
+		m_exeFilename.clear();
+		return;
+	}
+
 	pc &= 0x1fffffff;
 
 	const auto call = m_registers[ 9 ];

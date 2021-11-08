@@ -100,26 +100,8 @@ void Playstation::SetMemoryCard( size_t slot, MemoryCard* memCard )
 
 void Playstation::RunFrame()
 {
-	static constexpr uint32_t HookAddress = 0x80030000;
-
-	if ( m_exeFilename.empty() )
-	{
-		while ( !m_gpu->GetDisplayFrame() )
-			m_cpu->RunUntilEvent();
-	}
-	else
-	{
-		while ( !m_gpu->GetDisplayFrame() )
-		{
-			if ( !m_exeFilename.empty() && m_cpu->GetPC() == HookAddress )
-			{
-				LoadExecutable( m_exeFilename, *m_cpu, *m_ram );
-				m_exeFilename.clear();
-			}
-
-			m_cpu->RunUntilEvent();
-		}
-	}
+	while ( !m_gpu->GetDisplayFrame() )
+		m_cpu->RunUntilEvent();
 
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
@@ -141,9 +123,9 @@ bool Playstation::LoadRom( const fs::path& filename )
 	}
 }
 
-void Playstation::HookExe( const fs::path& filename )
+void Playstation::HookExe( fs::path filename )
 {
-	m_exeFilename = filename;
+	m_cpu->SetHookExecutable( std::move( filename ) );
 }
 
 float Playstation::GetRefreshRate() const

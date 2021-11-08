@@ -130,6 +130,8 @@ public:
 	// convert PSX address to physical address
 	const uint8_t* GetRealAddress( uint32_t address ) const noexcept;
 
+	Ram& GetRam() noexcept { return m_ram; }
+
 private:
 	// masks help strip region bits from virtual address to make a physical address
 	// KSEG2 doesn't mirror the other regions so it's essentially ignored

@@ -25,7 +25,7 @@ public:
 
 	bool LoadRom( const fs::path& filename );
 
-	void HookExe( const fs::path& filename );
+	void HookExe( fs::path filename );
 
 	float GetRefreshRate() const;
 
@@ -65,8 +65,6 @@ private:
 	std::unique_ptr<Scratchpad> m_scratchpad;
 	std::unique_ptr<Spu> m_spu;
 	std::unique_ptr<Timers> m_timers;
-
-	fs::path m_exeFilename;
 };
 
 }
