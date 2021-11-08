@@ -10,6 +10,9 @@ namespace PSX
 constexpr uint32_t VRamWidth = 1024;
 constexpr uint32_t VRamHeight = 512;
 
+constexpr float VRamWidthF = static_cast<float>( VRamWidth );
+constexpr float VRamHeightF = static_cast<float>( VRamHeight );
+
 constexpr uint32_t VRamWidthMask = VRamWidth - 1;
 constexpr uint32_t VRamHeightMask = VRamHeight - 1;
 

@@ -10,6 +10,9 @@
     <Filter Include="inc\shaders">
       <UniqueIdentifier>{36cc0cca-18f3-4c23-881c-953ca04658f0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\shaders">
+      <UniqueIdentifier>{53fab8ee-f902-47fa-a93b-c9d600d7a293}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationEmulator\CPU.h">
@@ -178,6 +181,9 @@
     </ClCompile>
     <ClCompile Include="src\MemoryMap.cpp">
       <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\VRamCopyShader.cpp">
+      <Filter>src\shaders</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

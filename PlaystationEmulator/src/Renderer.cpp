@@ -62,6 +62,8 @@ bool Renderer::Initialize( SDL_Window* window )
 	dbAssert( m_output16bppShader.Valid() );
 	m_srcRect16Loc = m_output16bppShader.GetUniformLocation( "u_srcRect" );
 
+	m_vramCopyShader.Initialize();
+
 	// set shader attribute locations in VAO
 	constexpr auto Stride = sizeof( Vertex );
 
@@ -108,6 +110,15 @@ void Renderer::Reset()
 
 void Renderer::EnableVRamView( bool enable )
 {
+	if ( !m_viewVRam && enable )
+	{
+		SDL_SetWindowSize( m_window, VRamWidth, VRamHeight );
+	}
+	else if ( m_viewVRam && !enable )
+	{
+		SDL_SetWindowSize( m_window, 640, 480 );
+	}
+
 	m_viewVRam = enable;
 }
 
@@ -184,12 +195,12 @@ void Renderer::SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMod
 
 void Renderer::SetMaskBits( bool setMask, bool checkMask )
 {
-	if ( m_setMask != setMask || m_checkMask != checkMask )
+	if ( m_forceMaskBit != setMask || m_checkMaskBit != checkMask )
 	{
 		DrawBatch();
 
-		m_setMask = setMask;
-		m_checkMask = checkMask;
+		m_forceMaskBit = setMask;
+		m_checkMaskBit = checkMask;
 		UpdateBlendMode();
 		UpdateDepthTest();
 	}
@@ -241,27 +252,44 @@ void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 	m_dirtyArea.Grow( Rect( left, top, left + width, top + height ) );
 }
 
-void Renderer::CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight, GLint destX, GLint destY, GLint destWidth, GLint destHeight )
+void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height )
 {
-	// TODO: check draw mode areas
-	DrawBatch();
+	const Rect destRect = Rect::FromExtents( destX, destY, width, height );
 
-	if ( m_dirtyArea.Intersects( Rect( srcX, srcX + srcWidth, srcY, srcY + srcHeight ) ) )
+	if ( m_dirtyArea.Intersects( destRect ) )
+		DrawBatch();
+
+	if ( m_dirtyArea.Intersects( Rect::FromExtents( srcX, srcY, width, height ) ) )
 		UpdateReadTexture();
 
-	m_vramReadFrameBuffer.Bind( Render::FrameBufferBinding::Draw );
-	glDisable( GL_SCISSOR_TEST );
+	if ( m_checkMaskBit || m_forceMaskBit )
+	{
+		glDisable( GL_BLEND );
+		glDisable( GL_SCISSOR_TEST );
+		glViewport( destX, destY, width, height );
 
-	glBlitFramebuffer(
-		srcX, srcY, srcX + srcWidth, srcY + srcHeight,
-		destX, destY, destX + destWidth, destY + destHeight,
-		GL_COLOR_BUFFER_BIT, GL_NEAREST );
+		m_noAttributeVAO.Bind();
+		m_vramCopyShader.Use(
+			srcX / VRamWidthF, srcY / VRamHeightF, width / VRamWidthF, height / VRamHeightF,
+			m_forceMaskBit );
 
-	m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Draw );
-	glEnable( GL_SCISSOR_TEST );
+		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
-	m_dirtyArea.Grow( destX, destY );
-	m_dirtyArea.Grow( destX + destWidth, destY + destHeight );
+		RestoreRenderState();
+	}
+	else
+	{
+		m_vramReadFrameBuffer.Bind( Render::FrameBufferBinding::Read );
+
+		glBlitFramebuffer(
+			srcX, srcY, srcX + width, srcY + height,
+			destX, destY, destX + width, destY + height,
+			GL_COLOR_BUFFER_BIT, GL_NEAREST );
+
+		m_vramDrawFrameBuffer.Bind( Render::FrameBufferBinding::Read );
+	}
+
+	m_dirtyArea.Grow( destRect );
 }
 
 void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut )
@@ -356,7 +384,7 @@ void Renderer::UpdateBlendMode()
 
 void Renderer::UpdateDepthTest()
 {
-	glDepthFunc( m_checkMask ? GL_GEQUAL : GL_ALWAYS );
+	glDepthFunc( m_checkMaskBit ? GL_GEQUAL : GL_ALWAYS );
 }
 
 void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )

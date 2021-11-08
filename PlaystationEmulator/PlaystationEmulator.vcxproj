@@ -279,6 +279,7 @@
     <ClCompile Include="src\Renderer.cpp" />
     <ClCompile Include="src\SPU.cpp" />
     <ClCompile Include="src\Timers.cpp" />
+    <ClCompile Include="src\VRamCopyShader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundation\Foundation.vcxproj">

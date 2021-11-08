@@ -2,6 +2,8 @@
 
 #include "GpuDefs.h"
 
+#include "VRamCopyShader.h"
+
 #include <Render/VertexArrayObject.h>
 #include <Render/Buffer.h>
 #include <Render/FrameBuffer.h>
@@ -56,7 +58,7 @@ public:
 
 	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a );
 
-	void CopyVRam( GLint srcX, GLint srcY, GLint srcWidth, GLint srcHeight, GLint destX, GLint destY, GLint destWidth, GLint destHeight );
+	void CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height );
 
 	void PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent );
 	void PushQuad( const Vertex vertices[ 4 ], bool semiTransparent );
@@ -121,6 +123,8 @@ private:
 	Render::Shader m_output16bppShader;
 	GLint m_srcRect16Loc = -1;
 
+	VRamCopyShader m_vramCopyShader;
+
 	uint32_t m_displayX = 0;
 	uint32_t m_displayY = 0;
 	uint32_t m_displayWidth = 0;
@@ -137,8 +141,8 @@ private:
 
 	DisplayAreaColorDepth m_colorDepth = DisplayAreaColorDepth::B15;
 
-	bool m_setMask = false;
-	bool m_checkMask = false;
+	bool m_forceMaskBit = false;
+	bool m_checkMaskBit = false;
 
 	TexPage m_texPage;
 	ClutAttribute m_clut;

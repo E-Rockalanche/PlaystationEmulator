@@ -17,6 +17,11 @@ struct Rectangle
 
 	constexpr Rectangle( T l, T t, T r, T b ) noexcept : left{ l }, top{ t }, right{ r }, bottom{ b } {}
 
+	static constexpr Rectangle FromExtents( T l, T t, T w, T h ) noexcept
+	{
+		return Rectangle( l, t, l + w, t + h );
+	}
+
 	constexpr T GetWidth() const noexcept { return left <= right ? right - left : 0; }
 	constexpr T GetHeight() const noexcept { return top <= bottom ? bottom - top : 0; }
 

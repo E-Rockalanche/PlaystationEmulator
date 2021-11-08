@@ -1,53 +1,23 @@
 #pragma once
 
+#include <Render/Shader.h>
+
 namespace PSX
 {
 
-const char* const VRamCopyVertexShader = R"glsl(
-
-#version 330 core
-
-const vec2 s_positions[4] = vec2[]( vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(1.0, 1.0) );
-const vec2 s_texCoords[4] = vec2[]( vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0, 1.0) );
-
-out vec2 TexCoord;
-
-uniform ivec4 u_srcRect;
-uniform ivec4 u_destRect;
-
-void main()
+class VRamCopyShader
 {
-	TexCoord = vec2( u_srcRect.xy ) + s_texCoords[ gl_VertexID ] * vec2( u_srcRect.zw );
+public:
+	void Initialize();
 
-	vec2 pos = vec2( u_destRect.xy ) + s_positions[ gl_VertexID ] * vec2( u_destRect.zw );
-	gl_Position = vec4( pos.xy, 0.0, 1.0 );
-}
+	void Use(
+		float srcX, float srcY, float srcW, float srcH,
+		bool setMaskBit = false );
 
-)glsl";
-
-const char* const VRamCopyFragmentShader = R"glsl(
-
-#version 330 core
-
-in vec2 TexCoord;
-
-out vec4 FragColor;
-
-uniform bool u_setMaskBit;
-
-uniform sampler2D u_vram;
-
-void main()
-{
-	vec4 color = texture( u_vram, TexCoord );
-	
-	if ( u_setMaskBit )
-		color.a = 1.0;
-
-	FragColor = color;
-	gl_FragDepth = color.a;
-}
-
-)glsl";
+private:
+	Render::Shader m_program;
+	GLint m_srcRectLoc = -1;
+	GLint m_forceMaskBitLoc = -1;
+};
 
 }

@@ -1059,13 +1059,13 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 
 		if ( vblank )
 		{
-			dbLog( "VBlank start" );
+			dbLogDebug( "VBlank start" );
 			m_interruptControl.SetInterrupt( Interrupt::VBlank );
 			m_displayFrame = true;
 		}
 		else
 		{
-			dbLog( "VBlank end" );
+			dbLogDebug( "VBlank end" );
 		}
 	}
 
@@ -1179,7 +1179,7 @@ void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY
 
 	// TODO: check mask bits
 
-	m_renderer.CopyVRam( srcX, srcY, width, height, destX, destY, width, height );
+	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 }
 
 } // namespace PSX
