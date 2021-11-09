@@ -31,6 +31,7 @@
     <ProjectGuid>{3F7572D6-2220-42E3-8C9A-463132223454}</ProjectGuid>
     <RootNamespace>PlaystationEmulator</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>PlaystationCore</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -108,7 +109,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <SupportJustMyCode>false</SupportJustMyCode>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -126,7 +127,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <SupportJustMyCode>false</SupportJustMyCode>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -145,7 +146,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
@@ -163,7 +164,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -188,7 +189,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
@@ -206,7 +207,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>inc/PlaystationEmulator;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
@@ -222,43 +223,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="inc\PlaystationEmulator\BIOS.h" />
-    <ClInclude Include="inc\PlaystationEmulator\CDRom.h" />
-    <ClInclude Include="inc\PlaystationEmulator\CDRomDrive.h" />
-    <ClInclude Include="inc\PlaystationEmulator\ClutShader.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Controller.h" />
-    <ClInclude Include="inc\PlaystationEmulator\CueSheet.h" />
-    <ClInclude Include="inc\PlaystationEmulator\DualSerialPort.h" />
-    <ClInclude Include="inc\PlaystationEmulator\EventManager.h" />
-    <ClInclude Include="inc\PlaystationEmulator\FifoBuffer.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Cop0.h" />
-    <ClInclude Include="inc\PlaystationEmulator\CPU.h" />
-    <ClInclude Include="inc\PlaystationEmulator\DMA.h" />
-    <ClInclude Include="inc\PlaystationEmulator\File.h" />
-    <ClInclude Include="inc\PlaystationEmulator\FullscreenShader.h" />
-    <ClInclude Include="inc\PlaystationEmulator\GTE.h" />
-    <ClInclude Include="inc\PlaystationEmulator\GPU.h" />
-    <ClInclude Include="inc\PlaystationEmulator\GpuDefs.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Instruction.h" />
-    <ClInclude Include="inc\PlaystationEmulator\InterruptControl.h" />
-    <ClInclude Include="inc\PlaystationEmulator\MacroblockDecoder.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Memory.h" />
-    <ClInclude Include="inc\PlaystationEmulator\MemoryCard.h" />
-    <ClInclude Include="inc\PlaystationEmulator\MemoryControl.h" />
-    <ClInclude Include="inc\PlaystationEmulator\MemoryMap.h" />
-    <ClInclude Include="inc\PlaystationEmulator\ControllerPorts.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Output16bitShader.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Output24bitShader.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Playstation.h" />
-    <ClInclude Include="inc\PlaystationEmulator\RAM.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Renderer.h" />
-    <ClInclude Include="inc\PlaystationEmulator\SPU.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Timers.h" />
-    <ClInclude Include="inc\PlaystationEmulator\Defs.h" />
-    <ClInclude Include="inc\PlaystationEmulator\VRamCopyShader.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="inc\PlaystationEmulator\Playstation.cpp" />
     <ClCompile Include="src\BIOS.cpp" />
     <ClCompile Include="src\CDRomDrive.cpp" />
     <ClCompile Include="src\Controller.cpp" />
@@ -276,6 +240,7 @@
     <ClCompile Include="src\MemoryCard.cpp" />
     <ClCompile Include="src\MemoryControl.cpp" />
     <ClCompile Include="src\MemoryMap.cpp" />
+    <ClCompile Include="src\Playstation.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
     <ClCompile Include="src\SPU.cpp" />
     <ClCompile Include="src\Timers.cpp" />
@@ -291,6 +256,42 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="inc\PlaystationCore\BIOS.h" />
+    <ClInclude Include="inc\PlaystationCore\CDRom.h" />
+    <ClInclude Include="inc\PlaystationCore\CDRomDrive.h" />
+    <ClInclude Include="inc\PlaystationCore\ClutShader.h" />
+    <ClInclude Include="inc\PlaystationCore\Controller.h" />
+    <ClInclude Include="inc\PlaystationCore\ControllerPorts.h" />
+    <ClInclude Include="inc\PlaystationCore\Cop0.h" />
+    <ClInclude Include="inc\PlaystationCore\CPU.h" />
+    <ClInclude Include="inc\PlaystationCore\CueSheet.h" />
+    <ClInclude Include="inc\PlaystationCore\Defs.h" />
+    <ClInclude Include="inc\PlaystationCore\DMA.h" />
+    <ClInclude Include="inc\PlaystationCore\DualSerialPort.h" />
+    <ClInclude Include="inc\PlaystationCore\EventManager.h" />
+    <ClInclude Include="inc\PlaystationCore\FifoBuffer.h" />
+    <ClInclude Include="inc\PlaystationCore\File.h" />
+    <ClInclude Include="inc\PlaystationCore\FullscreenShader.h" />
+    <ClInclude Include="inc\PlaystationCore\GPU.h" />
+    <ClInclude Include="inc\PlaystationCore\GpuDefs.h" />
+    <ClInclude Include="inc\PlaystationCore\GTE.h" />
+    <ClInclude Include="inc\PlaystationCore\Instruction.h" />
+    <ClInclude Include="inc\PlaystationCore\InterruptControl.h" />
+    <ClInclude Include="inc\PlaystationCore\MacroblockDecoder.h" />
+    <ClInclude Include="inc\PlaystationCore\Memory.h" />
+    <ClInclude Include="inc\PlaystationCore\MemoryCard.h" />
+    <ClInclude Include="inc\PlaystationCore\MemoryControl.h" />
+    <ClInclude Include="inc\PlaystationCore\MemoryMap.h" />
+    <ClInclude Include="inc\PlaystationCore\Output16bitShader.h" />
+    <ClInclude Include="inc\PlaystationCore\Output24bitShader.h" />
+    <ClInclude Include="inc\PlaystationCore\Playstation.h" />
+    <ClInclude Include="inc\PlaystationCore\RAM.h" />
+    <ClInclude Include="inc\PlaystationCore\Renderer.h" />
+    <ClInclude Include="inc\PlaystationCore\SPU.h" />
+    <ClInclude Include="inc\PlaystationCore\Timers.h" />
+    <ClInclude Include="inc\PlaystationCore\VRamCopyShader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
