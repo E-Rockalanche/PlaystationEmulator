@@ -1,9 +1,9 @@
-#include "Playstation.h"
-#include "Controller.h"
-#include "EventManager.h"
-#include "GPU.h"
-#include "MemoryCard.h"
-#include "Renderer.h"
+#include <PlaystationCore/Playstation.h>
+#include <PlaystationCore/Controller.h>
+#include <PlaystationCore/EventManager.h>
+#include <PlaystationCore/GPU.h>
+#include <PlaystationCore/MemoryCard.h>
+#include <PlaystationCore/Renderer.h>
 
 #include <Render/Error.h>
 
