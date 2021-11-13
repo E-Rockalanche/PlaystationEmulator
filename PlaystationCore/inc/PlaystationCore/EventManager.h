@@ -95,21 +95,21 @@ public:
 	Event* FindEvent( std::string_view name );
 	
 	// drive cycles until we are ready to update event
-	void AddCycles( cycles_t cycles ) noexcept
+	inline void AddCycles( cycles_t cycles ) noexcept
 	{
 		dbExpects( cycles > 0 );
 		m_pendingCycles += cycles;
 	}
 
 	// driving device must check when cycles are ready and update event manually
-	bool ReadyForNextEvent() const noexcept
+	inline bool ReadyForNextEvent() const noexcept
 	{
 		return m_pendingCycles >= m_cyclesUntilNextEvent;
 	}
 
 	void UpdateNextEvent();
 
-	cycles_t GetPendingCycles() const noexcept
+	inline cycles_t GetPendingCycles() const noexcept
 	{
 		return m_pendingCycles;
 	}

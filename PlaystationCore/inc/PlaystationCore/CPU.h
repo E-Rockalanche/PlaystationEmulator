@@ -23,6 +23,7 @@ public:
 
 	bool EnableKernelLogging = false;
 	bool EnableCpuLogging = false;
+	bool EnableBiosIntercept = false;
 
 	MipsR3000Cpu( MemoryMap& memoryMap, InterruptControl& interruptControl, EventManager& eventManager )
 		: m_memoryMap{ memoryMap }

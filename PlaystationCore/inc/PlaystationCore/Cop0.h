@@ -111,7 +111,7 @@ public:
 		return m_exceptionCause | ( m_interruptControl.PendingInterrupt() << 10 );
 	}
 
-	bool GetInterruptEnable() const noexcept
+	inline bool GetInterruptEnable() const noexcept
 	{
 		return m_systemStatus & SystemStatus::InterruptEnable;
 	}
