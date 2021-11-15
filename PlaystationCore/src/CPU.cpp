@@ -34,6 +34,15 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 {
 	while ( !m_eventManager.ReadyForNextEvent() )
 	{
+
+#ifndef SHIPPING
+		if ( !m_exeFilename.empty() && m_pc == HookAddress )
+		{
+			LoadExecutable( m_exeFilename, *this, m_memoryMap.GetRam() );
+			m_exeFilename.clear();
+		}
+#endif
+
 		// the MIPS cpu is pipelined. The next instruction is fetched while the current one executes
 		// this causes instructions after branches and jumps to always be executed
 
@@ -78,13 +87,6 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 
 inline void MipsR3000Cpu::InterceptBios( uint32_t pc )
 {
-	if ( !m_exeFilename.empty() && pc == HookAddress )
-	{
-		LoadExecutable( m_exeFilename, *this, m_memoryMap.GetRam() );
-		m_exeFilename.clear();
-		return;
-	}
-
 	pc &= 0x1fffffff;
 
 	const auto call = m_registers[ 9 ];
