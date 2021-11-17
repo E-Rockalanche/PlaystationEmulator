@@ -10,6 +10,7 @@ class VRamCopyShader
 public:
 	void Initialize();
 
+	// set destination rect with glViewport
 	void Use(
 		float srcX, float srcY, float srcW, float srcH,
 		bool setMaskBit = false );

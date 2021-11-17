@@ -92,9 +92,6 @@
     <ClInclude Include="inc\PlaystationCore\CDRomDrive.h">
       <Filter>inc</Filter>
     </ClInclude>
-    <ClInclude Include="inc\PlaystationCore\ClutShader.h">
-      <Filter>inc</Filter>
-    </ClInclude>
     <ClInclude Include="inc\PlaystationCore\Controller.h">
       <Filter>inc</Filter>
     </ClInclude>
@@ -183,6 +180,9 @@
       <Filter>inc\shaders</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\FullscreenShader.h">
+      <Filter>inc\shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\ClutShader.h">
       <Filter>inc\shaders</Filter>
     </ClInclude>
   </ItemGroup>

@@ -94,12 +94,15 @@ private:
 	bool m_viewVRam = false;
 
 	Render::Texture2D m_vramDrawTexture;
+	Render::Framebuffer m_vramDrawFrameBuffer;
+
 	Render::Texture2D m_vramReadTexture;
+	Render::Framebuffer m_vramReadFrameBuffer;
+
+	Render::Texture2D m_vramTransferTexture;
+	Render::PixelUnpackBuffer m_vramTransferPixels;
 
 	Render::Texture2D m_depthBuffer;
-
-	Render::FrameBuffer m_vramDrawFrameBuffer;
-	Render::FrameBuffer m_vramReadFrameBuffer;
 
 	Render::VertexArrayObject m_noAttributeVAO;
 	Render::VertexArrayObject m_vramDrawVAO;

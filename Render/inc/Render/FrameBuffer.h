@@ -16,7 +16,7 @@ enum class AttachmentType : GLenum
 	DepthStencil = GL_DEPTH_STENCIL_ATTACHMENT
 };
 
-enum class FrameBufferStatus : GLenum
+enum class FramebufferStatus : GLenum
 {
 	Complete = GL_FRAMEBUFFER_COMPLETE,
 	Undefined = GL_FRAMEBUFFER_UNDEFINED,
@@ -29,33 +29,33 @@ enum class FrameBufferStatus : GLenum
 	IncompleteLayerTargets = GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS
 };
 
-enum class FrameBufferBinding : GLenum
+enum class FramebufferBinding : GLenum
 {
 	Read = GL_READ_FRAMEBUFFER,
 	Draw = GL_DRAW_FRAMEBUFFER,
 	ReadAndDraw = GL_FRAMEBUFFER
 };
 
-class FrameBuffer
+class Framebuffer
 {
 public:
-	FrameBuffer() noexcept = default;
+	Framebuffer() noexcept = default;
 
-	FrameBuffer( const FrameBuffer& ) = delete;
+	Framebuffer( const Framebuffer& ) = delete;
 
-	FrameBuffer( FrameBuffer&& other ) noexcept : m_frameBuffer{ other.m_frameBuffer }
+	Framebuffer( Framebuffer&& other ) noexcept : m_frameBuffer{ other.m_frameBuffer }
 	{
 		other.m_frameBuffer = 0;
 	}
 
-	~FrameBuffer()
+	~Framebuffer()
 	{
 		Reset();
 	}
 
-	FrameBuffer& operator=( const FrameBuffer& ) = delete;
+	Framebuffer& operator=( const Framebuffer& ) = delete;
 
-	FrameBuffer& operator=( FrameBuffer&& other ) noexcept
+	Framebuffer& operator=( Framebuffer&& other ) noexcept
 	{
 		Reset();
 		m_frameBuffer = other.m_frameBuffer;
@@ -63,20 +63,20 @@ public:
 		return *this;
 	}
 
-	static FrameBuffer Create()
+	static Framebuffer Create()
 	{
 		GLuint frameBuffer = 0;
 		glGenFramebuffers( 1, &frameBuffer );
-		return FrameBuffer( frameBuffer );
+		return Framebuffer( frameBuffer );
 	}
 
 	// returns true if complete
-	FrameBufferStatus AttachTexture( AttachmentType type, Texture2D& texture, GLint mipmapLevel = 0 )
+	FramebufferStatus AttachTexture( AttachmentType type, Texture2D& texture, GLint mipmapLevel = 0 )
 	{
 		Bind();
 		glFramebufferTexture2D( GL_FRAMEBUFFER, static_cast<GLenum>( type ), GL_TEXTURE_2D, texture.m_texture, mipmapLevel );
 		dbCheckRenderErrors();
-		return static_cast<FrameBufferStatus>( glCheckFramebufferStatus( GL_FRAMEBUFFER ) );
+		return static_cast<FramebufferStatus>( glCheckFramebufferStatus( GL_FRAMEBUFFER ) );
 	}
 
 	bool IsComplete() const
@@ -92,7 +92,7 @@ public:
 
 	void Reset();
 
-	void Bind( FrameBufferBinding binding = FrameBufferBinding::ReadAndDraw ) const
+	void Bind( FramebufferBinding binding = FramebufferBinding::ReadAndDraw ) const
 	{
 		dbExpects( m_frameBuffer != 0 );
 		BindImp( binding, m_frameBuffer );
@@ -103,15 +103,15 @@ public:
 		UnbindImp( m_frameBuffer );
 	}
 
-	static void Unbind( FrameBufferBinding binding )
+	static void Unbind( FramebufferBinding binding )
 	{
 		BindImp( binding, 0 );
 	}
 
 private:
-	FrameBuffer( GLuint frameBuffer ) noexcept : m_frameBuffer{ frameBuffer } {}
+	Framebuffer( GLuint frameBuffer ) noexcept : m_frameBuffer{ frameBuffer } {}
 
-	static void BindImp( FrameBufferBinding binding, GLuint frameBuffer );
+	static void BindImp( FramebufferBinding binding, GLuint frameBuffer );
 	static void UnbindImp( GLuint frameBuffer );
 
 private:

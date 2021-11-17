@@ -3,7 +3,7 @@
 namespace Render
 {
 
-void FrameBuffer::Reset()
+void Framebuffer::Reset()
 {
 	if ( m_frameBuffer != 0 )
 	{
@@ -13,11 +13,11 @@ void FrameBuffer::Reset()
 	}
 }
 
-void FrameBuffer::BindImp( FrameBufferBinding binding, GLuint frameBuffer )
+void Framebuffer::BindImp( FramebufferBinding binding, GLuint frameBuffer )
 {
 	switch ( binding )
 	{
-		case FrameBufferBinding::Read:
+		case FramebufferBinding::Read:
 			if ( s_boundRead != frameBuffer )
 			{
 				glBindFramebuffer( GL_READ_FRAMEBUFFER, frameBuffer );
@@ -25,7 +25,7 @@ void FrameBuffer::BindImp( FrameBufferBinding binding, GLuint frameBuffer )
 			}
 			break;
 
-		case FrameBufferBinding::Draw:
+		case FramebufferBinding::Draw:
 			if ( s_boundDraw != frameBuffer )
 			{
 				glBindFramebuffer( GL_DRAW_FRAMEBUFFER, frameBuffer );
@@ -33,7 +33,7 @@ void FrameBuffer::BindImp( FrameBufferBinding binding, GLuint frameBuffer )
 			}
 			break;
 
-		case FrameBufferBinding::ReadAndDraw:
+		case FramebufferBinding::ReadAndDraw:
 			if ( s_boundDraw != frameBuffer || s_boundRead != frameBuffer )
 			{
 				glBindFramebuffer( GL_FRAMEBUFFER, frameBuffer );
@@ -47,7 +47,7 @@ void FrameBuffer::BindImp( FrameBufferBinding binding, GLuint frameBuffer )
 	}
 }
 
-void FrameBuffer::UnbindImp( GLuint frameBuffer )
+void Framebuffer::UnbindImp( GLuint frameBuffer )
 {
 	if ( frameBuffer == s_boundRead )
 	{
