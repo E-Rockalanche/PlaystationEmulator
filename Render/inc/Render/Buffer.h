@@ -13,6 +13,8 @@ enum class BufferType : GLuint
 	Element = GL_ELEMENT_ARRAY_BUFFER,
 	Uniform = GL_UNIFORM_BUFFER,
 	Texture = GL_TEXTURE_BUFFER,
+	PixelPack = GL_PIXEL_PACK_BUFFER,
+	PixelUnpack = GL_PIXEL_UNPACK_BUFFER,
 };
 
 enum class BufferUsage : GLuint
@@ -70,7 +72,7 @@ public:
 	static Buffer Create( BufferUsage usage, GLsizei size, const T* data = nullptr )
 	{
 		Buffer buffer = Create();
-		buffer.SetData( size * sizeof( T ), data, usage );
+		buffer.SetData( usage, size * sizeof( T ), data );
 		dbCheckRenderErrors();
 		return buffer;
 	}
@@ -145,5 +147,7 @@ using ArrayBuffer = Buffer<BufferType::Array>;
 using ElementBuffer = Buffer<BufferType::Element>;
 using UniformBuffer = Buffer<BufferType::Uniform>;
 using TextureBuffer = Buffer<BufferType::Texture>;
+using PixelPackBuffer = Buffer<BufferType::PixelPack>;
+using PixelUnpackBuffer = Buffer<BufferType::PixelUnpack>;
 
 }
