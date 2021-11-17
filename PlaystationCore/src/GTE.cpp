@@ -5,7 +5,9 @@
 
 #include <algorithm>
 
-#define LOG_GTE_COMMANDS true
+#define GTE_LOG_COMMANDS false
+
+#define GTE_USE_FAST_DIVISION true
 
 namespace PSX
 {
@@ -37,7 +39,7 @@ constexpr int64_t DotProduct3( const T& lhs, const U& rhs )
 
 } // namespace
 
-#if LOG_GTE_COMMANDS
+#if GTE_LOG_COMMANDS
 #define LogGTE( ... ) Log( __VA_ARGS__ )
 #else
 #define LogGTE( ... )
@@ -842,7 +844,11 @@ void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, int 
 
 	PushScreenZ( m_mac123.z >> ( 12 - shiftAmount ) );
 
+#if GTE_USE_FAST_DIVISION
 	const int64_t temp = FastDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
+#else
+	const int64_t temp = UNRDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
+#endif
 
 	const int32_t screenX = static_cast<int32_t>( ( temp * m_ir123.x + m_screenOffset.x ) >> 16 );
 	const int32_t screenY = static_cast<int32_t>( ( temp * m_ir123.y + m_screenOffset.y ) >> 16 );
