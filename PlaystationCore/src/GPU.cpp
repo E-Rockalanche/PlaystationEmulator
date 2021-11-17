@@ -9,6 +9,9 @@
 #include <stdx/assert.h>
 #include <stdx/bit.h>
 
+#define GPU_RENDER_POLYGONS true
+#define GPU_RENDER_RECTANGLES true
+
 namespace PSX
 {
 
@@ -17,29 +20,29 @@ namespace
 
 constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
 {
-	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0;
-	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & 0x1ff;
+	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0; // steps of 0x10
+	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
 	return { x, y };
 }
 
 constexpr std::pair<uint16_t, uint16_t> DecodeFillSize( uint32_t gpuParam ) noexcept
 {
-	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & 0x3ff ) + 0x0f ) & ~0x0f;
-	const uint16_t h = static_cast<uint16_t>( gpuParam >> 16 ) & 0x1ff;
+	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & VRamWidthMask ) + 0x0f ) & ~0x0f; //  steps of 0x10
+	const uint16_t h = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
 	return { w, h };
 }
 
 constexpr std::pair<uint16_t, uint16_t> DecodeCopyPosition( uint32_t gpuParam ) noexcept
 {
-	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3ff;
-	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & 0x1ff;
+	const uint16_t x = static_cast<uint16_t>( gpuParam ) & VRamWidthMask;
+	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
 	return { x, y };
 }
 
 constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noexcept
 {
-	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) - 1 ) & 0x3ff ) + 1;
-	const uint16_t h = ( ( static_cast<uint16_t>( gpuParam >> 16 ) - 1 ) & 0x1ff ) + 1;
+	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) - 1 ) & VRamWidthMask ) + 1;
+	const uint16_t h = ( ( static_cast<uint16_t>( gpuParam >> 16 ) - 1 ) & VRamHeightMask ) + 1;
 	return { w, h };
 }
 
@@ -465,21 +468,6 @@ void Gpu::GP0_Image( uint32_t param ) noexcept
 	dbExpects( m_vramCopyState.has_value() );
 	dbExpects( !m_vramCopyState->IsFinished() );
 
-	const uint16_t checkMask = m_status.GetCheckMask();
-	const uint16_t setMask = m_status.GetSetMask();
-
-	auto copyPixel = [&]( uint16_t pixel )
-	{
-		const auto x = m_vramCopyState->GetWrappedX();
-		const auto y = m_vramCopyState->GetWrappedY();
-
-		uint16_t* destPixel = m_vram.get() + y * VRamWidth + x;
-		if ( ( *destPixel & checkMask ) == 0 )
-			*destPixel = pixel | setMask;
-
-		m_vramCopyState->Increment();
-	};
-
 	m_vramCopyState->PushPixel( static_cast<uint16_t>( param ) );
 
 	if ( !m_vramCopyState->IsFinished() )
@@ -898,9 +886,11 @@ void Gpu::RenderPolygon() noexcept
 
 	m_renderer.SetDrawMode( texPage, clut );
 
+#if GPU_RENDER_POLYGONS
 	m_renderer.PushTriangle( vertices, command.semiTransparency );
 	if ( command.numVertices )
 		m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
+#endif
 
 	ClearCommandBuffer();
 }
@@ -998,7 +988,10 @@ void Gpu::RenderRectangle() noexcept
 	}
 
 	m_renderer.SetDrawMode( texPage, clut );
+
+#if GPU_RENDER_RECTANGLES
 	m_renderer.PushQuad( vertices, command.semiTransparency );
+#endif
 
 	ClearCommandBuffer();
 }
