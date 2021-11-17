@@ -102,7 +102,7 @@ vec4 LookupTexel()
 {
 	vec4 color;
 
-	ivec2 texCoord = ivec2( int( round( TexCoord.x ) ) & 0xff, int( round( TexCoord.y ) ) & 0xff );
+	ivec2 texCoord = ivec2( int( floor( TexCoord.x + 0.5 ) ) & 0xff, int( floor( TexCoord.y + 0.5 ) ) & 0xff );
 
 	texCoord.x = ( texCoord.x & ~( u_texWindowMask.x * 8 ) ) | ( ( u_texWindowOffset.x & u_texWindowMask.x ) * 8 );
 	texCoord.y = ( texCoord.y & ~( u_texWindowMask.y * 8 ) ) | ( ( u_texWindowOffset.y & u_texWindowMask.y ) * 8 );
