@@ -205,14 +205,6 @@ private:
 		return GetDotsPerVideoCycle() * GetVideoCyclesPerScanline();
 	}
 
-	// operations on vram
-
-	// not affected by mask settings
-	void FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, float r, float g, float b );
-
-	// affected by mask settings
-	void CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height );
-
 	void UpdateCycles( cycles_t cpuCycles ) noexcept;
 
 private:

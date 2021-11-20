@@ -76,25 +76,27 @@ bool Renderer::Initialize( SDL_Window* window )
 	// get shader uniform locations
 
 	// VRAM draw texture
-	m_vramDrawFrameBuffer = Render::Framebuffer::Create();
+	m_vramDrawFramebuffer = Render::Framebuffer::Create();
 	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
-	m_vramDrawFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
+	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
 	m_depthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::UByte );
-	m_vramDrawFrameBuffer.AttachTexture( Render::AttachmentType::Depth, m_depthBuffer );
-	dbAssert( m_vramDrawFrameBuffer.IsComplete() );
-	m_vramDrawFrameBuffer.Unbind();
+	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Depth, m_depthBuffer );
+	dbAssert( m_vramDrawFramebuffer.IsComplete() );
+	m_vramDrawFramebuffer.Unbind();
 
 	// VRAM read texture
-	m_vramReadFrameBuffer = Render::Framebuffer::Create();
+	m_vramReadFramebuffer = Render::Framebuffer::Create();
 	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
-	m_vramReadFrameBuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
-	dbAssert( m_vramReadFrameBuffer.IsComplete() );
-	m_vramReadFrameBuffer.Unbind();
+	m_vramReadFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
+	dbAssert( m_vramReadFramebuffer.IsComplete() );
+	m_vramReadFramebuffer.Unbind();
 
 	// VRAM transfer texture
-	m_vramTransferPixels = Render::PixelUnpackBuffer::Create<uint16_t>( Render::BufferUsage::StreamDraw, VRamWidth * VRamHeight );
-	m_vramTransferPixels.Unbind(); // bound pixel unpack buffers affect texture updates
+	m_vramTransferFramebuffer = Render::Framebuffer::Create();
 	m_vramTransferTexture = Render::Texture2D::Create();
+	m_vramTransferFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramTransferTexture );
+	dbAssert( m_vramReadFramebuffer.IsComplete() );
+	m_vramTransferFramebuffer.Unbind();
 
 	// get ready to render!
 	RestoreRenderState();
@@ -179,7 +181,11 @@ void Renderer::SetDrawArea( GLint left, GLint top, GLint right, GLint bottom )
 		m_drawAreaTop = top;
 		m_drawAreaRight = right;
 		m_drawAreaBottom = bottom;
+
 		UpdateScissorRect();
+
+		// grow dirty area once instead of for each render primitive
+		m_dirtyArea.Grow( Rect( left, top, right + 1, bottom + 1 ) );
 	}
 }
 
@@ -223,24 +229,24 @@ void Renderer::EnableSemiTransparency( bool enabled )
 
 void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels )
 {
-	// TODO: check draw mode areas
+	dbExpects( left < VRamWidth );
+	dbExpects( top < VRamHeight );
+	dbExpects( width <= VRamWidth );
+	dbExpects( height <= VRamHeight );
+
 	DrawBatch();
-
-	m_dirtyArea.Grow( Rect::FromExtents( left, top, width, height ) );
-
-	m_vramTransferPixels.SubData( width * height, pixels );
 
 	const bool wrapX = left + width > VRamWidth;
 	const bool wrapY = top + height > VRamHeight;
 
-	if ( !wrapX && !wrapY )
+	if ( !wrapX && !wrapY && !m_checkMaskBit && !m_forceMaskBit )
 	{
-		// no wrapping
-		m_vramDrawTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, nullptr ); // update from pixel unpack buffer
+		m_dirtyArea.Grow( Rect::FromExtents( left, top, width, height ) );
+		m_vramDrawTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
 	}
 	else
 	{
-		// wrapping
+		m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
 
 		// calculate width and height segments for wrapping vram upload
 		const uint32_t width2 = wrapX ? ( ( left + width ) % VRamWidth ) : 0;
@@ -248,21 +254,27 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		const uint32_t width1 = width - width2;
 		const uint32_t height1 = height - height2;
 
-		m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, nullptr ); // update from pixel unpack buffer
+		const float width1f = static_cast<float>( width1 ) / static_cast<float>( width );
+		const float height1f = static_cast<float>( height1 ) / static_cast<float>( height );
+		const float width2f = static_cast<float>( width2 ) / static_cast<float>( width );
+		const float height2f = static_cast<float>( height2 ) / static_cast<float>( height );
+
+		glDisable( GL_BLEND );
+		glDisable( GL_SCISSOR_TEST );
 
 		m_noAttributeVAO.Bind();
-		m_vramCopyShader.Use( 0, 0, 1, 1, m_forceMaskBit );
-
-		glDisable( GL_SCISSOR_TEST );
-		glDisable( GL_BLEND );
+		m_vramCopyShader.Use( 0, 0, width1f, height1f, m_forceMaskBit );
+		m_vramTransferTexture.Bind();
 
 		// bottom right
+		m_dirtyArea.Grow( Rect::FromExtents( left, top, width1, height1 ) );
 		glViewport( left, top, width1, height1 );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
 		// bottom left
 		if ( wrapX )
 		{
+			m_vramCopyShader.SetSourceArea( width1f, 0, width2f, height1f );
 			m_dirtyArea.Grow( Rect::FromExtents( 0, top, width2, height1 ) );
 			glViewport( 0, top, width2, height1 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
@@ -271,6 +283,8 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		// top right
 		if ( wrapY )
 		{
+			m_vramCopyShader.SetSourceArea( 0, height1f, width1f, height2f );
+
 			m_dirtyArea.Grow( Rect::FromExtents( left, 0, width1, height2 ) );
 			glViewport( left, 0, width1, height2 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
@@ -279,6 +293,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		// top left
 		if ( wrapX && wrapY )
 		{
+			m_vramCopyShader.SetSourceArea( width1f, height1f, width2f, height2f );
 			m_dirtyArea.Grow( Rect::FromExtents( 0, 0, width2, height2 ) );
 			glViewport( 0, 0, width2, height2 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
@@ -287,39 +302,67 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		RestoreRenderState();
 	}
 
-	// unbind pixel unpack buffer so it doesn't affect other texture updates
-	m_vramTransferPixels.Unbind();
+	dbCheckRenderErrors();
 }
 
 void Renderer::ReadVRam( uint16_t* vram )
 {
-	// TODO: check dirty area
 	DrawBatch();
 
 	glReadPixels( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
+	dbCheckRenderErrors();
 }
 
 void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a )
 {
-	// TODO: check draw mode areas
+	if ( width == 0 || height == 0 )
+		return;
+
 	DrawBatch();
 
 	glClearColor( r, g, b, a );
 	glClearDepth( a );
-	glScissor( left, top, width, height );
+
+	const bool wrapX = left + width > VRamWidth;
+	const bool wrapY = top + height > VRamHeight;
+
+	const uint32_t width2 = wrapX ? ( left + width - VRamWidth ) : 0;
+	const uint32_t height2 = wrapX ? ( top + height - VRamHeight ) : 0;
+	const uint32_t width1 = width - width2;
+	const uint32_t height1 = height - height2;
+
+	m_dirtyArea.Grow( Rect::FromExtents( left, top, width1, height1 ) );
+	glScissor( left, top, width1, height1 );
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
-	UpdateScissorRect();
+	if ( wrapX )
+	{
+		m_dirtyArea.Grow( 0, top );
+		glScissor( 0, top, width2, height1 );
+		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+	}
 
-	m_dirtyArea.Grow( Rect::FromExtents( left, top, width, height ) );
+	if ( wrapY )
+	{
+		m_dirtyArea.Grow( left, 0 );
+		glScissor( left, 0, width1, height2 );
+		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+	}
+
+	if ( wrapX && wrapY )
+	{
+		glScissor( 0, 0, width2, height2 );
+		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+	}
+
+	dbCheckRenderErrors();
+
+	UpdateScissorRect();
 }
 
 void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height )
 {
-	const Rect destRect = Rect::FromExtents( destX, destY, width, height );
-
-	if ( m_dirtyArea.Intersects( destRect ) )
-		DrawBatch();
+	DrawBatch();
 
 	if ( m_dirtyArea.Intersects( Rect::FromExtents( srcX, srcY, width, height ) ) )
 		UpdateReadTexture();
@@ -337,21 +380,25 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
+		dbCheckRenderErrors();
+
 		RestoreRenderState();
 	}
 	else
 	{
-		m_vramReadFrameBuffer.Bind( Render::FramebufferBinding::Read );
+		m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Read );
 
 		glBlitFramebuffer(
 			srcX, srcY, srcX + width, srcY + height,
 			destX, destY, destX + width, destY + height,
 			GL_COLOR_BUFFER_BIT, GL_NEAREST );
 
-		m_vramDrawFrameBuffer.Bind( Render::FramebufferBinding::Read );
+		dbCheckRenderErrors();
+
+		m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Read );
 	}
 
-	m_dirtyArea.Grow( destRect );
+	m_dirtyArea.Grow( Rect::FromExtents( destX, destY, width, height ) );
 }
 
 void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut )
@@ -442,6 +489,8 @@ void Renderer::UpdateBlendMode()
 	{
 		glDisable( GL_BLEND );
 	}
+
+	dbCheckRenderErrors();
 }
 
 void Renderer::UpdateDepthTest()
@@ -462,6 +511,7 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 
 	EnableSemiTransparency( semiTransparent );
 
+	/*
 	// grow dirty area
 	for ( size_t i = 0; i < 3; ++i )
 	{
@@ -470,6 +520,7 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 		const auto y = std::clamp<int>( m_uniform.originY + p.y, m_drawAreaTop, m_drawAreaBottom );
 		m_dirtyArea.Grow( x, y );
 	}
+	*/
 
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
 }
@@ -507,8 +558,9 @@ void Renderer::DrawBatch()
 	else
 	{
 		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
-		dbCheckRenderErrors();
 	}
+
+	dbCheckRenderErrors();
 
 	m_vertices.clear();
 }
@@ -518,7 +570,7 @@ void Renderer::UpdateReadTexture()
 	if ( m_dirtyArea.GetWidth() == 0 || m_dirtyArea.GetHeight() == 0 )
 		return;
 
-	m_vramReadFrameBuffer.Bind( Render::FramebufferBinding::Draw );
+	m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Draw );
 	glDisable( GL_SCISSOR_TEST );
 
 	glBlitFramebuffer( 
@@ -526,8 +578,10 @@ void Renderer::UpdateReadTexture()
 		m_dirtyArea.left, m_dirtyArea.top, m_dirtyArea.right, m_dirtyArea.bottom,
 		GL_COLOR_BUFFER_BIT, GL_NEAREST );
 
-	m_vramDrawFrameBuffer.Bind( Render::FramebufferBinding::Draw );
+	m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Draw );
 	glEnable( GL_SCISSOR_TEST );
+
+	dbCheckRenderErrors();
 
 	ResetDirtyArea();
 }
@@ -535,7 +589,7 @@ void Renderer::UpdateReadTexture()
 void Renderer::RestoreRenderState()
 {
 	m_vramDrawVAO.Bind();
-	m_vramDrawFrameBuffer.Bind();
+	m_vramDrawFramebuffer.Bind();
 	m_vramReadTexture.Bind();
 	m_clutShader.Bind();
 
@@ -567,7 +621,7 @@ void Renderer::DisplayFrame()
 	DrawBatch();
 
 	// reset render state
-	m_vramDrawFrameBuffer.Unbind();
+	m_vramDrawFramebuffer.Unbind();
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
 	glDisable( GL_DEPTH_TEST );

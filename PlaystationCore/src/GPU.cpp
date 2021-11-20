@@ -20,14 +20,16 @@ namespace
 
 constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
 {
-	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0; // steps of 0x10
+	// Horizontally the filling is done in 16-pixel (32-bytes) units
+	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0;
 	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
 	return { x, y };
 }
 
 constexpr std::pair<uint16_t, uint16_t> DecodeFillSize( uint32_t gpuParam ) noexcept
 {
-	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & VRamWidthMask ) + 0x0f ) & ~0x0f; //  steps of 0x10
+	// Horizontally the filling is done in 16-pixel (32-bytes) units
+	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & VRamWidthMask ) + 0x0f ) & ~0x0f;
 	const uint16_t h = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
 	return { w, h };
 }
@@ -765,7 +767,10 @@ void Gpu::FillRectangle() noexcept
 
 	if ( width > 0 && height > 0 )
 	{
-		FillVRam( x, y, width, height, color.r / 255.0f, color.g / 255.0f, color.b / 255.0f );
+		const float r = static_cast<float>( color.r ) / 255.0f;
+		const float g = static_cast<float>( color.g ) / 255.0f;
+		const float b = static_cast<float>( color.b ) / 255.0f;
+		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
 	}
 
 	ClearCommandBuffer();
@@ -782,7 +787,7 @@ void Gpu::CopyRectangle() noexcept
 
 	dbLogDebug( "Gpu::CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
 
-	CopyVRam( srcX, srcY, destX, destY, width, height );
+	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 
 	ClearCommandBuffer();
 }
@@ -1122,57 +1127,6 @@ void Gpu::ScheduleNextEvent()
 	m_cachedCyclesUntilNextEvent = cpuCycles;
 
 	m_clockEvent->Schedule( cpuCycles );
-}
-
-void Gpu::FillVRam( uint32_t x, uint32_t y, uint32_t width, uint32_t height, float r, float g, float b )
-{
-	dbExpects( x < VRamWidth );
-	dbExpects( y < VRamHeight );
-	dbExpects( width > 0 );
-	dbExpects( height > 0 );
-
-	// wrap fill
-
-	uint32_t width2 = 0;
-	if ( x + width > VRamWidth )
-	{
-		width2 = x + width - VRamWidth;
-		width -= width2;
-	}
-
-	uint32_t height2 = 0;
-	if ( y + height > VRamHeight )
-	{
-		height2 = y + height - VRamHeight;
-		height -= height2;
-	}
-
-	m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
-
-	if ( width2 > 0 )
-		m_renderer.FillVRam( 0, y, width2, height, r, g, b, 0.0f );
-
-	if ( height2 > 0 )
-		m_renderer.FillVRam( x, 0, width, height2, r, g, b, 0.0f );
-
-	if ( width2 > 0 && height2 > 0 )
-		m_renderer.FillVRam( 0, 0, width2, height2, r, g, b, 0.0f );
-}
-
-void Gpu::CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height )
-{
-	dbExpects( srcX < VRamWidth );
-	dbExpects( srcY < VRamHeight );
-	dbExpects( destX < VRamWidth );
-	dbExpects( destY < VRamHeight );
-	dbExpects( width > 0 );
-	dbExpects( height > 0 );
-
-	// TODO wrap copy
-
-	// TODO: check mask bits
-
-	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 }
 
 } // namespace PSX

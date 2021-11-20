@@ -69,4 +69,9 @@ void VRamCopyShader::Use(
 	glUniform1i( m_forceMaskBitLoc, forceMaskBit );
 }
 
+void VRamCopyShader::SetSourceArea( float srcX, float srcY, float srcW, float srcH )
+{
+	glUniform4f( m_srcRectLoc, srcX, srcY, srcW, srcH );
+}
+
 }
