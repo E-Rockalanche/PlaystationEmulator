@@ -233,7 +233,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	dbExpects( width <= VRamWidth );
 	dbExpects( height <= VRamHeight );
 
-	dbLog( "Renderer::UpdateVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
+	dbLogDebug( "Renderer::UpdateVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
 
 	DrawBatch();
 
@@ -247,7 +247,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	}
 	else
 	{
-		dbLog( "\tvram update wrapping" );
+		dbLogDebug( "\tvram update wrapping" );
 
 		m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
 
@@ -308,7 +308,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 
 void Renderer::ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint16_t* vram )
 {
-	dbLog( "Renderer::ReadVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
+	dbLogDebug( "Renderer::ReadVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
 
 	DrawBatch();
 
