@@ -162,7 +162,7 @@ void Gpu::Reset()
 
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
-	m_renderer.UpdateVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
+	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
 	m_vramCopyState.reset();
 
@@ -499,7 +499,7 @@ uint32_t Gpu::GpuRead_Image() noexcept
 		const auto x = m_vramCopyState->GetWrappedX();
 		const auto y = m_vramCopyState->GetWrappedY();
 		m_vramCopyState->Increment();
-		return *( m_vram.get() + y * VRamWidth + x );
+		return m_vram[ x + y * VRamWidth ];
 	};
 
 	m_gpuRead = getPixel();
@@ -797,8 +797,9 @@ void Gpu::CopyRectangleToVram() noexcept
 	// affected by mask settings
 	SetupVRamCopy();
 	dbLogDebug( "Gpu::CopyRectangleToVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
-	
+
 	m_vramCopyState->InitializePixelBuffer();
+	
 	SetGP0Mode( &Gpu::GP0_Image );
 	UpdateDmaRequest();
 }
@@ -811,8 +812,7 @@ void Gpu::CopyRectangleFromVram() noexcept
 	m_status.readyToReceiveCommand = false;
 	ClearCommandBuffer(); // TODO: clear buffer here after image copy?
 
-	// read vram from frame buffer
-	m_renderer.ReadVRam( m_vram.get() );
+	m_renderer.ReadVRam( m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height, m_vram.get() );
 
 	UpdateDmaRequest();
 }
@@ -972,10 +972,6 @@ void Gpu::RenderRectangle() noexcept
 
 		case RectangleSize::Sixteen:
 			width = height = 16;
-			break;
-
-		default:
-			dbBreak();
 			break;
 	}
 

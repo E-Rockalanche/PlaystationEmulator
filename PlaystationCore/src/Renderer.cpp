@@ -95,7 +95,6 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramTransferFramebuffer = Render::Framebuffer::Create();
 	m_vramTransferTexture = Render::Texture2D::Create();
 	m_vramTransferFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramTransferTexture );
-	dbAssert( m_vramReadFramebuffer.IsComplete() );
 	m_vramTransferFramebuffer.Unbind();
 
 	// get ready to render!
@@ -234,6 +233,8 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	dbExpects( width <= VRamWidth );
 	dbExpects( height <= VRamHeight );
 
+	dbLog( "Renderer::UpdateVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
+
 	DrawBatch();
 
 	const bool wrapX = left + width > VRamWidth;
@@ -246,6 +247,8 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	}
 	else
 	{
+		dbLog( "\tvram update wrapping" );
+
 		m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
 
 		// calculate width and height segments for wrapping vram upload
@@ -275,7 +278,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		if ( wrapX )
 		{
 			m_vramCopyShader.SetSourceArea( width1f, 0, width2f, height1f );
-			m_dirtyArea.Grow( Rect::FromExtents( 0, top, width2, height1 ) );
+			m_dirtyArea.Grow( 0, top );
 			glViewport( 0, top, width2, height1 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		}
@@ -284,8 +287,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		if ( wrapY )
 		{
 			m_vramCopyShader.SetSourceArea( 0, height1f, width1f, height2f );
-
-			m_dirtyArea.Grow( Rect::FromExtents( left, 0, width1, height2 ) );
+			m_dirtyArea.Grow( left, 0 );
 			glViewport( left, 0, width1, height2 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		}
@@ -294,7 +296,6 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		if ( wrapX && wrapY )
 		{
 			m_vramCopyShader.SetSourceArea( width1f, height1f, width2f, height2f );
-			m_dirtyArea.Grow( Rect::FromExtents( 0, 0, width2, height2 ) );
 			glViewport( 0, 0, width2, height2 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		}
@@ -305,11 +306,51 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	dbCheckRenderErrors();
 }
 
-void Renderer::ReadVRam( uint16_t* vram )
+void Renderer::ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint16_t* vram )
 {
+	dbLog( "Renderer::ReadVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
+
 	DrawBatch();
 
 	glReadPixels( 0, 0, VRamWidth, VRamHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram );
+
+	/*
+	// handle wrapping
+	if ( left + width > VRamWidth )
+	{
+		left = 0;
+		width = VRamWidth;
+	}
+
+	if ( top + height > VRamHeight )
+	{
+		top = 0;
+		height = VRamHeight;
+	}
+
+	// copy vram area to new texture
+	m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev );
+	dbAssert( m_vramTransferFramebuffer.IsComplete() );
+	m_vramTransferFramebuffer.Bind( Render::FramebufferBinding::Draw );
+	glDisable( GL_SCISSOR_TEST );
+	glBlitFramebuffer( left, top, left + width, top + height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST );
+	dbCheckRenderErrors();
+
+	// unpack pixel data into vram read-back array
+	m_vramTransferFramebuffer.Bind( Render::FramebufferBinding::Read );
+
+	glPixelStorei( GL_PACK_ALIGNMENT, 2 );
+	glPixelStorei( GL_PACK_ROW_LENGTH, VRamWidth );
+	glReadPixels( 0, 0, width, height, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram + left + top * VRamWidth );
+	dbCheckRenderErrors();
+
+	// reset render state
+	m_vramDrawFramebuffer.Bind();
+	glEnable( GL_SCISSOR_TEST );
+	glPixelStorei( GL_PACK_ALIGNMENT, 4 );
+	glPixelStorei( GL_PACK_ROW_LENGTH, 0 );
+	*/
+
 	dbCheckRenderErrors();
 }
 
@@ -387,15 +428,17 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 	else
 	{
 		m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Read );
+		glDisable( GL_SCISSOR_TEST );
 
 		glBlitFramebuffer(
 			srcX, srcY, srcX + width, srcY + height,
 			destX, destY, destX + width, destY + height,
 			GL_COLOR_BUFFER_BIT, GL_NEAREST );
 
-		dbCheckRenderErrors();
-
 		m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Read );
+		glEnable( GL_SCISSOR_TEST );
+
+		dbCheckRenderErrors();
 	}
 
 	m_dirtyArea.Grow( Rect::FromExtents( destX, destY, width, height ) );

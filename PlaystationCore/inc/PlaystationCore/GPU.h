@@ -268,7 +268,7 @@ private:
 
 	bool m_displayFrame = false;
 
-	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512
+	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512, used for VRAM to CPU transfers
 
 	struct VRamCopyState
 	{

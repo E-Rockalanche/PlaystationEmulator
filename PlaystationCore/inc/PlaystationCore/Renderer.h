@@ -54,7 +54,7 @@ public:
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
 
 	// read entire vram from frame buffer
-	void ReadVRam( uint16_t* vram );
+	void ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t hieght, uint16_t* vram );
 
 	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a );
 
