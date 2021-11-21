@@ -124,11 +124,12 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 	switch ( static_cast<Register>( index ) )
 	{
 		case Register::VXY0:	return readVXYn( 0 );
-		case Register::VXY1:	return readVXYn( 1 );
-		case Register::VXY2:	return readVXYn( 2 );
-
 		case Register::VZ0:		return readVZn( 0 );
+
+		case Register::VXY1:	return readVXYn( 1 );
 		case Register::VZ1:		return readVZn( 1 );
+
+		case Register::VXY2:	return readVXYn( 2 );
 		case Register::VZ2:		return readVZn( 2 );
 
 		case Register::ColorCode:	return m_color.value;
@@ -832,11 +833,11 @@ void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, int 
 	const int64_t temp = FastDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
 #endif
 
-	const int32_t screenX = static_cast<int32_t>( ( temp * m_ir123.x + m_screenOffset.x ) >> 16 );
-	const int32_t screenY = static_cast<int32_t>( ( temp * m_ir123.y + m_screenOffset.y ) >> 16 );
+	const int32_t screenX = static_cast<int32_t>( ( temp * int64_t( m_ir123.x ) + int64_t( m_screenOffset.x ) ) >> 16 );
+	const int32_t screenY = static_cast<int32_t>( ( temp * int64_t( m_ir123.y ) + int64_t( m_screenOffset.y ) ) >> 16 );
 	PushScreenXY( screenX, screenY );
 
-	SetMAC<0>( temp * m_depthQueueParamA + m_depthQueueParamB );
+	SetMAC<0>( temp * int64_t( m_depthQueueParamA ) + int64_t( m_depthQueueParamB ) );
 	SetIR<0>( m_mac0 >> 12, true );
 }
 

@@ -90,16 +90,26 @@ enum class DmaDirection
 	GpuReadToCpu
 };
 
+union PositionParameter
+{
+	explicit constexpr PositionParameter( uint32_t param ) : value{ param } {}
+
+	struct
+	{
+		int16_t x : 11;
+		int16_t : 5;
+		int16_t y : 11;
+		int16_t : 5;
+	};
+	uint32_t value;
+};
+static_assert( sizeof( PositionParameter ) == 4 );
+
 struct Position
 {
 	constexpr Position() = default;
-
 	constexpr Position( int16_t x_, int16_t y_ ) : x{ x_ }, y{ y_ } {}
-
-	explicit constexpr Position( uint32_t gpuParam )
-		: x{ static_cast<int16_t>( gpuParam ) }
-		, y{ static_cast<int16_t>( gpuParam >> 16 ) }
-	{}
+	constexpr Position( PositionParameter param ) : x{ param.x }, y{ param.y } {}
 
 	int16_t x = 0;
 	int16_t y = 0;

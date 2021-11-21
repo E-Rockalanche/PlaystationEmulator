@@ -837,7 +837,7 @@ void Gpu::RenderPolygon() noexcept
 			v.color = color;
 	}
 
-	vertices[ 0 ].position = Position{ m_commandBuffer.Pop() };
+	vertices[ 0 ].position = PositionParameter{ m_commandBuffer.Pop() };
 
 	TexPage texPage;
 	ClutAttribute clut;
@@ -856,7 +856,7 @@ void Gpu::RenderPolygon() noexcept
 	if ( command.shading )
 		vertices[ 1 ].color = Color{ m_commandBuffer.Pop() };
 
-	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
+	vertices[ 1 ].position = PositionParameter{ m_commandBuffer.Pop() };
 
 	if ( command.textureMapping )
 	{
@@ -881,7 +881,7 @@ void Gpu::RenderPolygon() noexcept
 		if ( command.shading )
 			vertices[ i ].color = Color{ m_commandBuffer.Pop() };
 
-		vertices[ i ].position = Position{ m_commandBuffer.Pop() };
+		vertices[ i ].position = PositionParameter{ m_commandBuffer.Pop() };
 
 		if ( command.textureMapping )
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
@@ -915,7 +915,7 @@ void Gpu::RenderRectangle() noexcept
 		v.color = color;
 
 	// get position
-	const Position pos{ m_commandBuffer.Pop() };
+	const PositionParameter pos{ m_commandBuffer.Pop() };
 
 	// get tex coord/set clut
 	TexCoord topLeftTexCoord;
@@ -975,10 +975,10 @@ void Gpu::RenderRectangle() noexcept
 			break;
 	}
 
-	vertices[ 0 ].position = pos;
-	vertices[ 1 ].position = Position{ pos.x, pos.y + height };
-	vertices[ 2 ].position = Position{ pos.x + width, pos.y };
-	vertices[ 3 ].position = Position{ pos.x + width, pos.y + height };
+	vertices[ 0 ].position = Position{ pos.x, pos.y };
+	vertices[ 1 ].position = Position{ pos.x, static_cast<int16_t>( pos.y + height ) };
+	vertices[ 2 ].position = Position{ static_cast<int16_t>( pos.x + width ), pos.y };
+	vertices[ 3 ].position = Position{ static_cast<int16_t>( pos.x + width ), static_cast<int16_t>( pos.y + height ) };
 
 	if ( command.textureMapping )
 	{
