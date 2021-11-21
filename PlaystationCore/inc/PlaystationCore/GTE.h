@@ -334,7 +334,7 @@ private:
 	// TODO: color CRGB code/color FIFOs
 	std::array<ColorRGBC, 3> m_colorCodeFifo{};
 
-	uint32_t m_res1 = 0; // unused register, but it is still read/write-able
+	uint32_t m_unused = 0; // unused register, but it is still read/write-able
 
 	// signed 32 bit
 	int32_t m_mac0 = 0;

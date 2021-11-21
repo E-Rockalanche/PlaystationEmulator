@@ -7,7 +7,7 @@
 
 #define GTE_LOG_COMMANDS false
 
-#define GTE_USE_FAST_DIVISION true
+#define GTE_USE_UNR_DIVISION true
 
 namespace PSX
 {
@@ -34,7 +34,9 @@ constexpr uint32_t SignExtend16( T value ) noexcept
 template <typename T, typename U>
 constexpr int64_t DotProduct3( const T& lhs, const U& rhs )
 {
-	return int64_t( lhs[ 0 ] ) * int64_t( rhs[ 0 ] ) + int64_t( lhs[ 1 ] ) * int64_t( rhs[ 1 ] ) + int64_t( lhs[ 2 ] ) * int64_t( rhs[ 2 ] );
+	return	int64_t( lhs[ 0 ] ) * int64_t( rhs[ 0 ] ) +
+			int64_t( lhs[ 1 ] ) * int64_t( rhs[ 1 ] ) +
+			int64_t( lhs[ 2 ] ) * int64_t( rhs[ 2 ] );
 }
 
 } // namespace
@@ -60,7 +62,7 @@ void GTE::Reset()
 	m_screenZFifo.fill( 0 );
 	m_colorCodeFifo.fill( ColorRGBC() );
 
-	m_res1 = 0;
+	m_unused = 0;
 
 	m_mac0 = 0;
 	m_mac123 = Vector32{ 0 };
@@ -152,7 +154,7 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 		case Register::RGB1:	return m_colorCodeFifo[ 1 ].value;
 		case Register::RGB2:	return m_colorCodeFifo[ 2 ].value;
 
-		case Register::Prohibited:	return m_res1;
+		case Register::Prohibited:	return m_unused;
 
 		case Register::MAC0:	return static_cast<uint32_t>( m_mac0 );
 		case Register::MAC1:	return static_cast<uint32_t>( m_mac123.x );
@@ -162,9 +164,9 @@ uint32_t GTE::Read( uint32_t index ) const noexcept
 		case Register::ColorConversionInput:
 		case Register::ColorConversionOutput:
 		{
-			const uint32_t r = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 0 ] >> 7, 0x00, 0x1f ) );
-			const uint32_t g = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 1 ] >> 7, 0x00, 0x1f ) );
-			const uint32_t b = static_cast<uint32_t>( std::clamp<int16_t>( m_ir123[ 2 ] >> 7, 0x00, 0x1f ) );
+			const uint32_t r = static_cast<uint32_t>( std::clamp( m_ir123[ 0 ] / 0x80, 0x00, 0x1f ) );
+			const uint32_t g = static_cast<uint32_t>( std::clamp( m_ir123[ 1 ] / 0x80, 0x00, 0x1f ) );
+			const uint32_t b = static_cast<uint32_t>( std::clamp( m_ir123[ 2 ] / 0x80, 0x00, 0x1f ) );
 			return r | ( g << 5 ) | ( b << 10 );
 		}
 
@@ -297,7 +299,7 @@ void GTE::Write( uint32_t index, uint32_t value ) noexcept
 		case Register::RGB1:	m_colorCodeFifo[ 1 ].value = value;		break;
 		case Register::RGB2:	m_colorCodeFifo[ 2 ].value = value;		break;
 
-		case Register::Prohibited:	m_res1 = value;	break;
+		case Register::Prohibited:	m_unused = value;	break;
 
 		case Register::MAC0:	m_mac0 = static_cast<int32_t>( value );			break;
 		case Register::MAC1:	m_mac123.x = static_cast<int32_t>( value );		break;
@@ -415,8 +417,8 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 		case Opcode::Average3Z:
 		{
 			// MAC0 =  ZSF3*(SZ1+SZ2+SZ3)
-			const int64_t result = static_cast<int64_t>( m_zScaleFactor3 ) *
-				static_cast<int32_t>( m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] );
+			const int64_t result = int64_t( m_zScaleFactor3 ) *
+				( int64_t( m_screenZFifo[ 1 ] ) + int64_t( m_screenZFifo[ 2 ] ) + int64_t( m_screenZFifo[ 3 ] ) );
 
 			SetMAC<0>( result );
 
@@ -428,8 +430,8 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 		case Opcode::Average4Z:
 		{
 			// MAC0 =  ZSF4*(SZ0+SZ1+SZ2+SZ3)
-			const int64_t result = static_cast<int64_t>( m_zScaleFactor4 ) *
-				static_cast<int32_t>( m_screenZFifo[ 0 ] + m_screenZFifo[ 1 ] + m_screenZFifo[ 2 ] + m_screenZFifo[ 3 ] );
+			const int64_t result = int64_t( m_zScaleFactor4 ) *
+				( int64_t( m_screenZFifo[ 0 ] ) + int64_t( m_screenZFifo[ 1 ] ) + int64_t( m_screenZFifo[ 2 ] ) + int64_t( m_screenZFifo[ 3 ] ) );
 
 			SetMAC<0>( result );
 
@@ -535,18 +537,18 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 
 		case Opcode::GeneralInterpolation:
 		{
-			SetMAC<1>( ( m_ir123[ 0 ] * m_ir0 ), sf );
-			SetMAC<2>( ( m_ir123[ 1 ] * m_ir0 ), sf );
-			SetMAC<3>( ( m_ir123[ 2 ] * m_ir0 ), sf );
+			SetMAC<1>( int64_t( m_ir123[ 0 ] ) * int64_t( m_ir0 ), sf );
+			SetMAC<2>( int64_t( m_ir123[ 1 ] ) * int64_t( m_ir0 ), sf );
+			SetMAC<3>( int64_t( m_ir123[ 2 ] ) * int64_t( m_ir0 ), sf );
 			PushColorFromMAC( lm );
 			break;
 		}
 
 		case Opcode::GeneralInterpolationBase:
 		{
-			SetMAC<1>( ( m_ir123[ 0 ] * m_ir0 ) + ( int64_t( m_mac123[ 0 ] ) << sf ), sf );
-			SetMAC<2>( ( m_ir123[ 1 ] * m_ir0 ) + ( int64_t( m_mac123[ 1 ] ) << sf ), sf );
-			SetMAC<3>( ( m_ir123[ 2 ] * m_ir0 ) + ( int64_t( m_mac123[ 2 ] ) << sf ), sf );
+			SetMAC<1>( int64_t( m_ir123[ 0 ] ) * int64_t( m_ir0 ) + ( int64_t( m_mac123[ 0 ] ) << sf ), sf );
+			SetMAC<2>( int64_t( m_ir123[ 1 ] ) * int64_t( m_ir0 ) + ( int64_t( m_mac123[ 1 ] ) << sf ), sf );
+			SetMAC<3>( int64_t( m_ir123[ 2 ] ) * int64_t( m_ir0 ) + ( int64_t( m_mac123[ 2 ] ) << sf ), sf );
 			PushColorFromMAC( lm );
 			break;
 		}
@@ -673,19 +675,11 @@ void GTE::PushScreenZ( int32_t value ) noexcept
 {
 	LogGTE( "PushScreenZ( %i )", value );
 
-	if ( value < ZMin )
+	if ( value < ZMin || value > ZMax )
 	{
-		value = ZMin;
+		value = ( value < ZMin ) ? ZMin : ZMax;
 		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
-
-		LogGTE( "\tclamping to %i", value );
-	}
-	else if ( value > ZMax )
-	{
-		value = ZMax;
-		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
-
-		LogGTE( "\tclamping to %i", value );
+		LogGTE( "\tclamping z to %i", value );
 	}
 
 	PushBack( m_screenZFifo, static_cast<uint16_t>( value ) );
@@ -695,46 +689,34 @@ void GTE::PushScreenXY( int32_t x, int32_t y ) noexcept
 {
 	LogGTE( "PushScreenXY( %i, %i )", x, y );
 
-	auto truncate = [this]( int32_t coord, uint32_t errorFlag ) -> int16_t
+	if ( x < ScreenMin || x > ScreenMax )
 	{
-		if ( coord < ScreenMin )
-		{
-			LogGTE( "\tclamping %i to %i", coord, ScreenMin );
+		x = ( x < ScreenMin ) ? ScreenMin : ScreenMax;
+		m_errorFlags |= ErrorFlag::SX2Saturated;
+		LogGTE( "\tclamping x to %i", x );
+	}
 
-			m_errorFlags |= errorFlag;
-			return ScreenMin;
-		}
-		else if ( coord > ScreenMax )
-		{
-			LogGTE( "\tclamping %i to %i", coord, ScreenMax );
+	if ( y < ScreenMin || y > ScreenMax )
+	{
+		y = ( y < ScreenMin ) ? ScreenMin : ScreenMax;
+		m_errorFlags |= ErrorFlag::SY2Saturated;
+		LogGTE( "\tclamping y to %i", y );
+	}
 
-			m_errorFlags |= errorFlag;
-			return ScreenMax;
-		}
-		return static_cast<int16_t>( coord );
-	};
-
-	PushBack( m_screenXYFifo, ScreenXY{ truncate( x, ErrorFlag::SX2Saturated ), truncate( y, ErrorFlag::SY2Saturated ) } );
+	PushBack( m_screenXYFifo, ScreenXY{ static_cast<int16_t>( x ), static_cast<int16_t>( y ) } );
 }
 
 void GTE::SetOrderTableZ( int32_t z ) noexcept
 {
 	LogGTE( "SetOrderTableZ( %i )", z );
 
-	if ( z < ZMin )
+	if ( z < ZMin || z > ZMax )
 	{
-		z = ZMin;
+		z = ( z < ZMin ) ? ZMin : ZMax;
 		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
-
-		LogGTE( "\tclamping to %i", z );
+		LogGTE( "\tclamping z to %i", z );
 	}
-	else if ( z > ZMax )
-	{
-		z = ZMax;
-		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
 
-		LogGTE( "\tclamping to %i", z );
-	}
 	m_orderTableZ = static_cast<uint16_t>( z );
 }
 
@@ -844,10 +826,10 @@ void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, int 
 
 	PushScreenZ( m_mac123.z >> ( 12 - shiftAmount ) );
 
-#if GTE_USE_FAST_DIVISION
-	const int64_t temp = FastDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
-#else
+#if GTE_USE_UNR_DIVISION
 	const int64_t temp = UNRDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
+#else
+	const int64_t temp = FastDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
 #endif
 
 	const int32_t screenX = static_cast<int32_t>( ( temp * m_ir123.x + m_screenOffset.x ) >> 16 );
@@ -1008,25 +990,25 @@ uint32_t GTE::UNRDivide( uint32_t lhs, uint32_t rhs ) noexcept
 	};
 
 	uint32_t result = 0;
-	if ( rhs * 2 <= lhs )
+	if ( lhs < rhs * 2 )
 	{
-		m_errorFlags |= ErrorFlag::DivideOverflow;
-		result = 0x1ffff;
+		const uint32_t z = stdx::countl_zero( static_cast<uint16_t>( rhs ) );
+		dbAssert( z < 16 );
+
+		const uint32_t n = lhs << z;
+		uint32_t d = rhs << z;
+		const uint32_t index = ( d - 0x7fc0 ) >> 7;
+		dbAssert( index < UNRTable.size() );
+
+		const uint32_t u = UNRTable[ index ] + 0x101;
+		d = static_cast<uint32_t>( ( 0x2000080 - uint64_t( d ) * uint64_t( u ) ) >> 8 );
+		d = static_cast<uint32_t>( ( 0x80 + uint64_t( d ) * uint64_t( u ) ) >> 8 );
+		result = std::min<uint32_t>( 0x1ffff, static_cast<uint32_t>( ( uint64_t( n ) * uint64_t( d ) + 0x8000 ) >> 16 ) );
 	}
 	else
 	{
-		int shift = stdx::countl_zero( static_cast<uint16_t>( rhs ) );
-
-		const uint32_t n = lhs << shift;
-		uint32_t d = rhs << shift;
-
-		const uint32_t index = ( d - 0x7fc0 ) >> 7;
-		const uint32_t u = UNRTable[ index ] + 0x101;
-
-		d = ( ( 0x2000080 - ( d * u ) ) >> 8 );
-		d = ( ( 0x0000080 + ( d * u ) ) >> 8 );
-
-		result = std::min<uint32_t>( 0x1ffff, ( ( ( n * d ) + 0x8000 ) >> 16 ) );
+		m_errorFlags |= ErrorFlag::DivideOverflow;
+		result = 0x1ffff;
 	}
 
 	LogGTE( "result = %u", result );
