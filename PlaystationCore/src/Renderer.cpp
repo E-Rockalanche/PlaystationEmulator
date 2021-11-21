@@ -325,25 +325,26 @@ void Renderer::ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 		height = VRamHeight;
 	}
 
+	/*
 	// copy pixel from framebuffer to vram array
 	glPixelStorei( GL_PACK_ALIGNMENT, 2 );
 	glPixelStorei( GL_PACK_ROW_LENGTH, VRamWidth );
 	glReadPixels( left, top, width, height, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram + left + top * VRamWidth );
 	glPixelStorei( GL_PACK_ALIGNMENT, 4 );
 	glPixelStorei( GL_PACK_ROW_LENGTH, 0 );
+	*/
 
-	/*
 	// copy vram area to new texture
 	m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev );
 	dbAssert( m_vramTransferFramebuffer.IsComplete() );
 	m_vramTransferFramebuffer.Bind( Render::FramebufferBinding::Draw );
+	m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Read );
 	glDisable( GL_SCISSOR_TEST );
 	glBlitFramebuffer( left, top, left + width, top + height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST );
 	dbCheckRenderErrors();
 
 	// unpack pixel data into vram read-back array
 	m_vramTransferFramebuffer.Bind( Render::FramebufferBinding::Read );
-
 	glPixelStorei( GL_PACK_ALIGNMENT, 2 );
 	glPixelStorei( GL_PACK_ROW_LENGTH, VRamWidth );
 	glReadPixels( 0, 0, width, height, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram + left + top * VRamWidth );
@@ -354,8 +355,6 @@ void Renderer::ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 	glEnable( GL_SCISSOR_TEST );
 	glPixelStorei( GL_PACK_ALIGNMENT, 4 );
 	glPixelStorei( GL_PACK_ROW_LENGTH, 0 );
-	*/
-
 	dbCheckRenderErrors();
 }
 
