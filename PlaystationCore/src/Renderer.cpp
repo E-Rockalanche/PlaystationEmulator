@@ -398,6 +398,11 @@ void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 
 void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height )
 {
+	dbExpects( srcX + width <= VRamWidth );
+	dbExpects( srcY + height <= VRamHeight );
+	dbExpects( destX + width <= VRamWidth );
+	dbExpects( destY + height <= VRamHeight );
+
 	DrawBatch();
 
 	if ( m_dirtyArea.Intersects( Rect::FromExtents( srcX, srcY, width, height ) ) )
