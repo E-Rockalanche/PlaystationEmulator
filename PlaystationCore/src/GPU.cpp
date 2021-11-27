@@ -112,17 +112,23 @@ Gpu::~Gpu() = default;
 
 void Gpu::Reset()
 {
-	// reset buffer, remaining words, command function, and gp0 mode
-	ClearCommandBuffer();
+	m_commandBuffer.Reset();
+	m_remainingParamaters = 0;
+	m_commandFunction = nullptr;
+	m_gp0Mode = &Gpu::GP0_Command;
 
 	m_gpuRead = 0;
 	m_gpuReadMode = &Gpu::GpuRead_Normal;
 
 	m_status.value = 0;
+	m_status.readyToReceiveCommand = true;
 	m_status.displayDisable = true;
-	m_renderer.SetDisplayEnable( false );
-
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
+	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
+	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
+	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
+	m_renderer.SetDisplayEnable( !m_status.displayDisable );
 
 	m_texturedRectFlipX = false;
 	m_texturedRectFlipY = false;
@@ -567,8 +573,15 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			dbLogDebug( "Gpu::WriteGP1() -- soft reset" );
 
+			ClearCommandBuffer();
+
 			m_status.value = 0x14802000;
+			m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
+			m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
 			m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
+			m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
+			m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
+			m_renderer.SetDisplayEnable( !m_status.displayDisable );
 
 			m_horDisplayRangeStart = 0x200;
 			m_horDisplayRangeEnd = 0x200 + 256 * 10;
@@ -595,8 +608,24 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_drawOffsetY = 0;
 			m_renderer.SetOrigin( 0, 0 );
 
-			ClearCommandBuffer();
+			m_currentScanline = 0;
+			m_currentDot = 0;
+			m_dotTimerFraction = 0;
+			m_hblank = false;
+			m_vblank = false;
+			m_drawingEvenOddLine = false;
+
+			auto& dotTimer = m_timers->GetTimer( 0 );
+			if ( dotTimer.GetSyncEnable() )
+				dotTimer.UpdateBlank( m_hblank );
+
+			auto& hblankTimer = m_timers->GetTimer( 1 );
+			if ( hblankTimer.GetSyncEnable() )
+				hblankTimer.UpdateBlank( m_vblank );
+
 			UpdateDmaRequest();
+
+			ScheduleNextEvent();
 
 			// TODO: clear texture cache?
 

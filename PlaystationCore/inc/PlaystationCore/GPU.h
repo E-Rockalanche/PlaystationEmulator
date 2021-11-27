@@ -130,6 +130,7 @@ private:
 		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
 
 		SemiTransparencyMode GetSemiTransparencyMode() const noexcept { return static_cast<SemiTransparencyMode>( semiTransparencyMode ); }
+		DisplayAreaColorDepth GetDisplayAreaColorDepth() const noexcept { return static_cast<DisplayAreaColorDepth>( displayAreaColorDepth ); }
 	};
 	static_assert( sizeof( Status ) == 4 );
 
