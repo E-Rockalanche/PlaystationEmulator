@@ -102,10 +102,9 @@ enum class PrimitiveType
 Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
 	, m_renderer{ renderer }
-	, m_eventManager{ eventManager }
 	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
-	m_clockEvent = m_eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles ) { UpdateCycles( cpuCycles ); } );
+	m_clockEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles ) { UpdateCycles( cpuCycles ); } );
 }
 
 Gpu::~Gpu() = default;
@@ -284,8 +283,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 			m_texturedRectFlipX = stdx::any_of<uint32_t>( value, 1 << 12 );
 			m_texturedRectFlipY = stdx::any_of<uint32_t>( value, 1 << 13 );
-
-			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -299,8 +296,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_textureWindowOffsetY = ( value >> 15 ) & 0x1f;
 
 			m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
-
-			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -312,8 +307,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			dbLogDebug( "Gpu::GP0_Command() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
-
-			m_eventManager.AddCycles( 1 );
 
 			// TODO: does this affect blanking?
 			break;
@@ -327,8 +320,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			dbLogDebug( "Gpu::GP0_Command() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
-
-			m_eventManager.AddCycles( 1 );
 
 			// TODO: does this affect blanking?
 			break;
@@ -347,8 +338,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			dbLogDebug( "Gpu::GP0_Command() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
 
 			m_renderer.SetOrigin( m_drawOffsetX, m_drawOffsetY );
-
-			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -361,14 +350,11 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_status.setMaskOnDraw = setMask;
 			m_status.checkMaskOnDraw = checkMask;
 			m_renderer.SetMaskBits( setMask, checkMask );
-
-			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
 		case 0x01: // clear cache
 			dbLogDebug( "Gpu::GP0_Command() -- clear GPU cache" );
-			m_eventManager.AddCycles( 1 );
 			break;
 
 		case 0x02: // fill rectangle in VRAM
@@ -399,8 +385,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				m_status.interruptRequest = true;
 				m_interruptControl.SetInterrupt( Interrupt::Gpu );
 			}
-
-			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -424,10 +408,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				{
 					const uint32_t params = ( command.quadPolygon ? 4 : 3 ) * ( 1 + command.textureMapping + command.shading ) - command.shading;
 					InitCommand( value, params, &Gpu::RenderPolygon );
-
-					// values from duckstation
-					static constexpr cycles_t RenderPolygonSetupCycles[ 2 ][ 2 ][ 2 ] = { { { 46, 226 }, { 334, 496 } }, { { 82, 262 }, { 370, 532 } } };
-					m_eventManager.AddCycles( RenderPolygonSetupCycles[ command.quadPolygon ][ command.shading ][ command.textureMapping ] );
 					break;
 				}
 
@@ -440,10 +420,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 					if ( command.numLines )
 					{
 						SetGP0Mode( &Gpu::GP0_PolyLine );
-
-						// duckstation adds cycles for polyline setup but not regular line setup
-						static constexpr cycles_t RenderPolyLineSetupCycles = 16;
-						m_eventManager.AddCycles( RenderPolyLineSetupCycles );
 					}
 					else
 					{
@@ -457,9 +433,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				{
 					const uint32_t params = 1 + ( command.rectSize == 0 ) + command.textureMapping;
 					InitCommand( value, params, &Gpu::RenderRectangle );
-
-					static constexpr cycles_t RenderRectangleSetupCycles = 16;
-					m_eventManager.AddCycles( RenderRectangleSetupCycles );
 					break;
 				}
 
@@ -844,8 +817,6 @@ void Gpu::FillRectangle() noexcept
 		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
 	}
 
-	m_eventManager.AddCycles( 46 + ( ( width / 8 ) + 9 ) * height ); // taken from duckstation
-
 	ClearCommandBuffer();
 }
 
@@ -861,8 +832,6 @@ void Gpu::CopyRectangle() noexcept
 	dbLogDebug( "Gpu::CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
 
 	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
-
-	m_eventManager.AddCycles( width * height * 2 ); // taken from duckstation
 
 	ClearCommandBuffer();
 }

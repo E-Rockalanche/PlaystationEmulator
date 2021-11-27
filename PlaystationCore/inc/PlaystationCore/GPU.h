@@ -211,7 +211,6 @@ private:
 private:
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
-	EventManager& m_eventManager;
 	Timers* m_timers = nullptr; // circular dependency
 	Dma* m_dma = nullptr; // circular dependency
 	EventHandle m_clockEvent;
