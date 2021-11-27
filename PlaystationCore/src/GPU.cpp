@@ -61,7 +61,7 @@ union RenderCommand
 		uint32_t semiTransparency : 1; // all render types
 
 		uint32_t textureMapping : 1; // polygon/rect only
-		uint32_t numVertices : 1; // polygon only (0=3, 1=4)
+		uint32_t quadPolygon : 1; // polygon only (0=3, 1=4)
 		uint32_t shading : 1; // polygon/line only
 
 		uint32_t type : 3;
@@ -102,9 +102,10 @@ enum class PrimitiveType
 Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
 	, m_renderer{ renderer }
+	, m_eventManager{ eventManager }
 	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
-	m_clockEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles ) { UpdateCycles( cpuCycles ); } );
+	m_clockEvent = m_eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles ) { UpdateCycles( cpuCycles ); } );
 }
 
 Gpu::~Gpu() = default;
@@ -277,6 +278,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 			m_texturedRectFlipX = stdx::any_of<uint32_t>( value, 1 << 12 );
 			m_texturedRectFlipY = stdx::any_of<uint32_t>( value, 1 << 13 );
+
+			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -290,6 +293,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_textureWindowOffsetY = ( value >> 15 ) & 0x1f;
 
 			m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
+
+			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -301,6 +306,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			dbLogDebug( "Gpu::GP0_Command() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
+
+			m_eventManager.AddCycles( 1 );
 
 			// TODO: does this affect blanking?
 			break;
@@ -314,6 +321,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			dbLogDebug( "Gpu::GP0_Command() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
+
+			m_eventManager.AddCycles( 1 );
 
 			// TODO: does this affect blanking?
 			break;
@@ -332,6 +341,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			dbLogDebug( "Gpu::GP0_Command() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
 
 			m_renderer.SetOrigin( m_drawOffsetX, m_drawOffsetY );
+
+			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -344,11 +355,14 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_status.setMaskOnDraw = setMask;
 			m_status.checkMaskOnDraw = checkMask;
 			m_renderer.SetMaskBits( setMask, checkMask );
+
+			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
 		case 0x01: // clear cache
 			dbLogDebug( "Gpu::GP0_Command() -- clear GPU cache" );
+			m_eventManager.AddCycles( 1 );
 			break;
 
 		case 0x02: // fill rectangle in VRAM
@@ -379,6 +393,8 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				m_status.interruptRequest = true;
 				m_interruptControl.SetInterrupt( Interrupt::Gpu );
 			}
+
+			m_eventManager.AddCycles( 1 );
 			break;
 		}
 
@@ -400,8 +416,12 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			{
 				case PrimitiveType::Polygon:
 				{
-					const uint32_t params = ( command.numVertices ? 4 : 3 ) * ( 1 + command.textureMapping + command.shading ) - command.shading;
+					const uint32_t params = ( command.quadPolygon ? 4 : 3 ) * ( 1 + command.textureMapping + command.shading ) - command.shading;
 					InitCommand( value, params, &Gpu::RenderPolygon );
+
+					// values from duckstation
+					static constexpr cycles_t RenderPolygonSetupCycles[ 2 ][ 2 ][ 2 ] = { { { 46, 226 }, { 334, 496 } }, { { 82, 262 }, { 370, 532 } } };
+					m_eventManager.AddCycles( RenderPolygonSetupCycles[ command.quadPolygon ][ command.shading ][ command.textureMapping ] );
 					break;
 				}
 
@@ -409,15 +429,21 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				{
 					m_commandBuffer.Push( value );
 					m_commandFunction = &Gpu::TempFinishCommandParams;
+					m_remainingParamaters = command.shading ? 3 : 2;
+
 					if ( command.numLines )
 					{
 						SetGP0Mode( &Gpu::GP0_PolyLine );
+
+						// duckstation adds cycles for polyline setup but not regular line setup
+						static constexpr cycles_t RenderPolyLineSetupCycles = 16;
+						m_eventManager.AddCycles( RenderPolyLineSetupCycles );
 					}
 					else
 					{
-						m_remainingParamaters = command.shading ? 3 : 2;
 						SetGP0Mode( &Gpu::GP0_Params );
 					}
+
 					break;
 				}
 
@@ -425,6 +451,9 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				{
 					const uint32_t params = 1 + ( command.rectSize == 0 ) + command.textureMapping;
 					InitCommand( value, params, &Gpu::RenderRectangle );
+
+					static constexpr cycles_t RenderRectangleSetupCycles = 16;
+					m_eventManager.AddCycles( RenderRectangleSetupCycles );
 					break;
 				}
 
@@ -454,16 +483,24 @@ void Gpu::GP0_Params( uint32_t param ) noexcept
 
 void Gpu::GP0_PolyLine( uint32_t param ) noexcept
 {
-	static constexpr uint32_t TerminationCode = 0x50005000; // should use 0x55555555, but Wild Arms 2 uses 0x50005000
-	if ( stdx::all_of( param, TerminationCode ) )
+	static constexpr uint32_t TerminationMask = 0xf000f000; // duckstation masks the param before checking against the termination code
+	static constexpr uint32_t TerminationCode = 0x50005000; // supposedly 0x55555555, but Wild Arms 2 uses 0x50005000
+
+	// always read the first few parameters
+	if ( m_remainingParamaters == 0 )
 	{
-		std::invoke( m_commandFunction, this );
-		ClearCommandBuffer();
+		if ( ( param & TerminationMask ) == TerminationCode )
+		{
+			std::invoke( m_commandFunction, this );
+			return;
+		}
 	}
 	else
 	{
-		m_commandBuffer.Push( param );
+		--m_remainingParamaters;
 	}
+
+	m_commandBuffer.Push( param );
 }
 
 void Gpu::GP0_Image( uint32_t param ) noexcept
@@ -778,6 +815,8 @@ void Gpu::FillRectangle() noexcept
 		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
 	}
 
+	m_eventManager.AddCycles( 46 + ( ( width / 8 ) + 9 ) * height ); // taken from duckstation
+
 	ClearCommandBuffer();
 }
 
@@ -793,6 +832,8 @@ void Gpu::CopyRectangle() noexcept
 	dbLogDebug( "Gpu::CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
 
 	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
+
+	m_eventManager.AddCycles( width * height * 2 ); // taken from duckstation
 
 	ClearCommandBuffer();
 }
@@ -879,7 +920,7 @@ void Gpu::RenderPolygon() noexcept
 
 	// vetex 3 and 4
 
-	const size_t numVertices = command.numVertices ? 4 : 3;
+	const size_t numVertices = command.quadPolygon ? 4 : 3;
 
 	for ( size_t i = 2; i < numVertices; ++i )
 	{
@@ -898,7 +939,7 @@ void Gpu::RenderPolygon() noexcept
 
 #if GPU_RENDER_POLYGONS
 	m_renderer.PushTriangle( vertices, command.semiTransparency );
-	if ( command.numVertices )
+	if ( command.quadPolygon )
 		m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
 #endif
 
