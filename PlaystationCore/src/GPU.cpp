@@ -119,6 +119,7 @@ void Gpu::Reset()
 
 	m_status.value = 0;
 	m_status.displayDisable = true;
+	m_renderer.SetDisplayEnable( false );
 
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
 
@@ -577,9 +578,13 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			break;
 
 		case 0x03: // display enable
-			m_status.displayDisable = value & 1;
-			dbLogDebug( "Gpu::WriteGP1() -- enable display: %s", m_status.displayDisable ? "false" : "true" );
+		{
+			const bool disableDisplay = value & 0x1;
+			dbLogDebug( "Gpu::WriteGP1() -- enable display: %s", disableDisplay ? "false" : "true" );
+			m_status.displayDisable = disableDisplay;
+			m_renderer.SetDisplayEnable( !disableDisplay );
 			break;
+		}
 
 		case 0x04: // DMA direction / data request
 		{
@@ -955,7 +960,6 @@ void Gpu::RenderRectangle() noexcept
 
 			if ( width == 0 || height == 0 )
 			{
-				dbLogWarning( "Gpu::RenderRectangle -- rectangle has 0 size" );
 				ClearCommandBuffer();
 				return;
 			}

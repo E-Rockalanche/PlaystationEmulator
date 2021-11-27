@@ -685,7 +685,7 @@ void Renderer::DisplayFrame()
 		glViewport( 0, 0, VRamWidth, VRamHeight );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
-	else
+	else if ( m_displayEnable )
 	{
 		float renderScale = std::min( (float)winWidth / (float)m_displayWidth, (float)winHeight / (float)m_displayHeight );
 		if ( !m_stretchToFit )

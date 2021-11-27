@@ -50,6 +50,11 @@ public:
 		m_colorDepth = colorDepth;
 	}
 
+	void SetDisplayEnable( bool enable )
+	{
+		m_displayEnable = enable;
+	}
+
 	// update vram with pixel buffer
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
 
@@ -89,9 +94,6 @@ private:
 
 private:
 	SDL_Window* m_window = nullptr;
-	bool m_stretchToFit = true;
-
-	bool m_viewVRam = false;
 
 	Render::Texture2D m_vramDrawTexture;
 	Render::Framebuffer m_vramDrawFramebuffer;
@@ -139,13 +141,18 @@ private:
 	GLint m_drawAreaRight = 0;
 	GLint m_drawAreaBottom = 0;
 
+	DisplayAreaColorDepth m_colorDepth = DisplayAreaColorDepth::B15;
+
 	SemiTransparencyMode m_semiTransparencyMode = SemiTransparencyMode::Blend;
 	bool m_semiTransparencyEnabled = false;
 
-	DisplayAreaColorDepth m_colorDepth = DisplayAreaColorDepth::B15;
-
 	bool m_forceMaskBit = false;
 	bool m_checkMaskBit = false;
+
+	bool m_displayEnable = false;
+
+	bool m_stretchToFit = true;
+	bool m_viewVRam = false;
 
 	TexPage m_texPage;
 	ClutAttribute m_clut;
