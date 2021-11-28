@@ -24,9 +24,9 @@ static constexpr float RefreshRateNTSC = 60.0f;
 static constexpr uint32_t ScanlinesPAL = 314;
 static constexpr uint32_t ScanlinesNTSC = 263;
 
-constexpr float ConvertCpuToVideoCycles( float cycles ) noexcept
+constexpr float ConvertCpuToVideoCycles( cycles_t cycles ) noexcept
 {
-	return cycles * 11.0f / 7.0f;
+	return static_cast<float>( cycles ) * 11.0f / 7.0f;
 }
 
 constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
@@ -206,7 +206,7 @@ private:
 		return GetDotsPerVideoCycle() * GetVideoCyclesPerScanline();
 	}
 
-	void UpdateCycles( cycles_t cpuCycles ) noexcept;
+	void UpdateCycles( float gpuTicks ) noexcept;
 
 private:
 	InterruptControl& m_interruptControl;

@@ -104,7 +104,11 @@ Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& 
 	, m_renderer{ renderer }
 	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
-	m_clockEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles ) { UpdateCycles( cpuCycles ); } );
+	m_clockEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles )
+		{
+			dbExpects( cpuCycles <= m_cachedCyclesUntilNextEvent );
+			UpdateCycles( ConvertCpuToVideoCycles( cpuCycles ) );
+		} );
 }
 
 Gpu::~Gpu() = default;
@@ -589,12 +593,10 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_drawingEvenOddLine = false;
 
 			auto& dotTimer = m_timers->GetTimer( 0 );
-			if ( dotTimer.GetSyncEnable() )
-				dotTimer.UpdateBlank( m_hblank );
+			dotTimer.UpdateBlank( m_hblank );
 
 			auto& hblankTimer = m_timers->GetTimer( 1 );
-			if ( hblankTimer.GetSyncEnable() )
-				hblankTimer.UpdateBlank( m_vblank );
+			hblankTimer.UpdateBlank( m_vblank );
 
 			UpdateDmaRequest();
 
@@ -1040,11 +1042,8 @@ void Gpu::RenderRectangle() noexcept
 	ClearCommandBuffer();
 }
 
-void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
+void Gpu::UpdateCycles( float gpuTicks ) noexcept
 {
-	dbExpects( cpuCycles <= m_cachedCyclesUntilNextEvent );
-
-	const float gpuTicks = ConvertCpuToVideoCycles( static_cast<float>( cpuCycles ) );
 	const float dots = gpuTicks * GetDotsPerVideoCycle();
 
 	auto& dotTimer = m_timers->GetTimer( 0 );
@@ -1070,9 +1069,7 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 
 	// check for hblank
 	const bool hblank = m_currentDot >= GetHorizontalResolution();
-
-	if ( dotTimer.GetSyncEnable() )
-		dotTimer.UpdateBlank( hblank );
+	dotTimer.UpdateBlank( hblank );
 
 	auto& hblankTimer = m_timers->GetTimer( 1 );
 	if ( !hblankTimer.IsUsingSystemClock() )
@@ -1090,9 +1087,7 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	if ( vblank != m_vblank )
 	{
 		m_vblank = vblank;
-
-		if ( hblankTimer.GetSyncEnable() )
-			hblankTimer.UpdateBlank( vblank );
+		hblankTimer.UpdateBlank( vblank );
 
 		if ( vblank )
 		{
