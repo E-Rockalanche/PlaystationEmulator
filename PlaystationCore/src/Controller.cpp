@@ -22,7 +22,7 @@ bool Controller::Communicate( uint8_t input, uint8_t& output )
 		{
 			if ( input == 'B' )
 			{
-				output = static_cast<uint8_t>( ID );
+				output = static_cast<uint8_t>( GetId() & 0xff );
 				m_state = State::IdHigh;
 				return true;
 			}
@@ -35,7 +35,7 @@ bool Controller::Communicate( uint8_t input, uint8_t& output )
 
 		case State::IdHigh:
 		{
-			output = static_cast<uint8_t>( static_cast<uint16_t>( ID ) >> 8 );
+			output = static_cast<uint8_t>( GetId() >> 8 );
 			m_state = State::ButtonsLow;
 			return true;
 		}
@@ -50,6 +50,42 @@ bool Controller::Communicate( uint8_t input, uint8_t& output )
 		case State::ButtonsHigh:
 		{
 			output = static_cast<uint8_t>( m_buttons >> 8 );
+			if ( m_analogMode )
+			{
+				m_state = State::JoyRightX;
+				return true;
+			}
+			else
+			{
+				m_state = State::Idle;
+				return false;
+			}
+		}
+
+		case State::JoyRightX:
+		{
+			output = m_joyRightX;
+			m_state = State::JoyRightY;
+			return true;
+		}
+
+		case State::JoyRightY:
+		{
+			output = m_joyRightY;
+			m_state = State::JoyLeftX;
+			return true;
+		}
+
+		case State::JoyLeftX:
+		{
+			output = m_joyLeftX;
+			m_state = State::JoyLeftY;
+			return true;
+		}
+
+		case State::JoyLeftY:
+		{
+			output = m_joyLeftY;
 			m_state = State::Idle;
 			return false;
 		}

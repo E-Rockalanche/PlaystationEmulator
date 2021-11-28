@@ -24,10 +24,9 @@ enum class ControllerID : uint16_t
 	Multitap = 0x5a80, // multiplayer adaptor
 	Jogcon = 0x5ae3, // steering dial
 	ConfigMode = 0x5af3, // configuration mode, see rumble command 0x43
-	HighZ = 0xffff, // no controller connected
 };
 
-enum class Button: uint16_t
+enum class Button : uint16_t
 {
 	Select = 1,
 	L3 = 1 << 1,
@@ -47,10 +46,28 @@ enum class Button: uint16_t
 	Square = 1 << 15
 };
 
+enum class Axis
+{
+	JoyRightX,
+	JoyRightY,
+	JoyLeftX,
+	JoyLeftY,
+};
+
 class Controller
 {
 public:
-	static constexpr ControllerID ID = ControllerID::DigitalPad;
+	void Reset()
+	{
+		ResetTransfer();
+	}
+
+	void ResetTransfer()
+	{
+		m_state = State::Idle;
+	}
+
+	uint16_t GetId() const { return static_cast<uint16_t>( m_analogMode ? ControllerID::AnalogPad : ControllerID::DigitalPad ); }
 
 	bool Communicate( uint8_t input, uint8_t& output );
 
@@ -64,14 +81,19 @@ public:
 		stdx::set_bits( m_buttons, static_cast<uint16_t>( button ) );
 	}
 
-	void Reset()
+	void SetAxis( Axis axis, uint8_t value )
 	{
-		ResetTransfer();
+		m_axis[ static_cast<size_t>( axis ) ] = value;
 	}
 
-	void ResetTransfer()
+	void SetAnalogMode( bool analog )
 	{
-		m_state = State::Idle;
+		m_analogMode = analog;
+	}
+
+	bool GetAnalogMode() const
+	{
+		return m_analogMode;
 	}
 
 private:
@@ -81,7 +103,13 @@ private:
 		IdLow,
 		IdHigh,
 		ButtonsLow,
-		ButtonsHigh
+		ButtonsHigh,
+
+		// analog only
+		JoyRightX,
+		JoyRightY,
+		JoyLeftX,
+		JoyLeftY
 	};
 
 	static constexpr uint8_t HighZ = 0xff;
@@ -90,6 +118,22 @@ private:
 
 	State m_state = State::Idle;
 	uint16_t m_buttons = 0xffffu;
+
+	union
+	{
+		struct
+		{
+			uint8_t m_joyRightX;
+			uint8_t m_joyRightY;
+			uint8_t m_joyLeftX;
+			uint8_t m_joyLeftY;
+		};
+
+		uint8_t m_axis[4] = { 0x80, 0x80, 0x80, 0x80 };
+	};
+
+
+	bool m_analogMode = false;
 };
 
 }

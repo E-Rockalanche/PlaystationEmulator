@@ -38,7 +38,7 @@ int main( int argc, char** argv )
 	const std::string_view biosFilename = CommandLine::Get().GetOption( "bios", "bios.bin" );
 
 	dbLog( "initializing SDL" );
-	if ( SDL_Init( SDL_INIT_VIDEO ) < 0 )
+	if ( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER ) < 0 )
 	{
 		PrintSdlError( "failed to initialize SDL" );
 		return 1;
@@ -85,26 +85,67 @@ int main( int argc, char** argv )
 	if ( !playstationCore->Initialize( window, biosFilename ) )
 		return 1;
 
-	// controller mapping
-	PSX::Controller controller;
-	playstationCore->SetController( 0, &controller );
+	// try to open a game controller
+	SDL_GameController* sdlGameController = nullptr;
+	for ( int i = 0; i < SDL_NumJoysticks(); ++i )
+	{
+		if ( SDL_IsGameController( i ) )
+		{
+			sdlGameController = SDL_GameControllerOpen( i );
+			if ( sdlGameController )
+			{
+				Log( "Opened SDL game controller [%s]", SDL_GameControllerName( sdlGameController ) );
+				break;
+			}
 
-	stdx::flat_unordered_map<SDL_Keycode, PSX::Button> controllerMapping
+			LogError( "Cannot open SDL game controller [%i]", i );
+		}
+	}
+
+	// psxController mapping
+	PSX::Controller psxController;
+	playstationCore->SetController( 0, &psxController );
+
+	stdx::flat_unordered_map<SDL_Keycode, PSX::Button> keyboardButtonMap
 	{
 		{ SDLK_RSHIFT, PSX::Button::Select },
 		{ SDLK_RETURN, PSX::Button::Start },
+
 		{ SDLK_UP, PSX::Button::Up },
 		{ SDLK_RIGHT, PSX::Button::Right },
 		{ SDLK_DOWN, PSX::Button::Down },
 		{ SDLK_LEFT, PSX::Button::Left },
+
 		{ SDLK_v, PSX::Button::Triangle },
 		{ SDLK_c, PSX::Button::Circle },
 		{ SDLK_x, PSX::Button::X },
 		{ SDLK_z, PSX::Button::Square },
+
 		{ SDLK_a, PSX::Button::L2 },
 		{ SDLK_s, PSX::Button::L1 },
 		{ SDLK_d, PSX::Button::R1 },
 		{ SDLK_f, PSX::Button::R2 },
+	};
+
+	stdx::flat_unordered_map<uint8_t, PSX::Button> controllerButtonMap
+	{
+		{ SDL_CONTROLLER_BUTTON_BACK, PSX::Button::Select },
+		{ SDL_CONTROLLER_BUTTON_LEFTSTICK, PSX::Button::L3 },
+		{ SDL_CONTROLLER_BUTTON_RIGHTSTICK, PSX::Button::R3 },
+		{ SDL_CONTROLLER_BUTTON_START, PSX::Button::Start },
+
+		{ SDL_CONTROLLER_BUTTON_DPAD_UP, PSX::Button::Up },
+		{ SDL_CONTROLLER_BUTTON_DPAD_RIGHT, PSX::Button::Right },
+		{ SDL_CONTROLLER_BUTTON_DPAD_DOWN, PSX::Button::Down },
+		{ SDL_CONTROLLER_BUTTON_DPAD_LEFT, PSX::Button::Left },
+
+		{ SDL_CONTROLLER_BUTTON_LEFTSHOULDER, PSX::Button::L1 },
+		{ SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PSX::Button::R1 },
+
+		{ SDL_CONTROLLER_BUTTON_Y, PSX::Button::Triangle },
+		{ SDL_CONTROLLER_BUTTON_B, PSX::Button::Circle },
+		{ SDL_CONTROLLER_BUTTON_A, PSX::Button::X },
+		{ SDL_CONTROLLER_BUTTON_X, PSX::Button::Square },
 	};
 
 	if ( romFilename.has_value() && playstationCore->LoadRom( *romFilename ) )
@@ -212,9 +253,9 @@ int main( int argc, char** argv )
 						}
 					}
 
-					auto it = controllerMapping.find( key );
-					if ( it != controllerMapping.end() )
-						controller.Press( it->second );
+					auto it = keyboardButtonMap.find( key );
+					if ( it != keyboardButtonMap.end() )
+						psxController.Press( it->second );
 
 					break;
 				}
@@ -222,9 +263,87 @@ int main( int argc, char** argv )
 				case SDL_KEYUP:
 				{
 					const auto key = event.key.keysym.sym;
-					auto it = controllerMapping.find( key );
-					if ( it != controllerMapping.end() )
-						controller.Release( it->second );
+					auto it = keyboardButtonMap.find( key );
+					if ( it != keyboardButtonMap.end() )
+						psxController.Release( it->second );
+					break;
+				}
+
+				case SDL_CONTROLLERBUTTONDOWN:
+				{
+					const auto button = event.cbutton.button;
+					auto it = controllerButtonMap.find( button );
+					if ( it != controllerButtonMap.end() )
+					{
+						psxController.Press( it->second );
+					}
+					else if ( button == SDL_CONTROLLER_BUTTON_GUIDE )
+					{
+						const bool analog = !psxController.GetAnalogMode();
+						psxController.SetAnalogMode( analog );
+						dbLog( "controller analog mode: %s", analog ? "true" : "false" );
+					}
+					break;
+				}
+
+				case SDL_CONTROLLERBUTTONUP:
+				{
+					const auto button = event.cbutton.button;
+					auto it = controllerButtonMap.find( button );
+					if ( it != controllerButtonMap.end() )
+						psxController.Release( it->second );
+					break;
+				}
+
+				case SDL_CONTROLLERAXISMOTION:
+				{
+					const int16_t value = event.caxis.value;
+
+					auto scaleToUint8 = []( int16_t val )
+					{
+						static constexpr int16_t JoyAxisMax = 29697;
+						int clamped = std::clamp<int16_t>( val, -JoyAxisMax, JoyAxisMax ) + JoyAxisMax;
+						return static_cast<uint8_t>( ( clamped * 0xff ) / ( 2 * JoyAxisMax ) );
+					};
+
+					static constexpr int16_t TriggerDeadzone = std::numeric_limits<int16_t>::max() / 2;
+
+					switch ( event.caxis.axis )
+					{
+						case SDL_CONTROLLER_AXIS_LEFTX:
+							psxController.SetAxis( PSX::Axis::JoyLeftX, scaleToUint8( value ) );
+							break;
+
+						case SDL_CONTROLLER_AXIS_LEFTY:
+							psxController.SetAxis( PSX::Axis::JoyLeftY, scaleToUint8( value ) );
+							break;
+
+						case SDL_CONTROLLER_AXIS_RIGHTX:
+							psxController.SetAxis( PSX::Axis::JoyRightX, scaleToUint8( value ) );
+							break;
+
+						case SDL_CONTROLLER_AXIS_RIGHTY:
+							psxController.SetAxis( PSX::Axis::JoyRightY, scaleToUint8( value ) );
+							break;
+
+						case SDL_CONTROLLER_AXIS_TRIGGERLEFT:
+						{
+							if ( value <= TriggerDeadzone )
+								psxController.Release( PSX::Button::L2 );
+							else
+								psxController.Press( PSX::Button::L2 );
+							break;
+						}
+
+						case SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
+						{
+							if ( value <= TriggerDeadzone )
+								psxController.Release( PSX::Button::R2 );
+							else
+								psxController.Press( PSX::Button::R2 );
+							break;
+						}
+					}
 					break;
 				}
 			}
@@ -273,6 +392,9 @@ int main( int argc, char** argv )
 		memCard2->Save();
 
 	playstationCore.reset();
+
+	if ( sdlGameController )
+		SDL_GameControllerClose( sdlGameController );
 
 	SDL_GL_DeleteContext( glContext );
 	SDL_DestroyWindow( window );
