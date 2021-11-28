@@ -115,6 +115,11 @@ struct Position
 	int16_t y = 0;
 };
 
+constexpr Position operator+( const Position& lhs, const Position& rhs ) noexcept
+{
+	return Position( lhs.x + rhs.x, lhs.y + rhs.y );
+}
+
 struct Color
 {
 	constexpr Color() = default;

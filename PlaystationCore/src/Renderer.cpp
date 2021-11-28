@@ -43,7 +43,6 @@ bool Renderer::Initialize( SDL_Window* window )
 	// create clut shader
 	m_clutShader = Render::Shader::Compile( ClutVertexShader, ClutFragmentShader );
 	dbAssert( m_clutShader.Valid() );
-	m_originLoc = m_clutShader.GetUniformLocation( "u_origin" );
 	m_srcBlendLoc = m_clutShader.GetUniformLocation( "u_srcBlend" );
 	m_destBlendLoc = m_clutShader.GetUniformLocation( "u_destBlend" );
 	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
@@ -125,20 +124,6 @@ void Renderer::EnableVRamView( bool enable )
 	}
 
 	m_viewVRam = enable;
-}
-
-void Renderer::SetOrigin( int32_t x, int32_t y )
-{
-	if ( m_uniform.originX != x || m_uniform.originY != y )
-	{
-		DrawBatch();
-
-		m_uniform.originX = x;
-		m_uniform.originY = y;
-
-		glUniform2f( m_originLoc, static_cast<GLfloat>( x ), static_cast<GLfloat>( y ) );
-		dbCheckRenderErrors();
-	}
 }
 
 void Renderer::SetDisplayStart( uint32_t x, uint32_t y )
@@ -646,7 +631,6 @@ void Renderer::RestoreRenderState()
 
 	// restore uniforms
 	// TODO: use uniform buffer?
-	glUniform2f( m_originLoc, static_cast<GLfloat>( m_uniform.originX ), static_cast<GLfloat>( m_uniform.originY ) );
 	glUniform1f( m_srcBlendLoc, m_uniform.srcBlend );
 	glUniform1f( m_destBlendLoc, m_uniform.destBlend );
 	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );

@@ -150,7 +150,6 @@ void Gpu::Reset()
 
 	m_drawOffsetX = 0;
 	m_drawOffsetY = 0;
-	m_renderer.SetOrigin( 0, 0 );
 
 	m_displayAreaStartX = 0;
 	m_displayAreaStartY = 0;
@@ -340,8 +339,6 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_drawOffsetX = signExtend( value & 0x7ff );
 			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
 			dbLogDebug( "Gpu::GP0_Command() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
-
-			m_renderer.SetOrigin( m_drawOffsetX, m_drawOffsetY );
 			break;
 		}
 
@@ -583,7 +580,6 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 			m_drawOffsetX = 0;
 			m_drawOffsetY = 0;
-			m_renderer.SetOrigin( 0, 0 );
 
 			m_currentScanline = 0;
 			m_currentDot = 0;
@@ -933,6 +929,12 @@ void Gpu::RenderPolygon() noexcept
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
 
+	for ( size_t i = 0; i < numVertices; ++i )
+	{
+		vertices[ i ].position.x += m_drawOffsetX;
+		vertices[ i ].position.y += m_drawOffsetY;
+	}
+
 	// TODO: check for large polygons
 
 	m_renderer.SetDrawMode( texPage, clut );
@@ -961,7 +963,7 @@ void Gpu::RenderRectangle() noexcept
 		v.color = color;
 
 	// get position
-	const PositionParameter pos{ m_commandBuffer.Pop() };
+	const Position pos = Position( PositionParameter( m_commandBuffer.Pop() ) ) + Position( m_drawOffsetX, m_drawOffsetY );
 
 	// get tex coord/set clut
 	TexCoord topLeftTexCoord;
@@ -1020,17 +1022,17 @@ void Gpu::RenderRectangle() noexcept
 			break;
 	}
 
-	vertices[ 0 ].position = Position{ pos.x, pos.y };
-	vertices[ 1 ].position = Position{ pos.x, static_cast<int16_t>( pos.y + height ) };
-	vertices[ 2 ].position = Position{ static_cast<int16_t>( pos.x + width ), pos.y };
-	vertices[ 3 ].position = Position{ static_cast<int16_t>( pos.x + width ), static_cast<int16_t>( pos.y + height ) };
+	vertices[ 0 ].position = pos;
+	vertices[ 1 ].position = Position{ pos.x,									static_cast<int16_t>( pos.y + height ) };
+	vertices[ 2 ].position = Position{ static_cast<int16_t>( pos.x + width ),	pos.y };
+	vertices[ 3 ].position = Position{ static_cast<int16_t>( pos.x + width ),	static_cast<int16_t>( pos.y + height ) };
 
 	if ( command.textureMapping )
 	{
 		vertices[ 0 ].texCoord = topLeftTexCoord;
-		vertices[ 1 ].texCoord = TexCoord{ topLeftTexCoord.u, static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ), topLeftTexCoord.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ), static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
+		vertices[ 1 ].texCoord = TexCoord{ topLeftTexCoord.u,										static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
+		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ),	topLeftTexCoord.v };
+		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ),	static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
 	}
 
 	m_renderer.SetDrawMode( texPage, clut );

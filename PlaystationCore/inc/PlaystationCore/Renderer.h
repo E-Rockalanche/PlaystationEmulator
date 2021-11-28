@@ -36,7 +36,6 @@ public:
 	void EnableVRamView( bool enable );
 	bool IsVRamViewEnabled() const { return m_viewVRam; }
 
-	void SetOrigin( int32_t x, int32_t y );
 	void SetDisplayStart( uint32_t x, uint32_t y );
 	void SetDisplaySize( uint32_t w, uint32_t h );
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
@@ -112,7 +111,6 @@ private:
 	Render::ArrayBuffer m_vertexBuffer;
 
 	Render::Shader m_clutShader;
-	GLint m_originLoc = -1;
 	GLint m_srcBlendLoc = -1;
 	GLint m_destBlendLoc = -1;
 	GLint m_texWindowMask = -1;
@@ -159,9 +157,6 @@ private:
 
 	struct Uniform
 	{
-		int32_t originX = 0;
-		int32_t originY = 0;
-
 		int32_t texturePageX = 0;
 		int32_t texturePageY = 0;
 
