@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CDXA.h"
+
 #include <stdx/assert.h>
 
 #include <array>
@@ -71,49 +73,6 @@ public:
 		uint8_t mode;
 	};
 
-	union SubMode
-	{
-		struct
-		{
-			uint8_t endOfRecord : 1;	// all volume descriptors, and all sectors with EOF
-
-			// Sector type
-			uint8_t video : 1;
-			uint8_t audio : 1;
-			uint8_t data : 1;
-
-			uint8_t trigger : 1;		// for application use
-			uint8_t form2 : 1;			// 0: 0x800 data bytes, 1: 0x914 data bytes
-			uint8_t realTime : 1;
-			uint8_t endOfFile : 1;		// or end of directory, path table, volume terminator
-		};
-		uint8_t value;
-	};
-	static_assert( sizeof( SubMode ) == 1 );
-
-	union CodingInfo
-	{
-		struct
-		{
-			uint8_t monoStereo : 2;		// 0=Mono, 1=Stereo, 2-3=Reserved
-			uint8_t sampleRate : 2;		// 0=37800Hz, 1=18900Hz, 2-3=Reserved
-			uint8_t bitsPerSample : 2;	// 0=Normal/4bit, 1=8bit, 2-3=Reserved
-			uint8_t emphasis : 1;		// 0=Normal/Off, 1=Emphasis
-			uint8_t : 1;
-		};
-		uint8_t value;
-	};
-	static_assert( sizeof( CodingInfo ) == 1 );
-
-	struct SubHeader
-	{
-		uint8_t file;			// (0x00-0xff) (for audio/video interleave)
-		uint8_t channel;		// (0x00-0x1f) (for audio/video interleave)
-		SubMode subMode;
-		CodingInfo codingInfo;
-	};
-	static_assert( sizeof( SubHeader ) == 4 );
-
 	union Sector
 	{
 		std::array<uint8_t, BytesPerSector> audio;
@@ -135,8 +94,8 @@ public:
 
 				struct
 				{
-					SubHeader subHeader;
-					SubHeader subHeaderCopy;
+					CDXA::SubHeader subHeader;
+					CDXA::SubHeader subHeaderCopy;
 
 					union
 					{

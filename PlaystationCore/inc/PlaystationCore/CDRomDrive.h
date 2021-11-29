@@ -34,11 +34,26 @@ public:
 		return m_cdrom != nullptr;
 	}
 
+	std::pair<int16_t, int16_t> GetAudioFrame()
+	{
+		const uint32_t frame = m_audioBuffer.Empty() ? 0 : m_audioBuffer.Pop();
+		const int16_t left = static_cast<int16_t>( frame );
+		const int16_t right = static_cast<int16_t>( frame >> 16 );
+		const int16_t leftResult = SaturateSample( ApplyVolume( left, m_volumes.leftToLeft ) + ApplyVolume( right, m_volumes.rightToLeft ) );
+		const int16_t rightResult = SaturateSample( ApplyVolume( right, m_volumes.rightToRight ) + ApplyVolume( left, m_volumes.leftToRight ) );
+		return std::make_pair( leftResult, rightResult );
+	}
+
 private:
 	static constexpr uint32_t DataBufferSize = CDRom::BytesPerSector - CDRom::SyncSize;
 	static constexpr uint32_t ParamaterBufferSize = 16;
 	static constexpr uint32_t ResponseBufferSize = 16;
 	static constexpr uint32_t NumSectorBuffers = 8;
+
+	static constexpr uint32_t XaAdpcmSampleBufferSize = CDXA::AdpcmChunks * CDXA::AdpcmWordsPerChunk * 8; // 8 nibbles per word
+	static constexpr uint32_t ResampleRingBufferSize = 0x20;
+
+	static constexpr uint32_t AudioFifoSize = 44100; // 1 second of audio
 
 	union Status
 	{
@@ -186,6 +201,14 @@ private:
 		};
 	};
 
+	struct ChannelVolumes
+	{
+		uint8_t leftToLeft = 0x80;
+		uint8_t leftToRight = 0;
+		uint8_t rightToRight = 0x80;
+		uint8_t rightToLeft = 0;
+	};
+
 private:
 	void UpdateStatus() noexcept;
 
@@ -269,6 +292,29 @@ private:
 	bool IsReading() const noexcept { return m_driveState == DriveState::Reading; }
 	bool IsPlaying() const noexcept { return m_driveState == DriveState::Playing; }
 
+	void DecodeAdpcmSector( const CDRom::Sector& sector );
+
+	template <bool IsStereo, bool HalfSampleRate>
+	void ResampleXaAdpcm( const int16_t* samples, uint32_t count );
+
+	void AddAudioFrame( int16_t left, int16_t right )
+	{
+		const uint32_t frame = static_cast<uint16_t>( left ) | ( static_cast<uint32_t>( static_cast<uint16_t>( right ) ) << 16 );
+		m_audioBuffer.Push( frame );
+	}
+
+	static constexpr int32_t ApplyVolume( int16_t sample, uint8_t volume ) noexcept
+	{
+		return ( static_cast<int32_t>( sample ) * static_cast<int32_t>( volume ) ) >> 7;
+	}
+
+	static constexpr int16_t SaturateSample( int32_t sample )
+	{
+		constexpr int32_t Min = std::numeric_limits<int16_t>::min();
+		constexpr int32_t Max = std::numeric_limits<int16_t>::max();
+		return static_cast<int16_t>( ( sample < Min ) ? Min : ( sample > Max ) ? Max : sample );
+	}
+
 private:
 	InterruptControl& m_interruptControl;
 	Dma* m_dma = nullptr;
@@ -281,6 +327,9 @@ private:
 	uint8_t m_interruptEnable = 0;
 	uint8_t m_interruptFlags = 0;
 	uint8_t m_queuedInterrupt = 0;
+
+	ChannelVolumes m_volumes;
+	ChannelVolumes m_nextVolumes;
 
 	// timing
 	std::optional<Command> m_pendingCommand;
@@ -303,6 +352,7 @@ private:
 	uint8_t m_firstTrack = 0;
 	uint8_t m_lastTrack = 0;
 
+	bool m_muted = false;
 	bool m_muteADPCM = false;
 
 	FifoBuffer<uint8_t, ParamaterBufferSize> m_parameterBuffer;
@@ -323,7 +373,7 @@ private:
 	struct SectorHeaders
 	{
 		CDRom::Header header;
-		CDRom::SubHeader subHeader;
+		CDXA::SubHeader subHeader;
 	};
 
 	std::optional<SectorHeaders> m_currentSectorHeaders;
@@ -334,6 +384,13 @@ private:
 	bool m_pendingPlay = false; // Play was called, but we need to seek
 
 	static const std::array<uint8_t, 256> ExpectedCommandParameters;
+
+	std::unique_ptr<int16_t[]> m_xaAdpcmSampleBuffer;
+	std::array<int32_t, 4> m_oldXaAdpcmSamples;
+	std::array<std::array<int16_t, ResampleRingBufferSize>, 2> m_resampleRingBuffers;
+	uint8_t m_resampleP = 0;
+
+	FifoBuffer<uint32_t, AudioFifoSize> m_audioBuffer;
 };
 
 }

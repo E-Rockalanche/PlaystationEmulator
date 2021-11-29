@@ -213,6 +213,7 @@
   <ItemGroup>
     <ClCompile Include="src\BIOS.cpp" />
     <ClCompile Include="src\CDRomDrive.cpp" />
+    <ClCompile Include="src\CDXA.cpp" />
     <ClCompile Include="src\Controller.cpp" />
     <ClCompile Include="src\ControllerPorts.cpp" />
     <ClCompile Include="src\Cop0.cpp" />
@@ -248,6 +249,7 @@
     <ClInclude Include="inc\PlaystationCore\BIOS.h" />
     <ClInclude Include="inc\PlaystationCore\CDRom.h" />
     <ClInclude Include="inc\PlaystationCore\CDRomDrive.h" />
+    <ClInclude Include="inc\PlaystationCore\CDXA.h" />
     <ClInclude Include="inc\PlaystationCore\ClutShader.h" />
     <ClInclude Include="inc\PlaystationCore\Controller.h" />
     <ClInclude Include="inc\PlaystationCore\ControllerPorts.h" />

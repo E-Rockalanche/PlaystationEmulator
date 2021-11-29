@@ -84,6 +84,27 @@ enum class TestFunction : uint8_t
 	DecoderPrepareTransfer = 0x76
 };
 
+const std::array<std::array<int16_t, 29>, 7> XaAdpcmZigZagTables
+{ {
+	{ 0,       0,       0,       0,       0,       -0x0002, +0x000A, -0x0022, +0x0041, -0x0054, +0x0034, +0x0009, -0x010A, +0x0400, -0x0A78, +0x234C, +0x6794, -0x1780, +0x0BCD, -0x0623, +0x0350, -0x016D, +0x006B, +0x000A, -0x0010, +0x0011, -0x0008, +0x0003, -0x0001 },
+	{ 0,       0,       0,       -0x0002, 0,       +0x0003, -0x0013, +0x003C, -0x004B, +0x00A2, -0x00E3, +0x0132, -0x0043, -0x0267, +0x0C9D, +0x74BB, -0x11B4, +0x09B8, -0x05BF, +0x0372, -0x01A8, +0x00A6, -0x001B, +0x0005, +0x0006, -0x0008, +0x0003, -0x0001, 0 },
+	{ 0,       0,       -0x0001, +0x0003, -0x0002, -0x0005, +0x001F, -0x004A, +0x00B3, -0x0192, +0x02B1, -0x039E, +0x04F8, -0x05A6, +0x7939, -0x05A6, +0x04F8, -0x039E, +0x02B1, -0x0192, +0x00B3, -0x004A, +0x001F, -0x0005, -0x0002, +0x0003, -0x0001, 0,       0 },
+	{ 0,       -0x0001, +0x0003, -0x0008, +0x0006, +0x0005, -0x001B, +0x00A6, -0x01A8, +0x0372, -0x05BF, +0x09B8, -0x11B4, +0x74BB, +0x0C9D, -0x0267, -0x0043, +0x0132, -0x00E3, +0x00A2, -0x004B, +0x003C, -0x0013, +0x0003, 0,       -0x0002, 0,       0,       0 },
+	{ -0x0001, +0x0003, -0x0008, +0x0011, -0x0010, +0x000A, +0x006B, -0x016D, +0x0350, -0x0623, +0x0BCD, -0x1780, +0x6794, +0x234C, -0x0A78, +0x0400, -0x010A, +0x0009, +0x0034, -0x0054, +0x0041, -0x0022, +0x000A, -0x0001, 0,       +0x0001, 0,       0,       0 },
+	{ +0x0002, -0x0008, +0x0010, -0x0023, +0x002B, +0x001A, -0x00EB, +0x027B, -0x0548, +0x0AFA, -0x16FA, +0x53E0, +0x3C07, -0x1249, +0x080E, -0x0347, +0x015B, -0x0044, -0x0017, +0x0046, -0x0023, +0x0011, -0x0005, 0,       0,       0,       0,       0,       0 },
+	{ -0x0005, +0x0011, -0x0023, +0x0046, -0x0017, -0x0044, +0x015B, -0x0347, +0x080E, -0x1249, +0x3C07, +0x53E0, -0x16FA, +0x0AFA, -0x0548, +0x027B, -0x00EB, +0x001A, +0x002B, -0x0023, +0x0010, -0x0008, +0x0002, 0,       0,       0,       0,       0,       0 }
+} };
+
+int16_t ZigZagInterpolate( const int16_t* ringBuffer, const int16_t* zigZagTable, uint8_t p )
+{
+	int32_t sum = 0;
+	for ( uint32_t i = 0; i < 29; ++i )
+	{
+		sum += ringBuffer[ ( p - i - 1 ) & 0x1f ] * zigZagTable[ i ] / 0x8000;
+	}
+	return static_cast<int16_t>( std::clamp<int32_t>( sum, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max() ) );
+}
+
 } // namespace
 
 const std::array<uint8_t, 256> CDRomDrive::ExpectedCommandParameters = []
@@ -115,6 +136,8 @@ CDRomDrive::CDRomDrive( InterruptControl& interruptControl, EventManager& eventM
 		{
 			ExecuteDriveState();
 		} );
+
+	m_xaAdpcmSampleBuffer = std::make_unique<int16_t[]>( XaAdpcmSampleBufferSize );
 }
 
 CDRomDrive::~CDRomDrive() = default;
@@ -131,6 +154,9 @@ void CDRomDrive::Reset()
 	m_interruptEnable = 0;
 	m_interruptFlags = 0;
 	m_queuedInterrupt = 0;
+
+	m_volumes = ChannelVolumes{};
+	m_nextVolumes = ChannelVolumes{};
 
 	m_pendingCommand = std::nullopt;
 	m_secondResponseCommand = std::nullopt;
@@ -150,7 +176,8 @@ void CDRomDrive::Reset()
 	m_firstTrack = 0;
 	m_lastTrack = 0;
 
-	m_muteADPCM = true;
+	m_muted = false;
+	m_muteADPCM = false;
 
 	m_parameterBuffer.Reset();
 	m_responseBuffer.Reset();
@@ -166,8 +193,19 @@ void CDRomDrive::Reset()
 	m_readSectorBuffer = 0;
 	m_writeSectorBuffer = 0;
 
+	m_currentSectorHeaders.reset();
+
 	m_pendingSeek = false;
 	m_pendingRead = false;
+	m_pendingPlay = false;
+
+	std::fill_n( m_xaAdpcmSampleBuffer.get(), XaAdpcmSampleBufferSize, int16_t{} );
+	m_oldXaAdpcmSamples.fill( 0 );
+	m_resampleRingBuffers[ 0 ].fill( 0 );
+	m_resampleRingBuffers[ 1 ].fill( 0 );
+	m_resampleP = 0;
+
+	m_audioBuffer.Reset();
 
 	UpdateStatus();
 }
@@ -244,15 +282,16 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 					break;
 
 				case 1: // sound map data out
-					dbLogDebug( "CDRomDrive::Write() -- sound map data out [%X]", value );
+					dbLogWarning( "CDRomDrive::Write() -- ignoring sound map data out [%X]", value );
 					break;
 
 				case 2: // sound map coding info
-					dbLogDebug( "CDRomDrive::Write() -- sound map coding info [%X]", value );
+					dbLogWarning( "CDRomDrive::Write() -- ignoring sound map coding info [%X]", value );
 					break;
 
 				case 3: // audio volume for right-cd-out to right-spu-input
 					dbLogDebug( "CDRomDrive::Write() -- right-cd-out to right-spu-input [%X]", value );
+					m_nextVolumes.rightToRight = value;
 					break;
 			}
 			break;
@@ -274,10 +313,12 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 
 				case 2: // left-cd-out to left-spu-input
 					dbLogDebug( "CDRomDrive::Write() -- left-cd-out to left-spu-input [%X]", value );
+					m_nextVolumes.leftToLeft = value;
 					break;
 
 				case 3: // right-cd-out to left-cd-input
 					dbLogDebug( "CDRomDrive::Write() -- right-cd-out to left-cd-input [%X]", value );
+					m_nextVolumes.rightToLeft = value;
 					break;
 			}
 			break;
@@ -326,6 +367,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 
 				case 2: // audio volume for left-cd-out to right-spu-input
 					dbLogDebug( "CDRomDrive::Write() -- left-cd-out to right-spu-input [%X]", value );
+					m_nextVolumes.leftToRight = value;
 					break;
 
 				case 3: // audio volume apply (write bit5=1)
@@ -335,7 +377,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 
 					// TODO: change audio volume
 					if ( value & AudioVolumeApply::ChangeAudioVolume )
-						dbLogDebug( "changing audio volume" );
+						m_volumes = m_nextVolumes;
 
 					break;
 				}
@@ -697,6 +739,9 @@ void CDRomDrive::ExecuteCommand() noexcept
 			m_pendingRead = false;
 			m_pendingSeek = false;
 
+			m_muted = false;
+			m_muteADPCM = false;
+
 			m_parameterBuffer.Clear();
 			m_responseBuffer.Clear();
 			m_secondResponseBuffer.Clear();
@@ -1051,8 +1096,8 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// muting is just forcing the CD output volume to zero.
 			// Mute is used by Dino Crisis 1 to mute noise during modchip detection.
 			dbLogDebug( "CDRomDrive::ExecuteCommand -- Mute" );
-			// TODO
 			SendResponse();
+			m_muted = true;
 			break;
 		}
 
@@ -1061,8 +1106,8 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// Turn on audio streaming to SPU (affects both CD-DA and XA-ADPCM). The Demute command is needed only if one has formerly used the Mute command
 			// (by default, the PSX is demuted after power-up (...and/or after Init command?), and is demuted after cdrom-booting).
 			dbLogDebug( "CDRomDrive::ExecuteCommand -- Demute" );
-			// TODO
 			SendResponse();
+			m_muted = false;
 			break;
 		}
 
@@ -1398,6 +1443,78 @@ void CDRomDrive::RequestData() noexcept
 		if ( m_interruptFlags == 0 )
 			ShiftQueuedInterrupt();
 	}
+}
+
+void CDRomDrive::DecodeAdpcmSector( const CDRom::Sector& sector )
+{
+	// TODO check file and channel
+
+	auto& subHeader = sector.mode2.subHeader;
+
+	CDXA::DecodeAdpcmSector( subHeader, sector.mode2.form2.data.data(), m_oldXaAdpcmSamples.data(), m_xaAdpcmSampleBuffer.get() );
+
+	if ( m_muted || m_muteADPCM )
+		return;
+
+	const uint32_t sampleCount = ( subHeader.codingInfo.bitsPerSample ? CDXA::AdpcmSamplesPerSector8Bit : CDXA::AdpcmSamplesPerSector4Bit ) /
+		( subHeader.codingInfo.stereo ? 2 : 1 );
+
+	if ( subHeader.codingInfo.stereo )
+	{
+		if ( subHeader.codingInfo.sampleRate )
+			ResampleXaAdpcm<true, true>( m_xaAdpcmSampleBuffer.get(), sampleCount );
+		else
+			ResampleXaAdpcm<true, false>( m_xaAdpcmSampleBuffer.get(), sampleCount );
+	}
+	else
+	{
+		if ( subHeader.codingInfo.sampleRate )
+			ResampleXaAdpcm<false, true>( m_xaAdpcmSampleBuffer.get(), sampleCount );
+		else
+			ResampleXaAdpcm<false, false>( m_xaAdpcmSampleBuffer.get(), sampleCount );
+	}
+}
+
+
+template <bool IsStereo, bool HalfSampleRate>
+void CDRomDrive::ResampleXaAdpcm( const int16_t* samples, uint32_t count )
+{
+	auto& leftRing = m_resampleRingBuffers[ 0 ];
+	[[maybe_unused]] auto& rightRing = m_resampleRingBuffers[ 1 ];
+
+	uint8_t p = m_resampleP; // make local copy for fast access during resampling
+
+	// sixStep shouldn't need to be a member since we are always given samples by a multiple of 6
+	dbAssert( ( count % 6 ) == 0 );
+	uint8_t sixStep = 0;
+
+	for ( uint32_t i = 0; i < count; ++i )
+	{
+		const int16_t leftSample = *( samples++ );
+		const int16_t rightSample = IsStereo ? *( samples++ ) : leftSample;
+
+		for ( uint32_t dup = 0; dup < ( HalfSampleRate ? 2 : 1 ); ++dup )
+		{
+			leftRing[ p ] = leftSample;
+			if constexpr ( IsStereo )
+				rightRing[ p ] = rightSample;
+
+			p = ( p + 1 ) % ResampleRingBufferSize;
+
+			if ( ++sixStep == 6 )
+			{
+				sixStep = 0;
+				for ( uint32_t j = 0; j < 7; ++j )
+				{
+					const int16_t leftResult = ZigZagInterpolate( leftRing.data(), XaAdpcmZigZagTables[ j ].data(), p );
+					const int16_t rightResult = IsStereo ? ZigZagInterpolate( rightRing.data(), XaAdpcmZigZagTables[ j ].data(), p ) : leftResult;
+					// AddAudioFrame( leftResult, rightResult );
+				}
+			}
+		}
+	}
+
+	m_resampleP = p;
 }
 
 // CDROM control commands
