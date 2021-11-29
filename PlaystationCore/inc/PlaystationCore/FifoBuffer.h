@@ -11,24 +11,66 @@ namespace PSX
 
 // circular queue used by PSX hardware
 
+namespace Detail
+{
+
+template <typename T, size_t BufferSize, bool UseHeap>
+struct FifoBufferStorage;
+
+template <typename T, size_t BufferSize>
+struct FifoBufferStorage<T, BufferSize, false>
+{
+	using size_type = uint32_t;
+
+	T* GetData() { return m_data.data(); }
+	const T* GetData() const { return m_data.data(); }
+
+	T& operator[]( size_type index ) { return m_data[ index ]; }
+	const T& operator[]( size_type index ) const { return m_data[ index ]; }
+
+	std::array<T, BufferSize> m_data;
+};
+
+template <typename T, size_t BufferSize>
+struct FifoBufferStorage<T, BufferSize, true>
+{
+	using size_type = uint32_t;
+
+	FifoBufferStorage() : m_data{ std::make_unique<T[]>( BufferSize ) } {}
+
+	T* GetData() { return m_data.get(); }
+	const T* GetData() const { return m_data.get(); }
+
+	T& operator[]( size_type index ) { dbExpects( index < BufferSize ); return m_data[ index ]; }
+	const T& operator[]( size_type index ) const { dbExpects( index < BufferSize ); return m_data[ index ]; }
+
+	std::unique_ptr<T[]> m_data;
+};
+
+} // namespace Detail
+
 template <typename T, size_t BufferSize>
 class FifoBuffer
 {
+	static constexpr bool UseHeap = ( BufferSize > 32 );
+	using StorageType = Detail::FifoBufferStorage<T, BufferSize, UseHeap>;
+
 public:
-	using size_type = uint32_t;
+	using value_type = T;
+	using size_type = typename StorageType::size_type;
 
 	// element access
 
 	T Peek() const noexcept
 	{
 		dbExpects( m_size > 0 );
-		return m_buffer[ m_first ];
+		return m_storage[ m_first ];
 	}
 
 	// get pointer to raw buffer
 	const T* Data() const noexcept
 	{
-		return m_buffer.data();
+		return m_storage.GetData();
 	}
 
 	// capacity
@@ -66,13 +108,13 @@ public:
 	void Reset( T value = T() ) noexcept
 	{
 		Clear();
-		m_buffer.fill( value );
+		std::fill_n( m_storage.GetData(), BufferSize, value );
 	}
 
 	T Pop() noexcept
 	{
 		dbExpects( m_size > 0 );
-		const T result = m_buffer[ m_first ];
+		const T result = m_storage[ m_first ];
 		m_first = ( m_first + 1 ) % BufferSize;
 		--m_size;
 		return result;
@@ -81,7 +123,7 @@ public:
 	void Push( T value ) noexcept
 	{
 		dbExpects( m_size < BufferSize );
-		m_buffer[ m_last ] = value;
+		m_storage[ m_last ] = value;
 		m_last = ( m_last + 1 ) % BufferSize;
 		++m_size;
 	}
@@ -93,8 +135,8 @@ public:
 		const size_type seg1Size = std::min( BufferSize - m_last, count );
 		const size_type seg2Size = count - seg1Size;
 
-		std::copy_n( data, seg1Size, m_buffer.data() + m_last );
-		std::copy_n( data + seg1Size, seg2Size, m_buffer.data() );
+		std::copy_n( data, seg1Size, m_storage.GetData() + m_last );
+		std::copy_n( data + seg1Size, seg2Size, m_storage.GetData() );
 
 		m_last = ( m_last + count ) % BufferSize;
 		m_size += count;
@@ -107,8 +149,8 @@ public:
 		const size_type seg1Size = std::min( BufferSize - m_first, count );
 		const size_type seg2Size = count - seg1Size;
 
-		std::copy_n( m_buffer.data() + m_first, seg1Size, data );
-		std::copy_n( m_buffer.data(), seg2Size, data + seg1Size );
+		std::copy_n( m_storage.GetData() + m_first, seg1Size, data );
+		std::copy_n( m_storage.GetData(), seg2Size, data + seg1Size );
 
 		m_first = ( m_first + count ) % BufferSize;
 		m_size -= count;
@@ -125,7 +167,7 @@ private:
 	size_type m_first = 0;
 	size_type m_last = 0;
 	size_type m_size = 0;
-	std::array<T, BufferSize> m_buffer{};
+	StorageType m_storage;
 };
 
 }
