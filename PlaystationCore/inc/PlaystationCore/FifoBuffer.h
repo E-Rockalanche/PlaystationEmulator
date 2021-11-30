@@ -59,6 +59,33 @@ public:
 	using value_type = T;
 	using size_type = typename StorageType::size_type;
 
+	// construction/assignment
+
+	FifoBuffer() noexcept = default;
+	FifoBuffer( const FifoBuffer& ) noexcept = default;
+	FifoBuffer( FifoBuffer&& ) noexcept = default;
+
+	FifoBuffer( std::initializer_list<T> init ) noexcept
+	{
+		dbExpects( init.size() <= BufferSize );
+		std::copy( init.begin(), init.end(), m_storage.GetData() );
+		m_size = init.size();
+		m_last = init.size() % BufferSize;
+	}
+
+	FifoBuffer& operator=( const FifoBuffer& ) noexcept = default;
+	FifoBuffer& operator=( FifoBuffer&& ) noexcept = default;
+
+	FifoBuffer& operator=( std::initializer_list<T> init ) noexcept
+	{
+		dbExpects( init.size() <= BufferSize );
+		std::copy( init.begin(), init.end(), m_storage.GetData() );
+		m_size = init.size();
+		m_last = init.size() % BufferSize;
+		m_first = 0;
+		return *this;
+	}
+
 	// element access
 
 	T Peek() const noexcept
