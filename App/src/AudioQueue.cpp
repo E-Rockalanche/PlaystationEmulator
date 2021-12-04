@@ -66,10 +66,8 @@ inline void AudioQueue::FillSamples( DestType* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
 
-	if ( m_queueSize < count )
-	{
-		dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
-	}
+	// if ( m_queueSize < count )
+	//	dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
 
 	const size_t available = std::min( m_queueSize, count );
 	const size_t seg1Size = std::min( available, m_queueReservedSize - m_queueFirst );
