@@ -165,8 +165,7 @@ void CDRomDrive::Reset()
 	m_driveStatus.motorOn = ( m_cdrom != nullptr );
 	m_mode.value = 0;
 
-	m_xaFile = 0;
-	m_xaChannel = 0;
+	m_xaFilter = XaFilter{};
 
 	m_track = 0;
 	m_trackIndex = 0;
@@ -674,8 +673,9 @@ void CDRomDrive::ExecuteCommand() noexcept
 		{
 			// Automatic ADPCM (CD-ROM XA) filter ignores sectors except those which have the same channel and file numbers in their subheader.
 			// This is the mechanism used to select which of multiple songs in a single .XA file to play.
-			m_xaFile = m_parameterBuffer.Pop();
-			m_xaChannel = m_parameterBuffer.Pop();
+			m_xaFilter.file = m_parameterBuffer.Pop();
+			m_xaFilter.channel = m_parameterBuffer.Pop();
+			m_xaFilter.set = true;
 			SendResponse();
 			break;
 		}
@@ -948,8 +948,8 @@ void CDRomDrive::ExecuteCommand() noexcept
 			SendResponse();
 			m_responseBuffer.Push( m_mode.value );
 			m_responseBuffer.Push( 0 ); // always zero
-			m_responseBuffer.Push( m_xaFile );
-			m_responseBuffer.Push( m_xaChannel );
+			m_responseBuffer.Push( m_xaFilter.file );
+			m_responseBuffer.Push( m_xaFilter.channel );
 			break;
 		}
 
@@ -1354,14 +1354,15 @@ void CDRomDrive::ExecuteDriveState() noexcept
 
 			m_currentSectorHeaders = SectorHeaders{ sector.header, sector.mode2.subHeader };
 
-			if ( ( sector.header.mode == 2 ) &&
-				m_mode.xaadpcm &&
-				sector.mode2.subHeader.subMode.audio &&
-				sector.mode2.subHeader.subMode.realTime )
+			if ( m_mode.xaadpcm && ( sector.header.mode == 2 ) )
 			{
-				// read XA-ADPCM
-				dbLogDebug( "Ignoring XA-ADPCM sector" );
-				break;
+				if ( sector.mode2.subHeader.subMode.audio && sector.mode2.subHeader.subMode.realTime )
+				{
+					// read XA-ADPCM
+					// dbLogDebug( "Ignoring XA-ADPCM sector" );
+					DecodeAdpcmSector( sector );
+					break;
+				}
 			}
 
 			m_writeSectorBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
@@ -1447,9 +1448,32 @@ void CDRomDrive::RequestData() noexcept
 
 void CDRomDrive::DecodeAdpcmSector( const CDRom::Sector& sector )
 {
-	// TODO check file and channel
-
 	auto& subHeader = sector.mode2.subHeader;
+
+	// check XA filter
+	if ( ( m_xaFilter.set || m_mode.xaFilter ) && ( subHeader.file != m_xaFilter.file || subHeader.channel != m_xaFilter.channel ) )
+	{
+		dbLogDebug( "CDRomDrive::DecodeAdpcmSector -- Skipping sector sue to mismatched filter" );
+		return;
+	}
+
+	// set the XA filter automatically from the current track
+	if ( !m_xaFilter.set )
+	{
+		if ( subHeader.channel == 0xff && ( !m_mode.xaFilter || m_xaFilter.channel != 0xff ) )
+		{
+			dbLogWarning( "CDRomDrive::DecodeAdpcmSector -- Skipping XA file" );
+			return;
+		}
+
+		m_xaFilter.file = subHeader.file;
+		m_xaFilter.channel = subHeader.channel;
+		m_xaFilter.set = true;
+	}
+
+	// reset current file on EOF, and play the file in the next sector
+	if ( subHeader.subMode.endOfFile )
+		m_xaFilter = XaFilter{};
 
 	CDXA::DecodeAdpcmSector( subHeader, sector.mode2.form2.data.data(), m_oldXaAdpcmSamples.data(), m_xaAdpcmSampleBuffer.get() );
 
@@ -1508,13 +1532,18 @@ void CDRomDrive::ResampleXaAdpcm( const int16_t* samples, uint32_t count )
 				{
 					const int16_t leftResult = ZigZagInterpolate( leftRing.data(), XaAdpcmZigZagTables[ j ].data(), p );
 					const int16_t rightResult = IsStereo ? ZigZagInterpolate( rightRing.data(), XaAdpcmZigZagTables[ j ].data(), p ) : leftResult;
-					// AddAudioFrame( leftResult, rightResult );
+					AddAudioFrame( leftResult, rightResult );
 				}
 			}
 		}
 	}
 
 	m_resampleP = p;
+
+	SamplesThisFrame += m_audioBuffer.Size(); // L+R sample frames
+
+	m_pushSamplesFunc( reinterpret_cast<const int16_t*>( m_audioBuffer.Data() ), m_audioBuffer.Size() * 2 );
+	m_audioBuffer.Clear();
 }
 
 // CDROM control commands

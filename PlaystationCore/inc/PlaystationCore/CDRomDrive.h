@@ -7,6 +7,7 @@
 
 #include <stdx/bit.h>
 
+#include <functional>
 #include <optional>
 
 namespace PSX
@@ -15,10 +16,19 @@ namespace PSX
 class CDRomDrive
 {
 public:
+	uint32_t SamplesThisFrame = 0;
+
+	using PushSamplesFunc = std::function<void( const int16_t*, size_t )>;
+
 	CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager );
 	~CDRomDrive();
 
 	void SetDma( Dma& dma ) { m_dma = &dma; }
+
+	void SetPushSamplesFunc( PushSamplesFunc pushSamplesFunc )
+	{
+		m_pushSamplesFunc = std::move( pushSamplesFunc );
+	}
 
 	void Reset();
 
@@ -341,8 +351,13 @@ private:
 	ControllerMode m_mode;
 
 	// XA-ADCPM
-	uint8_t m_xaFile = 0;
-	uint8_t m_xaChannel = 0;
+	struct XaFilter
+	{
+		uint8_t file = 0;
+		uint8_t channel = 0;
+		bool set = false;
+	};
+	XaFilter m_xaFilter;
 
 	uint8_t m_track = 0;
 	uint8_t m_trackIndex = 0; // or just m_index?
@@ -391,6 +406,8 @@ private:
 	uint8_t m_resampleP = 0;
 
 	FifoBuffer<uint32_t, AudioFifoSize> m_audioBuffer;
+
+	PushSamplesFunc m_pushSamplesFunc;
 };
 
 }

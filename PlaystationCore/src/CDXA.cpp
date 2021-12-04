@@ -13,7 +13,13 @@ constexpr uint32_t AdpcmChunkHeaderSize = 16;
 
 union BlockHeader
 {
-	BlockHeader( uint8_t v ) : value{ v } {}
+	BlockHeader( uint8_t v ) noexcept : value{ v } {}
+
+	uint8_t GetShift() const noexcept
+	{
+		uint8_t s = shift;
+		return ( s < 13 ) ? s : 9;
+	}
 
 	struct
 	{
@@ -47,28 +53,31 @@ void DecodeAdpcmChunk( const uint8_t* chunk, int32_t* inOutOldSamples, int16_t* 
 	0Ch..0Fh  Copy of above 4 bytes (at 08h..0Bh)
 	*/
 	const uint8_t* headers = chunk + 4;
-
 	const uint8_t* data = chunk + AdpcmChunkHeaderSize;
 
 	for ( uint32_t block = 0; block < NumBlocks; ++block )
 	{
 		const BlockHeader blockHeader{ headers[ block ] };
 
-		const uint8_t shift = blockHeader.shift;
+		const uint8_t shift = blockHeader.GetShift();
 		const uint8_t filter = blockHeader.filter;
 
 		const int32_t posFilter = AdpcmPosTable[ filter ];
 		const int32_t negFilter = AdpcmNegTable[ filter ];
 
-		int16_t* curOutSamples = outSamples + ( IsStereo ? ( block / 2 ) * AdpcmWordsPerChunk + ( block % 2 ) : block * AdpcmWordsPerChunk );
+		int16_t* curOutSamples = outSamples + ( IsStereo ? ( block / 2 ) * ( AdpcmWordsPerChunk * 2 ) + ( block % 2 ) : block * AdpcmWordsPerChunk );
 
-		constexpr uint32_t sampleIncrement = IsStereo ? 2 : 1;
+		constexpr size_t sampleIncrement = IsStereo ? 2 : 1;
 
-		for ( uint32_t i = 0; i < AdpcmWordsPerChunk; ++i, outSamples += sampleIncrement )
+		for ( size_t i = 0; i < AdpcmWordsPerChunk; ++i )
 		{
 			const uint32_t word = *reinterpret_cast<const uint32_t*>( data + i * 4 );
-			const uint32_t nibble = Is8Bit ? ( ( word >> ( block * 8 ) ) & 0xff ) : ( ( word >> ( block * 4 ) ) & 0x0f );
-			const int16_t sample = static_cast<int16_t>( nibble << 12 ) >> shift;
+
+			const uint32_t nibble = Is8Bit
+				? ( ( word >> ( block * 8 ) ) & 0xff )
+				: ( ( word >> ( block * 4 ) ) & 0x0f );
+
+			const int16_t sample = static_cast<int16_t>( ( nibble << 12 ) & 0xffff ) >> shift;
 
 			// mix in old values
 			int32_t* curOldSamples = inOutOldSamples + ( IsStereo ? ( block % 2 ) * 2 : 0 );
@@ -76,6 +85,7 @@ void DecodeAdpcmChunk( const uint8_t* chunk, int32_t* inOutOldSamples, int16_t* 
 			curOldSamples[ 1 ] = std::exchange( curOldSamples[ 0 ], mixedSample );
 
 			*curOutSamples = static_cast<int16_t>( std::clamp<int32_t>( mixedSample, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max() ) );
+			curOutSamples += sampleIncrement;
 		}
 	}
 }
@@ -87,9 +97,9 @@ void DecodeAdpcmChunks( const uint8_t* chunks, int32_t* inOutOldSamples, int16_t
 
 	for ( uint32_t i = 0; i < AdpcmChunks; ++i )
 	{
-		DecodeAdpcmChunk<IsStereo, Is8Bit>( chunks, inOutOldSamples, outSamples );
+		DecodeAdpcmChunk<Is8Bit, IsStereo>( chunks, inOutOldSamples, outSamples );
+		outSamples += SamplesPerChunk;
 		chunks += AdpcmChunkSize;
-		outSamples += AdpcmWordsPerChunk;
 	}
 }
 
