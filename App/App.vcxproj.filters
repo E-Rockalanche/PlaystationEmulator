@@ -12,8 +12,16 @@
     <ClCompile Include="src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\AudioQueue.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="inc\App\AudioQueue.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
