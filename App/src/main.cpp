@@ -399,12 +399,6 @@ int main( int argc, char** argv )
 		const uint32_t curTicks = SDL_GetTicks();
 		const uint32_t elapsed = curTicks - ticks;
 
-		// DEBUG START
-		auto& cdromDrive = playstationCore->GetCDRomDrive();
-		dbLog( "XA-ADPCM samples generated this frame: %u", cdromDrive.SamplesThisFrame );
-		cdromDrive.SamplesThisFrame = 0;
-		// DEBUG END
-
 		if ( elapsed < targetMilliseconds )
 			SDL_Delay( static_cast<uint32_t>( targetMilliseconds - elapsed ) );
 

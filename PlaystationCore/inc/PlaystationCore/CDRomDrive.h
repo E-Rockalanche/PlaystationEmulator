@@ -16,8 +16,6 @@ namespace PSX
 class CDRomDrive
 {
 public:
-	uint32_t SamplesThisFrame = 0;
-
 	using PushSamplesFunc = std::function<void( const int16_t*, size_t )>;
 
 	CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager );

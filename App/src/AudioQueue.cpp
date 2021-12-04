@@ -51,16 +51,24 @@ bool AudioQueue::Initialize( int frequency, SDL_AudioFormat format, uint8_t chan
 	return true;
 }
 
+void AudioQueue::SetPaused( bool pause )
+{
+	dbAssert( m_deviceId > 0 );
+	if ( m_paused != pause )
+	{
+		SDL_PauseAudioDevice( m_deviceId, pause );
+		m_paused = pause;
+	}
+}
+
 template <typename DestType>
 inline void AudioQueue::FillSamples( DestType* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
 
-	dbLog( "AudioQueue::FillSamples -- Reading samples [%u]", (uint32_t)count );
-
 	if ( m_queueSize < count )
 	{
-		dbLogWarning( "AudioQueue::FillSamples -- Starving audio device [%u]", (uint32_t)( count - m_queueSize ) );
+		dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
 	}
 
 	const size_t available = std::min( m_queueSize, count );
@@ -73,8 +81,6 @@ inline void AudioQueue::FillSamples( DestType* samples, size_t count )
 
 	m_queueSize -= available;
 	m_queueFirst = ( m_queueFirst + available ) % m_queueReservedSize;
-
-	dbLog( "\tqueue size: %u", (uint32_t)m_queueSize );
 }
 
 void AudioQueue::StaticFillAudioDeviceBuffer( void* userData, uint8_t* buffer, int length )
@@ -97,21 +103,9 @@ void AudioQueue::FillAudioDeviceBuffer( uint8_t* buffer, int bufferLength )
 	}
 }
 
-void AudioQueue::SetPaused( bool pause )
-{
-	dbAssert( m_deviceId > 0 );
-	if ( m_paused != pause )
-	{
-		SDL_PauseAudioDevice( m_deviceId, pause );
-		m_paused = pause;
-	}
-}
-
 void AudioQueue::PushSamples( const int16_t* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
-
-	dbLog( "AudioQueue::PushSamples -- Pushing samples [%u]", count );
 
 	const size_t capacity = m_queueReservedSize - m_queueSize;
 	if ( capacity < count )
@@ -131,8 +125,6 @@ void AudioQueue::PushSamples( const int16_t* samples, size_t count )
 
 	m_queueSize += count;
 	m_queueLast = ( m_queueLast + count ) % m_queueReservedSize;
-
-	dbLog( "\tqueue size: %u", (uint32_t)m_queueSize );
 }
 
 void AudioQueue::IgnoreSamples( size_t count )
