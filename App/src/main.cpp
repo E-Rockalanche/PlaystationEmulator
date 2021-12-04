@@ -146,10 +146,10 @@ int main( int argc, char** argv )
 		{ SDL_CONTROLLER_BUTTON_LEFTSHOULDER, PSX::Button::L1 },
 		{ SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PSX::Button::R1 },
 
-		{ SDL_CONTROLLER_BUTTON_Y, PSX::Button::Triangle },
-		{ SDL_CONTROLLER_BUTTON_B, PSX::Button::Circle },
-		{ SDL_CONTROLLER_BUTTON_A, PSX::Button::X },
-		{ SDL_CONTROLLER_BUTTON_X, PSX::Button::Square },
+		{ SDL_CONTROLLER_BUTTON_X, PSX::Button::Triangle },
+		{ SDL_CONTROLLER_BUTTON_A, PSX::Button::Circle },
+		{ SDL_CONTROLLER_BUTTON_B, PSX::Button::X },
+		{ SDL_CONTROLLER_BUTTON_Y, PSX::Button::Square },
 	};
 
 	if ( romFilename.has_value() && playstationCore->LoadRom( *romFilename ) )
