@@ -222,6 +222,8 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 
 	DrawBatch();
 
+	glPixelStorei( GL_UNPACK_ALIGNMENT, ( width % 2 ) ? 2 : 4 );
+
 	const bool wrapX = left + width > VRamWidth;
 	const bool wrapY = top + height > VRamHeight;
 
@@ -287,6 +289,8 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 
 		RestoreRenderState();
 	}
+
+	glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );
 
 	dbCheckRenderErrors();
 }

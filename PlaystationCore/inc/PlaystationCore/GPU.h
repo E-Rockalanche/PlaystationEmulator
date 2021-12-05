@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace PSX
 {
@@ -180,7 +181,8 @@ private:
 	void Command_WriteToVRam() noexcept;
 	void Command_ReadFromVRam() noexcept;
 	void Command_RenderPolygon() noexcept;
-	void Command_RenderLines() noexcept;
+	void Command_RenderLine() noexcept;
+	void Command_RenderPolyLine() noexcept;
 	void Command_RenderRectangle() noexcept;
 
 	// CRT functions
@@ -270,7 +272,9 @@ private:
 
 	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512, used for VRAM to CPU transfers
 
-	struct VRamCopyState
+	std::vector<uint32_t> m_transferBuffer; // for VRAM write and polyline commands
+
+	struct VRamTransferState
 	{
 		uint32_t left = 0;
 		uint32_t top = 0;
@@ -278,10 +282,6 @@ private:
 		uint32_t height = 0;
 		uint32_t dx = 0;
 		uint32_t dy = 0;
-
-		// CPU -> VRAM only
-		std::unique_ptr<uint16_t[]> pixelBuffer;
-		bool oddWidth = false;
 
 		bool IsFinished() const noexcept { return dx == 0 && dy == height; }
 
@@ -297,28 +297,8 @@ private:
 				++dy;
 			}
 		}
-
-		void InitializePixelBuffer()
-		{
-			// buffer width must be aligned to 32bit boundary
-			oddWidth = ( width % 2 != 0 );
-			const auto size = ( width + oddWidth ) * height;
-			pixelBuffer.reset( new uint16_t[ size ] );
-		}
-
-		void PushPixel( uint16_t pixel ) noexcept
-		{
-			dbExpects( pixelBuffer );
-			dbExpects( !IsFinished() );
-
-			const auto index = dx + ( width + oddWidth ) * dy;
-			pixelBuffer[ index ] = pixel;
-
-			Increment();
-		}
 	};
-
-	std::optional<VRamCopyState> m_vramCopyState;
+	std::optional<VRamTransferState> m_vramTransferState;
 };
 
 }

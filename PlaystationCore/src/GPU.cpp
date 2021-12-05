@@ -174,7 +174,7 @@ void Gpu::Reset()
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
 	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
-	m_vramCopyState.reset();
+	m_vramTransferState.reset();
 
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 	m_renderer.SetColorDepth( static_cast<DisplayAreaColorDepth>( m_status.displayAreaColorDepth ) );
@@ -229,20 +229,15 @@ void Gpu::ProcessCommandBuffer() noexcept
 
 				case State::WritingVRam:
 				{
-					auto& state = *m_vramCopyState;
+					dbAssert( m_vramTransferState.has_value() );
+					dbAssert( !m_vramTransferState->IsFinished() );
 
-					dbAssert( m_vramCopyState.has_value() );
-					dbAssert( !state.IsFinished() );
+					const uint32_t available = std::min( m_remainingParamaters, m_commandBuffer.Size() );
+					for ( uint32_t i = 0; i < available; ++i )
+						m_transferBuffer.push_back( m_commandBuffer.Pop() );
 
-					while ( !m_commandBuffer.Empty() && !state.IsFinished() )
-					{
-						const uint32_t value = m_commandBuffer.Pop();
-						state.PushPixel( static_cast<uint16_t>( value ) );
-						if ( !state.IsFinished() )
-							state.PushPixel( static_cast<uint16_t>( value >> 16 ) );
-					}
-
-					if ( state.IsFinished() )
+					m_remainingParamaters -= available;
+					if ( m_remainingParamaters == 0 )
 					{
 						dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
 						FinishVRamWrite();
@@ -256,22 +251,27 @@ void Gpu::ProcessCommandBuffer() noexcept
 
 				case State::PolyLine:
 				{
-					// TODO
+					while ( m_remainingParamaters > 0 && !m_commandBuffer.Empty() )
+					{
+						--m_remainingParamaters;
+						m_transferBuffer.push_back( m_commandBuffer.Pop() );
+					}
 
 					static constexpr uint32_t TerminationMask = 0xf000f000; // duckstation masks the param before checking against the termination code
 					static constexpr uint32_t TerminationCode = 0x50005000; // supposedly 0x55555555, but Wild Arms 2 uses 0x50005000
 
-					// ignore required params
-					const uint32_t requiredParams = std::min( m_remainingParamaters, m_commandBuffer.Size() );
-					m_commandBuffer.Ignore( requiredParams );
-					m_remainingParamaters -= requiredParams;
+					const uint32_t paramsPerVertex = RenderCommand{ m_transferBuffer.front() }.shading ? 2 : 1;
+					uint32_t paramIndex = m_transferBuffer.size();
 
-					// ignore params until polyline termination code
 					while ( !m_commandBuffer.Empty() )
 					{
 						const uint32_t param = m_commandBuffer.Pop();
-						if ( ( param & TerminationMask ) == TerminationCode )
-							std::invoke( m_commandFunction, this );
+						if ( ( paramIndex % paramsPerVertex == 0 ) && ( ( param & TerminationMask ) == TerminationCode ) )
+						{
+							Command_RenderPolyLine();
+							break;
+						}
+						m_transferBuffer.push_back( param );
 					}
 					break;
 				}
@@ -334,7 +334,7 @@ void Gpu::ClearCommandBuffer() noexcept
 
 	m_state = State::Idle;
 	m_commandBuffer.Clear();
-	m_vramCopyState.reset();
+	m_vramTransferState.reset();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
 }
@@ -352,46 +352,60 @@ void Gpu::InitCommand( uint32_t paramaterCount, CommandFunction function ) noexc
 
 void Gpu::SetupVRamCopy() noexcept
 {
-	dbExpects( !m_vramCopyState.has_value() ); // already doing a copy!
+	dbExpects( !m_vramTransferState.has_value() ); // already doing a copy!
 
 	m_commandBuffer.Pop(); // pop command
 
-	auto& state = m_vramCopyState.emplace();
+	auto& state = m_vramTransferState.emplace();
 	std::tie( state.left, state.top ) = DecodeCopyPosition( m_commandBuffer.Pop() );
 	std::tie( state.width, state.height ) = DecodeCopySize( m_commandBuffer.Pop() );
 }
 
 void Gpu::FinishVRamWrite() noexcept
 {
-	dbExpects( m_vramCopyState.has_value() );
-	dbExpects( m_vramCopyState->pixelBuffer );
 	dbExpects( m_state == State::WritingVRam );
+	dbExpects( m_vramTransferState.has_value() );
+	dbExpects( !m_transferBuffer.empty() );
 
 	// pixel transfer may be incomplete
 
-	auto& state = *m_vramCopyState;
+	auto& state = *m_vramTransferState;
+	const uint16_t* pixels = reinterpret_cast<const uint16_t*>( m_transferBuffer.data() );
 
-	// update full width lines
-	if ( state.dy > 0 )
+	if ( m_remainingParamaters == 0 )
 	{
 		m_renderer.UpdateVRam(
 			state.left, state.top,
-			state.width, state.dy,
-			state.pixelBuffer.get() );
+			state.width, state.height,
+			pixels );
 	}
-
-	// update incomplete line
-	if ( state.dx > 0 )
+	else
 	{
-		const uint32_t top = state.top + state.dy;
-		const size_t bufferOffset = state.dx + state.dy * ( state.width + state.oddWidth );
-		m_renderer.UpdateVRam(
-			state.left, top,
-			state.dx, 1,
-			state.pixelBuffer.get() + bufferOffset );
+		const uint32_t pixelCount = m_transferBuffer.size() * 2;
+		const uint32_t fullLines = pixelCount / state.width;
+		const uint32_t lastLineWidth = pixelCount % state.width;
+
+		if ( fullLines > 0 )
+		{
+			m_renderer.UpdateVRam(
+				state.left, state.top,
+				state.width, fullLines,
+				pixels );
+		}
+
+		if ( lastLineWidth > 0 )
+		{
+			const uint32_t top = state.top + fullLines;
+			const size_t bufferOffset = lastLineWidth + fullLines * state.width;
+			m_renderer.UpdateVRam(
+				state.left, top,
+				lastLineWidth, 1,
+				pixels + bufferOffset );
+		}
 	}
 
-	m_vramCopyState.reset();
+	m_vramTransferState.reset();
+	m_transferBuffer.clear();
 	m_state = State::Idle;
 }
 
@@ -583,10 +597,15 @@ void Gpu::ExecuteCommand() noexcept
 				case PrimitiveType::Line:
 				{
 					const uint32_t params = command.shading ? 3 : 2;
-					InitCommand( params, &Gpu::Command_RenderLines );
-					if ( command.numLines )
-						m_state = State::PolyLine;
+					InitCommand( params, &Gpu::Command_RenderLine );
 
+					if ( command.numLines )
+					{
+						// read vertices into transfer buffer
+						m_state = State::PolyLine;
+						m_transferBuffer.reserve( 256 );
+						m_transferBuffer.push_back( m_commandBuffer.Pop() ); // move command
+					}
 					break;
 				}
 
@@ -614,26 +633,26 @@ uint32_t Gpu::GpuRead() noexcept
 	if ( m_state != State::ReadingVRam )
 		return m_gpuRead;
 
-	dbAssert( m_vramCopyState.has_value() );
-	dbAssert( !m_vramCopyState->IsFinished() );
+	dbAssert( m_vramTransferState.has_value() );
+	dbAssert( !m_vramTransferState->IsFinished() );
 
 	auto getPixel = [this]() -> uint32_t
 	{
-		const auto x = m_vramCopyState->GetWrappedX();
-		const auto y = m_vramCopyState->GetWrappedY();
-		m_vramCopyState->Increment();
+		const auto x = m_vramTransferState->GetWrappedX();
+		const auto y = m_vramTransferState->GetWrappedY();
+		m_vramTransferState->Increment();
 		return m_vram[ x + y * VRamWidth ];
 	};
 
 	uint32_t result = getPixel();
 
-	if ( !m_vramCopyState->IsFinished() )
+	if ( !m_vramTransferState->IsFinished() )
 		result |= getPixel() << 16;
 
-	if ( m_vramCopyState->IsFinished() )
+	if ( m_vramTransferState->IsFinished() )
 	{
 		dbLogDebug( "Gpu::GpuRead_Image -- finished transfer" );
-		m_vramCopyState.reset();
+		m_vramTransferState.reset();
 		m_state = State::Idle;
 		UpdateDmaRequest();
 	}
@@ -868,7 +887,6 @@ void Gpu::UpdateDmaRequest() noexcept
 	{
 		case State::Idle:
 		case State::Parameters:
-		case State::PolyLine:
 			m_status.readyToReceiveCommand = true;
 			m_status.readyToReceiveDmaBlock = m_commandBuffer.Empty() || ( m_remainingParamaters > 0 );
 			m_status.readyToSendVRamToCpu = false;
@@ -884,6 +902,12 @@ void Gpu::UpdateDmaRequest() noexcept
 			m_status.readyToReceiveCommand = false;
 			m_status.readyToReceiveDmaBlock = false;
 			m_status.readyToSendVRamToCpu = true;
+			break;
+
+		case State::PolyLine:
+			m_status.readyToReceiveCommand = true;
+			m_status.readyToReceiveDmaBlock = true;
+			m_status.readyToSendVRamToCpu = false;
 			break;
 	}
 
@@ -951,18 +975,19 @@ void Gpu::Command_WriteToVRam() noexcept
 {
 	// affected by mask settings
 	SetupVRamCopy();
-	auto& state = *m_vramCopyState;
+	auto& state = *m_vramTransferState;
 
 	dbLogDebug( "Gpu::Command_WriteToVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
 
-	state.InitializePixelBuffer();
+	m_remainingParamaters = ( state.width * state.height + 1 ) / 2; // convert number of pixels to words (rounded up)
+	m_transferBuffer.reserve( m_remainingParamaters );
 	m_state = State::WritingVRam;
 }
 
 void Gpu::Command_ReadFromVRam() noexcept
 {
 	SetupVRamCopy();
-	auto& state = *m_vramCopyState;
+	auto& state = *m_vramTransferState;
 
 	dbLogDebug( "Gpu::Command_ReadFromVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
 
@@ -1059,9 +1084,18 @@ void Gpu::Command_RenderPolygon() noexcept
 	EndCommand();
 }
 
-void Gpu::Command_RenderLines() noexcept
+void Gpu::Command_RenderLine() noexcept
 {
-	dbBreak(); // TODO pop command buffer for non-polyline command
+	// TODO
+	const RenderCommand command{ m_commandBuffer.Pop() };
+	m_commandBuffer.Ignore( command.shading ? 3 : 2 );
+	EndCommand();
+}
+
+void Gpu::Command_RenderPolyLine() noexcept
+{
+	// TODO
+	m_transferBuffer.clear();
 	EndCommand();
 }
 
