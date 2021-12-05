@@ -63,8 +63,8 @@ public:
 			WriteGP1( value );
 	}
 
-	void WriteGP0( uint32_t value ) noexcept { std::invoke( m_gp0Mode, this, value ); }
-	uint32_t GpuRead() noexcept { return std::invoke( m_gpuReadMode, this ); }
+	void WriteGP0( uint32_t value ) noexcept;
+	uint32_t GpuRead() noexcept;
 
 	bool IsInterlaced() const noexcept { return m_status.verticalResolution && m_status.verticalInterlace; }
 
@@ -81,6 +81,15 @@ public:
 	void ScheduleNextEvent();
 
 private:
+	enum class State
+	{
+		Idle,
+		Parameters,
+		WritingVRam,
+		ReadingVRam,
+		PolyLine
+	};
+
 	enum class DmaDirection
 	{
 		Off,
@@ -134,8 +143,6 @@ private:
 	};
 	static_assert( sizeof( Status ) == 4 );
 
-	using GP0Function = void( Gpu::* )( uint32_t ) noexcept;
-	using GpuReadFunction = uint32_t( Gpu::* )( ) noexcept;
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
 private:
@@ -158,18 +165,14 @@ private:
 	void GP0_PolyLine( uint32_t ) noexcept;
 	void GP0_Image( uint32_t ) noexcept; // affected by mask settings
 
-	void SetGP0Mode( GP0Function f ) noexcept
+	void SetState( State state ) noexcept
 	{
-		if ( m_gp0Mode == &Gpu::GP0_Image && m_vramCopyState )
+		if ( m_state == State::WritingVRam && m_vramCopyState )
 			FinishVRamTransfer();
 
-		m_gp0Mode = f;
-		m_status.readyToReceiveCommand = ( f != &Gpu::GP0_Image );
+		m_state = state;
+		m_status.readyToReceiveCommand = ( state != State::WritingVRam );
 	}
-
-	// GPUREAD modes
-	uint32_t GpuRead_Normal() noexcept;
-	uint32_t GpuRead_Image() noexcept;
 
 	// command functions
 	void FillRectangle() noexcept;
@@ -215,13 +218,13 @@ private:
 	Dma* m_dma = nullptr; // circular dependency
 	EventHandle m_clockEvent;
 
+	State m_state = State::Idle;
+
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;
 	CommandFunction m_commandFunction = nullptr;
-	GP0Function m_gp0Mode = nullptr;
 
 	uint32_t m_gpuRead = 0;
-	GpuReadFunction m_gpuReadMode = nullptr;
 
 	Status m_status;
 

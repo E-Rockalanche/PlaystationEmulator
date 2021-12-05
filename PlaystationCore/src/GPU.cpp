@@ -115,13 +115,13 @@ Gpu::~Gpu() = default;
 
 void Gpu::Reset()
 {
+	m_state = State::Idle;
+
 	m_commandBuffer.Reset();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
-	m_gp0Mode = &Gpu::GP0_Command;
 
 	m_gpuRead = 0;
-	m_gpuReadMode = &Gpu::GpuRead_Normal;
 
 	m_status.value = 0;
 	m_status.readyToReceiveCommand = true;
@@ -184,6 +184,32 @@ void Gpu::Reset()
 	ScheduleNextEvent();
 }
 
+void Gpu::WriteGP0( uint32_t value ) noexcept
+{
+	switch ( m_state )
+	{
+		case State::Idle:
+			GP0_Command( value );
+			break;
+
+		case State::Parameters:
+			GP0_Params( value );
+			break;
+
+		case State::WritingVRam:
+			GP0_Image( value );
+			break;
+
+		case State::ReadingVRam:
+			dbBreak();
+			break;
+
+		case State::PolyLine:
+			GP0_PolyLine( value );
+			break;
+	}
+}
+
 void Gpu::UpdateClockEventEarly()
 {
 	m_clockEvent->UpdateEarly();
@@ -191,8 +217,7 @@ void Gpu::UpdateClockEventEarly()
 
 void Gpu::ClearCommandBuffer() noexcept
 {
-	SetGP0Mode( &Gpu::GP0_Command );
-
+	SetState( State::Idle );
 	m_commandBuffer.Clear();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
@@ -206,7 +231,7 @@ void Gpu::InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunctio
 	m_commandBuffer.Push( command );
 	m_remainingParamaters = paramaterCount;
 	m_commandFunction = function;
-	SetGP0Mode( &Gpu::GP0_Params );
+	SetState( State::Parameters );
 }
 
 void Gpu::SetupVRamCopy() noexcept
@@ -223,7 +248,7 @@ void Gpu::FinishVRamTransfer() noexcept
 {
 	dbExpects( m_vramCopyState.has_value() );
 	dbExpects( m_vramCopyState->pixelBuffer );
-	dbExpects( m_gp0Mode == &Gpu::GP0_Image );
+	dbExpects( m_state == State::WritingVRam );
 
 	if ( m_vramCopyState->IsFinished() )
 	{
@@ -417,16 +442,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 					m_commandBuffer.Push( value );
 					m_commandFunction = &Gpu::TempFinishCommandParams;
 					m_remainingParamaters = command.shading ? 3 : 2;
-
-					if ( command.numLines )
-					{
-						SetGP0Mode( &Gpu::GP0_PolyLine );
-					}
-					else
-					{
-						SetGP0Mode( &Gpu::GP0_Params );
-					}
-
+					SetState( command.numLines ? State::PolyLine : State::Parameters );
 					break;
 				}
 
@@ -502,17 +518,15 @@ void Gpu::GP0_Image( uint32_t param ) noexcept
 	}
 }
 
-uint32_t Gpu::GpuRead_Normal() noexcept
+uint32_t Gpu::GpuRead() noexcept
 {
-	return m_gpuRead;
-}
+	if ( m_state != State::ReadingVRam )
+		return m_gpuRead;
 
-uint32_t Gpu::GpuRead_Image() noexcept
-{
 	dbExpects( m_vramCopyState.has_value() );
 	dbExpects( !m_vramCopyState->IsFinished() );
 
-	auto getPixel = [this]
+	auto getPixel = [this]() -> uint32_t
 	{
 		const auto x = m_vramCopyState->GetWrappedX();
 		const auto y = m_vramCopyState->GetWrappedY();
@@ -520,21 +534,21 @@ uint32_t Gpu::GpuRead_Image() noexcept
 		return m_vram[ x + y * VRamWidth ];
 	};
 
-	m_gpuRead = getPixel();
+	uint32_t result = getPixel();
 
 	if ( !m_vramCopyState->IsFinished() )
-		m_gpuRead |= getPixel() << 16;
+		result |= getPixel() << 16;
 
 	if ( m_vramCopyState->IsFinished() )
 	{
 		dbLogDebug( "Gpu::GpuRead_Image -- finished transfer" );
-		m_gpuReadMode = &Gpu::GpuRead_Normal;
-		m_status.readyToReceiveCommand = true;
+		SetState( State::Idle );
 		m_vramCopyState.reset();
 		UpdateDmaRequest();
 	}
 
-	return m_gpuRead;
+	m_gpuRead = result;
+	return result;
 }
 
 void Gpu::WriteGP1( uint32_t value ) noexcept
@@ -758,20 +772,24 @@ uint32_t Gpu::GpuStatus() noexcept
 
 void Gpu::UpdateDmaRequest() noexcept
 {
-	if ( m_gp0Mode == &Gpu::GP0_Image )
+	switch ( m_state )
 	{
-		m_status.readyToReceiveDmaBlock = true;
-		m_status.readyToSendVRamToCpu = false;
-	}
-	else if ( m_gpuReadMode == &Gpu::GpuRead_Image )
-	{
-		m_status.readyToReceiveDmaBlock = false;
-		m_status.readyToSendVRamToCpu = true;
-	}
-	else
-	{
-		m_status.readyToReceiveDmaBlock = m_commandBuffer.Empty() || ( m_remainingParamaters > 0 );
-		m_status.readyToSendVRamToCpu = false;
+		case State::Idle:
+		case State::Parameters:
+		case State::PolyLine:
+			m_status.readyToReceiveDmaBlock = m_commandBuffer.Empty() || ( m_remainingParamaters > 0 );
+			m_status.readyToSendVRamToCpu = false;
+			break;
+
+		case State::WritingVRam:
+			m_status.readyToReceiveDmaBlock = true;
+			m_status.readyToSendVRamToCpu = false;
+			break;
+
+		case State::ReadingVRam:
+			m_status.readyToReceiveDmaBlock = false;
+			m_status.readyToSendVRamToCpu = true;
+			break;
 	}
 
 	bool dmaRequest = false;
@@ -842,7 +860,7 @@ void Gpu::CopyRectangleToVram() noexcept
 
 	m_vramCopyState->InitializePixelBuffer();
 	
-	SetGP0Mode( &Gpu::GP0_Image );
+	SetState( State::WritingVRam );
 	UpdateDmaRequest();
 }
 
@@ -850,9 +868,9 @@ void Gpu::CopyRectangleFromVram() noexcept
 {
 	SetupVRamCopy();
 	dbLogDebug( "Gpu::CopyRectangleFromVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
-	m_gpuReadMode = &Gpu::GpuRead_Image;
-	m_status.readyToReceiveCommand = false;
 	ClearCommandBuffer(); // TODO: clear buffer here after image copy?
+
+	SetState( State::ReadingVRam );
 
 	m_renderer.ReadVRam( m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height, m_vram.get() );
 
