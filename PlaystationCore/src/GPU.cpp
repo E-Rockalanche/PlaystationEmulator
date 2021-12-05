@@ -189,24 +189,66 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 	switch ( m_state )
 	{
 		case State::Idle:
-			GP0_Command( value );
+			ExecuteCommand( value );
 			break;
 
 		case State::Parameters:
-			GP0_Params( value );
+		{
+			dbExpects( m_remainingParamaters > 0 );
+			m_commandBuffer.Push( value );
+			if ( --m_remainingParamaters == 0 )
+				std::invoke( m_commandFunction, this );
+
+			// command function must clear buffer and set state
 			break;
+		}
 
 		case State::WritingVRam:
-			GP0_Image( value );
+		{
+			dbExpects( m_vramCopyState.has_value() );
+			dbExpects( !m_vramCopyState->IsFinished() );
+
+			m_vramCopyState->PushPixel( static_cast<uint16_t>( value ) );
+
+			if ( !m_vramCopyState->IsFinished() )
+				m_vramCopyState->PushPixel( static_cast<uint16_t>( value >> 16 ) );
+
+			if ( m_vramCopyState->IsFinished() )
+			{
+				dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
+				FinishVRamTransfer();
+				ClearCommandBuffer();
+				UpdateDmaRequest();
+			}
 			break;
+		}
 
 		case State::ReadingVRam:
 			dbBreak();
 			break;
 
 		case State::PolyLine:
-			GP0_PolyLine( value );
+		{
+			static constexpr uint32_t TerminationMask = 0xf000f000; // duckstation masks the param before checking against the termination code
+			static constexpr uint32_t TerminationCode = 0x50005000; // supposedly 0x55555555, but Wild Arms 2 uses 0x50005000
+
+			if ( m_remainingParamaters > 0 )
+			{
+				// always read first two vertices
+				--m_remainingParamaters;
+			}
+			else
+			{
+				if ( ( value & TerminationMask ) == TerminationCode )
+				{
+					std::invoke( m_commandFunction, this );
+					return;
+				}
+			}
+
+			m_commandBuffer.Push( value );
 			break;
+		}
 	}
 }
 
@@ -306,14 +348,14 @@ uint32_t Gpu::GetHorizontalResolution() const noexcept
 	return 0;
 }
 
-void Gpu::GP0_Command( uint32_t value ) noexcept
+void Gpu::ExecuteCommand( uint32_t value ) noexcept
 {
 	const uint8_t opcode = static_cast<uint8_t>( value >> 24 );
 	switch ( opcode )
 	{
 		case 0xe1: // draw mode setting
 		{
-			dbLogDebug( "Gpu::GP0_Command() -- set draw mode [%X]", value );
+			dbLogDebug( "Gpu::ExecuteCommand() -- set draw mode [%X]", value );
 			/*
 			0 - 3	Texture page X Base( N * 64 ) ( ie.in 64 - halfword steps ); GPUSTAT.0 - 3
 			4		Texture page Y Base( N * 256 ) ( ie. 0 or 256 ); GPUSTAT.4
@@ -338,7 +380,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 		case 0xe2: // texture window setting
 		{
-			dbLogDebug( "Gpu::GP0_Command() -- set texture window [%X]", value );
+			dbLogDebug( "Gpu::ExecuteCommand() -- set texture window [%X]", value );
 
 			m_textureWindowMaskX = value & 0x1f;
 			m_textureWindowMaskY = ( value >> 5 ) & 0x1f;
@@ -354,7 +396,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_drawAreaLeft = value & 0x3ff;
 			m_drawAreaTop = ( value >> 10 ) & 0x1ff;
 
-			dbLogDebug( "Gpu::GP0_Command() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
+			dbLogDebug( "Gpu::ExecuteCommand() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
@@ -367,7 +409,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 			m_drawAreaRight = value & 0x3ff;
 			m_drawAreaBottom = ( value >> 10 ) & 0x1ff;
 
-			dbLogDebug( "Gpu::GP0_Command() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
+			dbLogDebug( "Gpu::ExecuteCommand() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
@@ -385,7 +427,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 			m_drawOffsetX = signExtend( value & 0x7ff );
 			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
-			dbLogDebug( "Gpu::GP0_Command() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
+			dbLogDebug( "Gpu::ExecuteCommand() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
 			break;
 		}
 
@@ -393,7 +435,7 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 		{
 			const bool setMask = value & 0x01;
 			const bool checkMask = value & 0x02;
-			dbLogDebug( "Gpu::GP0_Command() -- set mask bits [set:%i check:%i]", setMask, checkMask );
+			dbLogDebug( "Gpu::ExecuteCommand() -- set mask bits [set:%i check:%i]", setMask, checkMask );
 
 			m_status.setMaskOnDraw = setMask;
 			m_status.checkMaskOnDraw = checkMask;
@@ -402,32 +444,32 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 		}
 
 		case 0x01: // clear cache
-			dbLogDebug( "Gpu::GP0_Command() -- clear GPU cache" );
+			dbLogDebug( "Gpu::ExecuteCommand() -- clear GPU cache" );
 			break;
 
 		case 0x02: // fill rectangle in VRAM
-			dbLogDebug( "Gpu::GP0_Command() -- fill rectangle in VRAM" );
+			dbLogDebug( "Gpu::ExecuteCommand() -- fill rectangle in VRAM" );
 			InitCommand( value, 2, &Gpu::Command_FillRectangle );
 			break;
 
 		case 0x80: // copy rectangle (VRAM to VRAM)
-			dbLogDebug( "Gpu::GP0_Command() -- copy rectangle (VRAM to VRAM)" );
+			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (VRAM to VRAM)" );
 			InitCommand( value, 3, &Gpu::Command_CopyRectangle );
 			break;
 
 		case 0xa0: // copy rectangle (CPU to VRAM)
-			dbLogDebug( "Gpu::GP0_Command() -- copy rectangle (CPU to VRAM)" );
+			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (CPU to VRAM)" );
 			InitCommand( value, 2, &Gpu::Command_WriteToVRam );
 			break;
 
 		case 0xc0: // copy rectangle (VRAM to CPU)
-			dbLogDebug( "Gpu::GP0_Command() -- copy rectangle (VRAM to CPU)" );
+			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (VRAM to CPU)" );
 			InitCommand( value, 2, &Gpu::Command_ReadFromVRam );
 			break;
 
 		case 0x1f: // interrupt request
 		{
-			dbLogDebug( "Gpu::GP0_Command() -- request interrupt" );
+			dbLogDebug( "Gpu::ExecuteCommand() -- request interrupt" );
 			if ( !m_status.interruptRequest ) // edge triggered
 			{
 				m_status.interruptRequest = true;
@@ -478,66 +520,13 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 				default:
 				{
-					dbLogWarning( "Gpu::GP0_Command() -- invalid GP0 opcode [%X]", opcode );
+					dbLogWarning( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
 					ClearCommandBuffer();
 					break;
 				}
 			}
 			break;
 		}
-	}
-}
-
-void Gpu::GP0_Params( uint32_t param ) noexcept
-{
-	dbExpects( m_remainingParamaters > 0 );
-	m_commandBuffer.Push( param );
-	if ( --m_remainingParamaters == 0 )
-	{
-		std::invoke( m_commandFunction, this );
-
-		// command function must clear buffer and set GP0 mode
-	}
-}
-
-void Gpu::GP0_PolyLine( uint32_t param ) noexcept
-{
-	static constexpr uint32_t TerminationMask = 0xf000f000; // duckstation masks the param before checking against the termination code
-	static constexpr uint32_t TerminationCode = 0x50005000; // supposedly 0x55555555, but Wild Arms 2 uses 0x50005000
-
-	// always read the first few parameters
-	if ( m_remainingParamaters == 0 )
-	{
-		if ( ( param & TerminationMask ) == TerminationCode )
-		{
-			std::invoke( m_commandFunction, this );
-			return;
-		}
-	}
-	else
-	{
-		--m_remainingParamaters;
-	}
-
-	m_commandBuffer.Push( param );
-}
-
-void Gpu::GP0_Image( uint32_t param ) noexcept
-{
-	dbExpects( m_vramCopyState.has_value() );
-	dbExpects( !m_vramCopyState->IsFinished() );
-
-	m_vramCopyState->PushPixel( static_cast<uint16_t>( param ) );
-
-	if ( !m_vramCopyState->IsFinished() )
-		m_vramCopyState->PushPixel( static_cast<uint16_t>( param >> 16 ) );
-
-	if ( m_vramCopyState->IsFinished() )
-	{
-		dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
-		FinishVRamTransfer();
-		ClearCommandBuffer();
-		UpdateDmaRequest();
 	}
 }
 

@@ -161,11 +161,7 @@ private:
 	void SetupVRamCopy() noexcept;
 	void FinishVRamTransfer() noexcept;
 
-	// GP0 modes
-	void GP0_Command( uint32_t ) noexcept;
-	void GP0_Params( uint32_t ) noexcept;
-	void GP0_PolyLine( uint32_t ) noexcept;
-	void GP0_Image( uint32_t ) noexcept; // affected by mask settings
+	void ExecuteCommand( uint32_t command ) noexcept;
 
 	void SetState( State state ) noexcept
 	{
