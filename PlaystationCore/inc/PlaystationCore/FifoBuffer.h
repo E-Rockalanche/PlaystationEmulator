@@ -22,11 +22,11 @@ struct FifoBufferStorage<T, BufferSize, false>
 {
 	using size_type = uint32_t;
 
-	T* GetData() { return m_data.data(); }
-	const T* GetData() const { return m_data.data(); }
+	T* GetData() noexcept { return m_data.data(); }
+	const T* GetData() const noexcept { return m_data.data(); }
 
-	T& operator[]( size_type index ) { return m_data[ index ]; }
-	const T& operator[]( size_type index ) const { return m_data[ index ]; }
+	T& operator[]( size_type index ) noexcept { return m_data[ index ]; }
+	const T& operator[]( size_type index ) const noexcept { return m_data[ index ]; }
 
 	std::array<T, BufferSize> m_data;
 };
@@ -38,11 +38,25 @@ struct FifoBufferStorage<T, BufferSize, true>
 
 	FifoBufferStorage() : m_data{ std::make_unique<T[]>( BufferSize ) } {}
 
-	T* GetData() { return m_data.get(); }
-	const T* GetData() const { return m_data.get(); }
+	FifoBufferStorage( const FifoBufferStorage& other ) : FifoBufferStorage()
+	{
+		std::copy_n( other.m_data.get(), BufferSize, m_data.get() );
+	}
 
-	T& operator[]( size_type index ) { dbExpects( index < BufferSize ); return m_data[ index ]; }
-	const T& operator[]( size_type index ) const { dbExpects( index < BufferSize ); return m_data[ index ]; }
+	FifoBufferStorage( FifoBufferStorage&& ) = delete;
+
+	FifoBufferStorage& operator=( const FifoBufferStorage& other )
+	{
+		std::copy_n( other.m_data.get(), BufferSize, m_data.get() );
+	}
+
+	FifoBufferStorage& operator=( FifoBufferStorage&& ) = delete;
+
+	T* GetData() noexcept { return m_data.get(); }
+	const T* GetData() const noexcept { return m_data.get(); }
+
+	T& operator[]( size_type index ) noexcept { dbExpects( index < BufferSize ); return m_data[ index ]; }
+	const T& operator[]( size_type index ) const noexcept { dbExpects( index < BufferSize ); return m_data[ index ]; }
 
 	std::unique_ptr<T[]> m_data;
 };
@@ -61,9 +75,11 @@ public:
 
 	// construction/assignment
 
-	FifoBuffer() noexcept = default;
-	FifoBuffer( const FifoBuffer& ) noexcept = default;
-	FifoBuffer( FifoBuffer&& ) noexcept = default;
+	FifoBuffer() = default;
+
+	FifoBuffer( const FifoBuffer& ) = default;
+
+	FifoBuffer( FifoBuffer&& ) = delete;
 
 	FifoBuffer( std::initializer_list<T> init ) noexcept
 	{
@@ -74,7 +90,8 @@ public:
 	}
 
 	FifoBuffer& operator=( const FifoBuffer& ) noexcept = default;
-	FifoBuffer& operator=( FifoBuffer&& ) noexcept = default;
+
+	FifoBuffer& operator=( FifoBuffer&& ) = delete;
 
 	FifoBuffer& operator=( std::initializer_list<T> init ) noexcept
 	{
@@ -94,7 +111,7 @@ public:
 		return m_storage[ m_first ];
 	}
 
-	// get pointer to raw buffer
+	// get pointer to raw buffer. USE WITH CAUTION
 	const T* Data() const noexcept
 	{
 		return m_storage.GetData();
