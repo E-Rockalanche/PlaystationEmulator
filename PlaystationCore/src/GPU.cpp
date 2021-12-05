@@ -210,6 +210,18 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 	}
 }
 
+void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
+{
+	for ( uint32_t i = 0; i < count; ++i )
+		WriteGP0( input[ i ] );
+}
+
+void Gpu::DmaOut( uint32_t* output, uint32_t count ) noexcept
+{
+	for ( uint32_t i = 0; i < count; ++i )
+		output[ i ] = GpuRead();
+}
+
 void Gpu::UpdateClockEventEarly()
 {
 	m_clockEvent->UpdateEarly();

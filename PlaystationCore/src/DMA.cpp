@@ -401,32 +401,21 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 	switch ( channel )
 	{
 		case Channel::MDecOut:
-		{
 			m_mdec.DmaOut( dest, wordCount );
 			break;
-		}
 
 		case Channel::Gpu:
-		{
-			for ( uint32_t i = 0; i < wordCount; ++i )
-			{
-				dest[ i ] = m_gpu.GpuRead();
-			}
+			m_gpu.DmaOut( dest, wordCount );
 			break;
-		}
 
 		case Channel::CdRom:
-		{
 			m_cdromDrive.DmaRead( dest, wordCount );
 			break;
-		}
 
 		case Channel::Spu:
-		{
 			// TODO
 			dbLogDebug( "ignoring SPU to RAM DMA transfer" );
 			break;
-		}
 
 		default:
 			dbLogWarning( "Dma::TransferToRam -- invalid channel [%X]", channel );
@@ -474,26 +463,17 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 	switch ( channel )
 	{
 		case Channel::MDecIn:
-		{
 			m_mdec.DmaIn( src, wordCount );
 			break;
-		}
 
 		case Channel::Gpu:
-		{
-			for ( uint32_t i = 0; i < wordCount; ++i )
-			{
-				m_gpu.WriteGP0( src[ i ] );
-			}
+			m_gpu.DmaIn( src, wordCount );
 			break;
-		}
 
 		case Channel::Spu:
-		{
 			// TODO
 			dbLogDebug( "ignoring RAM to SPU DMA transfer" );
 			break;
-		}
 
 		default:
 			dbLogWarning( "Dma::TransferFromRam -- invalid channel [%X]", channel );

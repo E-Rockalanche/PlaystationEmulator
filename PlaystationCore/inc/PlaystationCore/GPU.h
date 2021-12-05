@@ -63,8 +63,8 @@ public:
 			WriteGP1( value );
 	}
 
-	void WriteGP0( uint32_t value ) noexcept;
-	uint32_t GpuRead() noexcept;
+	void DmaIn( const uint32_t* input, uint32_t count ) noexcept;
+	void DmaOut( uint32_t* output, uint32_t count ) noexcept;
 
 	bool IsInterlaced() const noexcept { return m_status.verticalResolution && m_status.verticalInterlace; }
 
@@ -146,8 +146,10 @@ private:
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
 private:
+	void WriteGP0( uint32_t value ) noexcept;
 	void WriteGP1( uint32_t value ) noexcept;
 
+	uint32_t GpuRead() noexcept;
 	uint32_t GpuStatus() noexcept;
 
 	void UpdateDmaRequest() noexcept;
