@@ -140,6 +140,8 @@ private:
 
 		SemiTransparencyMode GetSemiTransparencyMode() const noexcept { return static_cast<SemiTransparencyMode>( semiTransparencyMode ); }
 		DisplayAreaColorDepth GetDisplayAreaColorDepth() const noexcept { return static_cast<DisplayAreaColorDepth>( displayAreaColorDepth ); }
+
+		DmaDirection GetDmaDirection() const noexcept { return static_cast<DmaDirection>( dmaDirection ); }
 	};
 	static_assert( sizeof( Status ) == 4 );
 
@@ -152,27 +154,27 @@ private:
 	uint32_t GpuRead() noexcept;
 	uint32_t GpuStatus() noexcept;
 
+	void ProcessCommandBuffer() noexcept;
+
 	void UpdateDmaRequest() noexcept;
 
 	void ClearCommandBuffer() noexcept;
 
-	void InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept;
+	void InitCommand( uint32_t paramaterCount, CommandFunction function ) noexcept;
 
 	void SetupVRamCopy() noexcept;
-	void FinishVRamTransfer() noexcept;
+	void FinishVRamWrite() noexcept;
 
-	void ExecuteCommand( uint32_t command ) noexcept;
+	void ExecuteCommand() noexcept;
 
-	void SetState( State state ) noexcept
+	void EndCommand() noexcept
 	{
-		if ( m_state == State::WritingVRam && m_vramCopyState )
-			FinishVRamTransfer();
-
-		m_state = state;
-		m_status.readyToReceiveCommand = ( state != State::WritingVRam );
+		m_state = State::Idle;
+		m_remainingParamaters = 0;
 	}
 
 	// command functions
+
 	void Command_FillRectangle() noexcept;
 	void Command_CopyRectangle() noexcept;
 	void Command_WriteToVRam() noexcept;
@@ -180,6 +182,8 @@ private:
 	void Command_RenderPolygon() noexcept;
 	void Command_RenderLines() noexcept;
 	void Command_RenderRectangle() noexcept;
+
+	// CRT functions
 
 	float GetVideoCyclesPerFrame() const noexcept
 	{
@@ -211,10 +215,10 @@ private:
 	EventHandle m_clockEvent;
 
 	State m_state = State::Idle;
-
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;
 	CommandFunction m_commandFunction = nullptr;
+	bool m_processingCommandBuffer = false;
 
 	uint32_t m_gpuRead = 0;
 
@@ -272,25 +276,25 @@ private:
 		uint32_t top = 0;
 		uint32_t width = 0;
 		uint32_t height = 0;
-		uint32_t x = 0;
-		uint32_t y = 0;
+		uint32_t dx = 0;
+		uint32_t dy = 0;
 
 		// CPU -> VRAM only
 		std::unique_ptr<uint16_t[]> pixelBuffer;
 		bool oddWidth = false;
 
-		bool IsFinished() const noexcept { return x == 0 && y == height; }
+		bool IsFinished() const noexcept { return dx == 0 && dy == height; }
 
-		uint32_t GetWrappedX() const noexcept { return ( left + x ) % VRamWidth; }
+		uint32_t GetWrappedX() const noexcept { return ( left + dx ) % VRamWidth; }
 
-		uint32_t GetWrappedY() const noexcept { return ( top + y ) % VRamHeight; }
+		uint32_t GetWrappedY() const noexcept { return ( top + dy ) % VRamHeight; }
 
 		void Increment() noexcept
 		{
-			if ( ++x == width )
+			if ( ++dx == width )
 			{
-				x = 0;
-				++y;
+				dx = 0;
+				++dy;
 			}
 		}
 
@@ -307,7 +311,7 @@ private:
 			dbExpects( pixelBuffer );
 			dbExpects( !IsFinished() );
 
-			const auto index = y * ( width + oddWidth ) + x;
+			const auto index = dx + ( width + oddWidth ) * dy;
 			pixelBuffer[ index ] = pixel;
 
 			Increment();

@@ -116,10 +116,10 @@ Gpu::~Gpu() = default;
 void Gpu::Reset()
 {
 	m_state = State::Idle;
-
 	m_commandBuffer.Reset();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
+	m_processingCommandBuffer = false;
 
 	m_gpuRead = 0;
 
@@ -179,87 +179,145 @@ void Gpu::Reset()
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 	m_renderer.SetColorDepth( static_cast<DisplayAreaColorDepth>( m_status.displayAreaColorDepth ) );
 
-	UpdateDmaRequest();
-
 	ScheduleNextEvent();
+
+	UpdateDmaRequest();
 }
 
 void Gpu::WriteGP0( uint32_t value ) noexcept
 {
-	switch ( m_state )
+	if ( m_commandBuffer.Full() )
 	{
-		case State::Idle:
-			ExecuteCommand( value );
-			break;
+		dbLogWarning( "Gpu::WriteGP0 -- command buffer is full" );
+		return;
+	}
 
-		case State::Parameters:
+	m_commandBuffer.Push( value );
+	ProcessCommandBuffer();
+}
+
+
+void Gpu::ProcessCommandBuffer() noexcept
+{
+	m_processingCommandBuffer = true;
+
+	for ( ;; )
+	{
+		bool stop = false;
+		while ( !m_commandBuffer.Empty() && !stop )
 		{
-			dbExpects( m_remainingParamaters > 0 );
-			m_commandBuffer.Push( value );
-			if ( --m_remainingParamaters == 0 )
-				std::invoke( m_commandFunction, this );
-
-			// command function must clear buffer and set state
-			break;
-		}
-
-		case State::WritingVRam:
-		{
-			dbExpects( m_vramCopyState.has_value() );
-			dbExpects( !m_vramCopyState->IsFinished() );
-
-			m_vramCopyState->PushPixel( static_cast<uint16_t>( value ) );
-
-			if ( !m_vramCopyState->IsFinished() )
-				m_vramCopyState->PushPixel( static_cast<uint16_t>( value >> 16 ) );
-
-			if ( m_vramCopyState->IsFinished() )
+			switch ( m_state )
 			{
-				dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
-				FinishVRamTransfer();
-				ClearCommandBuffer();
-				UpdateDmaRequest();
-			}
-			break;
-		}
-
-		case State::ReadingVRam:
-			dbBreak();
-			break;
-
-		case State::PolyLine:
-		{
-			static constexpr uint32_t TerminationMask = 0xf000f000; // duckstation masks the param before checking against the termination code
-			static constexpr uint32_t TerminationCode = 0x50005000; // supposedly 0x55555555, but Wild Arms 2 uses 0x50005000
-
-			if ( m_remainingParamaters > 0 )
-			{
-				// always read first two vertices
-				--m_remainingParamaters;
-			}
-			else
-			{
-				if ( ( value & TerminationMask ) == TerminationCode )
+				case State::Idle:
 				{
-					std::invoke( m_commandFunction, this );
-					return;
+					ExecuteCommand();
+
+					if ( m_state != State::Parameters )
+						break;
+				}
+
+				[[fallthrough]];
+				case State::Parameters:
+				{
+					if ( m_commandBuffer.Size() >= m_remainingParamaters + 1 ) // +1 for command
+						std::invoke( m_commandFunction, this );
+					else
+						stop = true; // we need more data, goto DMA request
+
+					break;
+				}
+
+				case State::WritingVRam:
+				{
+					auto& state = *m_vramCopyState;
+
+					dbAssert( m_vramCopyState.has_value() );
+					dbAssert( !state.IsFinished() );
+
+					while ( !m_commandBuffer.Empty() && !state.IsFinished() )
+					{
+						const uint32_t value = m_commandBuffer.Pop();
+						state.PushPixel( static_cast<uint16_t>( value ) );
+						if ( !state.IsFinished() )
+							state.PushPixel( static_cast<uint16_t>( value >> 16 ) );
+					}
+
+					if ( state.IsFinished() )
+					{
+						dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
+						FinishVRamWrite();
+					}
+					break;
+				}
+
+				case State::ReadingVRam:
+					stop = true;
+					break;
+
+				case State::PolyLine:
+				{
+					// TODO
+
+					static constexpr uint32_t TerminationMask = 0xf000f000; // duckstation masks the param before checking against the termination code
+					static constexpr uint32_t TerminationCode = 0x50005000; // supposedly 0x55555555, but Wild Arms 2 uses 0x50005000
+
+					// ignore required params
+					const uint32_t requiredParams = std::min( m_remainingParamaters, m_commandBuffer.Size() );
+					m_commandBuffer.Ignore( requiredParams );
+					m_remainingParamaters -= requiredParams;
+
+					// ignore params until polyline termination code
+					while ( !m_commandBuffer.Empty() )
+					{
+						const uint32_t param = m_commandBuffer.Pop();
+						if ( ( param & TerminationMask ) == TerminationCode )
+							std::invoke( m_commandFunction, this );
+					}
+					break;
 				}
 			}
-
-			m_commandBuffer.Push( value );
-			break;
 		}
+
+		// try to request more data
+		const auto sizeBefore = m_commandBuffer.Size();
+		UpdateDmaRequest();
+
+		// stop processing if we didn't get any new data
+		if ( sizeBefore == m_commandBuffer.Size() )
+			break;
 	}
+
+	m_processingCommandBuffer = false;
 }
 
 void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 {
-	for ( uint32_t i = 0; i < count; ++i )
-		WriteGP0( input[ i ] );
+	if ( m_status.GetDmaDirection() != DmaDirection::CpuToGp0 )
+	{
+		dbLogWarning( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
+		return;
+	}
+
+	if ( count > m_commandBuffer.Capacity() )
+		dbLogWarning( "GPU::DmaIn -- command buffer overrun" );
+
+	count = std::min( count, m_commandBuffer.Capacity() );
+	m_commandBuffer.Push( input, count );
+
+	// prevent recursive calls
+	if ( !m_processingCommandBuffer )
+		ProcessCommandBuffer();
 }
 
 void Gpu::DmaOut( uint32_t* output, uint32_t count ) noexcept
 {
+	if ( m_status.GetDmaDirection() != DmaDirection::GpuReadToCpu )
+	{
+		dbLogWarning( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
+		std::fill_n( output, count, uint32_t( 0xffffffff ) );
+		return;
+	}
+
 	for ( uint32_t i = 0; i < count; ++i )
 		output[ i ] = GpuRead();
 }
@@ -271,34 +329,39 @@ void Gpu::UpdateClockEventEarly()
 
 void Gpu::ClearCommandBuffer() noexcept
 {
-	SetState( State::Idle );
+	if ( m_state == State::WritingVRam )
+		FinishVRamWrite();
+
+	m_state = State::Idle;
 	m_commandBuffer.Clear();
+	m_vramCopyState.reset();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
 }
 
-void Gpu::InitCommand( uint32_t command, uint32_t paramaterCount, CommandFunction function ) noexcept
+void Gpu::InitCommand( uint32_t paramaterCount, CommandFunction function ) noexcept
 {
-	dbExpects( m_commandBuffer.Empty() );
+	dbExpects( m_state == State::Idle );
 	dbExpects( paramaterCount > 0 );
 	dbExpects( function );
-	m_commandBuffer.Push( command );
+
 	m_remainingParamaters = paramaterCount;
 	m_commandFunction = function;
-	SetState( State::Parameters );
+	m_state = State::Parameters;
 }
 
 void Gpu::SetupVRamCopy() noexcept
 {
 	dbExpects( !m_vramCopyState.has_value() ); // already doing a copy!
-	m_vramCopyState.emplace();
 
 	m_commandBuffer.Pop(); // pop command
-	std::tie( m_vramCopyState->left, m_vramCopyState->top ) = DecodeCopyPosition( m_commandBuffer.Pop() );
-	std::tie( m_vramCopyState->width, m_vramCopyState->height ) = DecodeCopySize( m_commandBuffer.Pop() );
+
+	auto& state = m_vramCopyState.emplace();
+	std::tie( state.left, state.top ) = DecodeCopyPosition( m_commandBuffer.Pop() );
+	std::tie( state.width, state.height ) = DecodeCopySize( m_commandBuffer.Pop() );
 }
 
-void Gpu::FinishVRamTransfer() noexcept
+void Gpu::FinishVRamWrite() noexcept
 {
 	dbExpects( m_vramCopyState.has_value() );
 	dbExpects( m_vramCopyState->pixelBuffer );
@@ -308,27 +371,28 @@ void Gpu::FinishVRamTransfer() noexcept
 
 	auto& state = *m_vramCopyState;
 
-	// update all full width lines
-	if ( state.y > 0 )
+	// update full width lines
+	if ( state.dy > 0 )
 	{
 		m_renderer.UpdateVRam(
 			state.left, state.top,
-			state.width, state.y,
+			state.width, state.dy,
 			state.pixelBuffer.get() );
 	}
 
-	// update any incomplete line
-	if ( state.x > 0 )
+	// update incomplete line
+	if ( state.dx > 0 )
 	{
-		const uint32_t top = state.top + state.y;
-		const size_t bufferOffset = state.x + state.y * ( state.width + state.oddWidth );
+		const uint32_t top = state.top + state.dy;
+		const size_t bufferOffset = state.dx + state.dy * ( state.width + state.oddWidth );
 		m_renderer.UpdateVRam(
 			state.left, top,
-			state.x, 1,
+			state.dx, 1,
 			state.pixelBuffer.get() + bufferOffset );
 	}
 
 	m_vramCopyState.reset();
+	m_state = State::Idle;
 }
 
 uint32_t Gpu::GetHorizontalResolution() const noexcept
@@ -348,8 +412,9 @@ uint32_t Gpu::GetHorizontalResolution() const noexcept
 	return 0;
 }
 
-void Gpu::ExecuteCommand( uint32_t value ) noexcept
+void Gpu::ExecuteCommand() noexcept
 {
+	const uint32_t value = m_commandBuffer.Peek();
 	const uint8_t opcode = static_cast<uint8_t>( value >> 24 );
 	switch ( opcode )
 	{
@@ -375,6 +440,8 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 
 			m_texturedRectFlipX = stdx::any_of<uint32_t>( value, 1 << 12 );
 			m_texturedRectFlipY = stdx::any_of<uint32_t>( value, 1 << 13 );
+
+			m_commandBuffer.Pop();
 			break;
 		}
 
@@ -388,6 +455,8 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 			m_textureWindowOffsetY = ( value >> 15 ) & 0x1f;
 
 			m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
+
+			m_commandBuffer.Pop();
 			break;
 		}
 
@@ -400,7 +469,7 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
-			// TODO: does this affect blanking?
+			m_commandBuffer.Pop();
 			break;
 		}
 
@@ -413,7 +482,7 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
-			// TODO: does this affect blanking?
+			m_commandBuffer.Pop();
 			break;
 		}
 
@@ -428,6 +497,8 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 			m_drawOffsetX = signExtend( value & 0x7ff );
 			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
 			dbLogDebug( "Gpu::ExecuteCommand() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
+
+			m_commandBuffer.Pop();
 			break;
 		}
 
@@ -440,31 +511,35 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 			m_status.setMaskOnDraw = setMask;
 			m_status.checkMaskOnDraw = checkMask;
 			m_renderer.SetMaskBits( setMask, checkMask );
+
+			m_commandBuffer.Pop();
 			break;
 		}
 
 		case 0x01: // clear cache
 			dbLogDebug( "Gpu::ExecuteCommand() -- clear GPU cache" );
+
+			m_commandBuffer.Pop();
 			break;
 
 		case 0x02: // fill rectangle in VRAM
 			dbLogDebug( "Gpu::ExecuteCommand() -- fill rectangle in VRAM" );
-			InitCommand( value, 2, &Gpu::Command_FillRectangle );
+			InitCommand( 2, &Gpu::Command_FillRectangle );
 			break;
 
 		case 0x80: // copy rectangle (VRAM to VRAM)
 			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (VRAM to VRAM)" );
-			InitCommand( value, 3, &Gpu::Command_CopyRectangle );
+			InitCommand( 3, &Gpu::Command_CopyRectangle );
 			break;
 
 		case 0xa0: // copy rectangle (CPU to VRAM)
 			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (CPU to VRAM)" );
-			InitCommand( value, 2, &Gpu::Command_WriteToVRam );
+			InitCommand( 2, &Gpu::Command_WriteToVRam );
 			break;
 
 		case 0xc0: // copy rectangle (VRAM to CPU)
 			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (VRAM to CPU)" );
-			InitCommand( value, 2, &Gpu::Command_ReadFromVRam );
+			InitCommand( 2, &Gpu::Command_ReadFromVRam );
 			break;
 
 		case 0x1f: // interrupt request
@@ -475,10 +550,13 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 				m_status.interruptRequest = true;
 				m_interruptControl.SetInterrupt( Interrupt::Gpu );
 			}
+
+			m_commandBuffer.Pop();
 			break;
 		}
 
 		case 0x03: // unknown. Takes up space in FIFO
+			m_commandBuffer.Pop();
 			break;
 
 		case 0x00:
@@ -487,6 +565,7 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 		case 0xe0:
 		case 0xe7:
 		case 0xef:
+			m_commandBuffer.Pop();
 			break; // NOP
 
 		default:
@@ -497,14 +576,14 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 				case PrimitiveType::Polygon:
 				{
 					const uint32_t params = ( command.quadPolygon ? 4 : 3 ) * ( 1 + command.textureMapping + command.shading ) - command.shading;
-					InitCommand( value, params, &Gpu::Command_RenderPolygon );
+					InitCommand( params, &Gpu::Command_RenderPolygon );
 					break;
 				}
 
 				case PrimitiveType::Line:
 				{
 					const uint32_t params = command.shading ? 3 : 2;
-					InitCommand( value, params, &Gpu::Command_RenderLines );
+					InitCommand( params, &Gpu::Command_RenderLines );
 					if ( command.numLines )
 						m_state = State::PolyLine;
 
@@ -514,14 +593,14 @@ void Gpu::ExecuteCommand( uint32_t value ) noexcept
 				case PrimitiveType::Rectangle:
 				{
 					const uint32_t params = 1 + ( command.rectSize == 0 ) + command.textureMapping;
-					InitCommand( value, params, &Gpu::Command_RenderRectangle );
+					InitCommand( params, &Gpu::Command_RenderRectangle );
 					break;
 				}
 
 				default:
 				{
 					dbLogWarning( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
-					ClearCommandBuffer();
+					m_commandBuffer.Pop();
 					break;
 				}
 			}
@@ -535,8 +614,8 @@ uint32_t Gpu::GpuRead() noexcept
 	if ( m_state != State::ReadingVRam )
 		return m_gpuRead;
 
-	dbExpects( m_vramCopyState.has_value() );
-	dbExpects( !m_vramCopyState->IsFinished() );
+	dbAssert( m_vramCopyState.has_value() );
+	dbAssert( !m_vramCopyState->IsFinished() );
 
 	auto getPixel = [this]() -> uint32_t
 	{
@@ -554,8 +633,8 @@ uint32_t Gpu::GpuRead() noexcept
 	if ( m_vramCopyState->IsFinished() )
 	{
 		dbLogDebug( "Gpu::GpuRead_Image -- finished transfer" );
-		SetState( State::Idle );
 		m_vramCopyState.reset();
+		m_state = State::Idle;
 		UpdateDmaRequest();
 	}
 
@@ -620,9 +699,10 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			auto& hblankTimer = m_timers->GetTimer( 1 );
 			hblankTimer.UpdateBlank( m_vblank );
 
-			UpdateDmaRequest();
-
+			// schedule timing events before DMA can run
 			ScheduleNextEvent();
+
+			UpdateDmaRequest();
 
 			// TODO: clear texture cache?
 
@@ -789,16 +869,19 @@ void Gpu::UpdateDmaRequest() noexcept
 		case State::Idle:
 		case State::Parameters:
 		case State::PolyLine:
+			m_status.readyToReceiveCommand = true;
 			m_status.readyToReceiveDmaBlock = m_commandBuffer.Empty() || ( m_remainingParamaters > 0 );
 			m_status.readyToSendVRamToCpu = false;
 			break;
 
 		case State::WritingVRam:
+			m_status.readyToReceiveCommand = false;
 			m_status.readyToReceiveDmaBlock = true;
 			m_status.readyToSendVRamToCpu = false;
 			break;
 
 		case State::ReadingVRam:
+			m_status.readyToReceiveCommand = false;
 			m_status.readyToReceiveDmaBlock = false;
 			m_status.readyToSendVRamToCpu = true;
 			break;
@@ -845,7 +928,7 @@ void Gpu::Command_FillRectangle() noexcept
 		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
 	}
 
-	ClearCommandBuffer();
+	EndCommand();
 }
 
 void Gpu::Command_CopyRectangle() noexcept
@@ -861,32 +944,30 @@ void Gpu::Command_CopyRectangle() noexcept
 
 	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 
-	ClearCommandBuffer();
+	EndCommand();
 }
 
 void Gpu::Command_WriteToVRam() noexcept
 {
 	// affected by mask settings
 	SetupVRamCopy();
-	dbLogDebug( "Gpu::Command_WriteToVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
+	auto& state = *m_vramCopyState;
 
-	m_vramCopyState->InitializePixelBuffer();
-	
-	SetState( State::WritingVRam );
-	UpdateDmaRequest();
+	dbLogDebug( "Gpu::Command_WriteToVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
+
+	state.InitializePixelBuffer();
+	m_state = State::WritingVRam;
 }
 
 void Gpu::Command_ReadFromVRam() noexcept
 {
 	SetupVRamCopy();
-	dbLogDebug( "Gpu::Command_ReadFromVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
-	ClearCommandBuffer(); // TODO: clear buffer here after image copy?
+	auto& state = *m_vramCopyState;
 
-	SetState( State::ReadingVRam );
+	dbLogDebug( "Gpu::Command_ReadFromVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
 
-	m_renderer.ReadVRam( m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height, m_vram.get() );
-
-	UpdateDmaRequest();
+	m_renderer.ReadVRam( state.left, state.top, state.width, state.height, m_vram.get() );
+	m_state = State::ReadingVRam;
 }
 
 void Gpu::Command_RenderPolygon() noexcept
@@ -975,12 +1056,13 @@ void Gpu::Command_RenderPolygon() noexcept
 		m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
 #endif
 
-	ClearCommandBuffer();
+	EndCommand();
 }
 
 void Gpu::Command_RenderLines() noexcept
 {
-	ClearCommandBuffer();
+	dbBreak(); // TODO pop command buffer for non-polyline command
+	EndCommand();
 }
 
 void Gpu::Command_RenderRectangle() noexcept
@@ -1038,7 +1120,8 @@ void Gpu::Command_RenderRectangle() noexcept
 
 			if ( width == 0 || height == 0 )
 			{
-				ClearCommandBuffer();
+				// size is the last param. Safe to end command here
+				EndCommand();
 				return;
 			}
 			break;
@@ -1076,7 +1159,7 @@ void Gpu::Command_RenderRectangle() noexcept
 	m_renderer.PushQuad( vertices, command.semiTransparency );
 #endif
 
-	ClearCommandBuffer();
+	EndCommand();
 }
 
 void Gpu::UpdateCycles( float gpuTicks ) noexcept
