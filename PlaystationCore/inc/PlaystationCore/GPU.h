@@ -177,19 +177,13 @@ private:
 	}
 
 	// command functions
-	void FillRectangle() noexcept;
-	void CopyRectangle() noexcept;
-	void CopyRectangleToVram() noexcept;
-	void CopyRectangleFromVram() noexcept;
-
-	// render commands
-	void RenderPolygon() noexcept;
-	void RenderRectangle() noexcept;
-
-	void TempFinishCommandParams() noexcept
-	{
-		ClearCommandBuffer();
-	}
+	void Command_FillRectangle() noexcept;
+	void Command_CopyRectangle() noexcept;
+	void Command_WriteToVRam() noexcept;
+	void Command_ReadFromVRam() noexcept;
+	void Command_RenderPolygon() noexcept;
+	void Command_RenderLines() noexcept;
+	void Command_RenderRectangle() noexcept;
 
 	float GetVideoCyclesPerFrame() const noexcept
 	{

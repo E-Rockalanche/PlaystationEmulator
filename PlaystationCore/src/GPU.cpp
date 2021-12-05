@@ -407,22 +407,22 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 
 		case 0x02: // fill rectangle in VRAM
 			dbLogDebug( "Gpu::GP0_Command() -- fill rectangle in VRAM" );
-			InitCommand( value, 2, &Gpu::FillRectangle );
+			InitCommand( value, 2, &Gpu::Command_FillRectangle );
 			break;
 
 		case 0x80: // copy rectangle (VRAM to VRAM)
 			dbLogDebug( "Gpu::GP0_Command() -- copy rectangle (VRAM to VRAM)" );
-			InitCommand( value, 3, &Gpu::CopyRectangle );
+			InitCommand( value, 3, &Gpu::Command_CopyRectangle );
 			break;
 
 		case 0xa0: // copy rectangle (CPU to VRAM)
 			dbLogDebug( "Gpu::GP0_Command() -- copy rectangle (CPU to VRAM)" );
-			InitCommand( value, 2, &Gpu::CopyRectangleToVram );
+			InitCommand( value, 2, &Gpu::Command_WriteToVRam );
 			break;
 
 		case 0xc0: // copy rectangle (VRAM to CPU)
 			dbLogDebug( "Gpu::GP0_Command() -- copy rectangle (VRAM to CPU)" );
-			InitCommand( value, 2, &Gpu::CopyRectangleFromVram );
+			InitCommand( value, 2, &Gpu::Command_ReadFromVRam );
 			break;
 
 		case 0x1f: // interrupt request
@@ -455,23 +455,24 @@ void Gpu::GP0_Command( uint32_t value ) noexcept
 				case PrimitiveType::Polygon:
 				{
 					const uint32_t params = ( command.quadPolygon ? 4 : 3 ) * ( 1 + command.textureMapping + command.shading ) - command.shading;
-					InitCommand( value, params, &Gpu::RenderPolygon );
+					InitCommand( value, params, &Gpu::Command_RenderPolygon );
 					break;
 				}
 
 				case PrimitiveType::Line:
 				{
-					m_commandBuffer.Push( value );
-					m_commandFunction = &Gpu::TempFinishCommandParams;
-					m_remainingParamaters = command.shading ? 3 : 2;
-					SetState( command.numLines ? State::PolyLine : State::Parameters );
+					const uint32_t params = command.shading ? 3 : 2;
+					InitCommand( value, params, &Gpu::Command_RenderLines );
+					if ( command.numLines )
+						m_state = State::PolyLine;
+
 					break;
 				}
 
 				case PrimitiveType::Rectangle:
 				{
 					const uint32_t params = 1 + ( command.rectSize == 0 ) + command.textureMapping;
-					InitCommand( value, params, &Gpu::RenderRectangle );
+					InitCommand( value, params, &Gpu::Command_RenderRectangle );
 					break;
 				}
 
@@ -837,7 +838,7 @@ void Gpu::UpdateDmaRequest() noexcept
 	m_dma->SetRequest( Dma::Channel::Gpu, dmaRequest );
 }
 
-void Gpu::FillRectangle() noexcept
+void Gpu::Command_FillRectangle() noexcept
 {
 	// not affected by mask settings
 
@@ -845,7 +846,7 @@ void Gpu::FillRectangle() noexcept
 	auto[ x, y ] = DecodeFillPosition( m_commandBuffer.Pop() );
 	auto[ width, height ] = DecodeFillSize( m_commandBuffer.Pop() );
 
-	dbLogDebug( "Gpu::FillRectangle() -- pos: %u,%u size: %u,%u", x, y, width, height );
+	dbLogDebug( "Gpu::Command_FillRectangle() -- pos: %u,%u size: %u,%u", x, y, width, height );
 
 	if ( width > 0 && height > 0 )
 	{
@@ -858,7 +859,7 @@ void Gpu::FillRectangle() noexcept
 	ClearCommandBuffer();
 }
 
-void Gpu::CopyRectangle() noexcept
+void Gpu::Command_CopyRectangle() noexcept
 {
 	// affected by mask settings
 
@@ -867,18 +868,18 @@ void Gpu::CopyRectangle() noexcept
 	auto[ destX, destY ] = DecodeCopyPosition( m_commandBuffer.Pop() );
 	auto[ width, height ] = DecodeCopySize( m_commandBuffer.Pop() );
 
-	dbLogDebug( "Gpu::CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
+	dbLogDebug( "Gpu::Command_CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
 
 	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 
 	ClearCommandBuffer();
 }
 
-void Gpu::CopyRectangleToVram() noexcept
+void Gpu::Command_WriteToVRam() noexcept
 {
 	// affected by mask settings
 	SetupVRamCopy();
-	dbLogDebug( "Gpu::CopyRectangleToVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
+	dbLogDebug( "Gpu::Command_WriteToVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
 
 	m_vramCopyState->InitializePixelBuffer();
 	
@@ -886,10 +887,10 @@ void Gpu::CopyRectangleToVram() noexcept
 	UpdateDmaRequest();
 }
 
-void Gpu::CopyRectangleFromVram() noexcept
+void Gpu::Command_ReadFromVRam() noexcept
 {
 	SetupVRamCopy();
-	dbLogDebug( "Gpu::CopyRectangleFromVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
+	dbLogDebug( "Gpu::Command_ReadFromVram() -- pos: %u,%u size: %u,%u", m_vramCopyState->left, m_vramCopyState->top, m_vramCopyState->width, m_vramCopyState->height );
 	ClearCommandBuffer(); // TODO: clear buffer here after image copy?
 
 	SetState( State::ReadingVRam );
@@ -899,7 +900,7 @@ void Gpu::CopyRectangleFromVram() noexcept
 	UpdateDmaRequest();
 }
 
-void Gpu::RenderPolygon() noexcept
+void Gpu::Command_RenderPolygon() noexcept
 {
 	Vertex vertices[ 4 ];
 
@@ -988,7 +989,12 @@ void Gpu::RenderPolygon() noexcept
 	ClearCommandBuffer();
 }
 
-void Gpu::RenderRectangle() noexcept
+void Gpu::Command_RenderLines() noexcept
+{
+	ClearCommandBuffer();
+}
+
+void Gpu::Command_RenderRectangle() noexcept
 {
 	// FlushVRam();
 
