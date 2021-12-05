@@ -250,18 +250,28 @@ void Gpu::FinishVRamTransfer() noexcept
 	dbExpects( m_vramCopyState->pixelBuffer );
 	dbExpects( m_state == State::WritingVRam );
 
-	if ( m_vramCopyState->IsFinished() )
+	// pixel transfer may be incomplete
+
+	auto& state = *m_vramCopyState;
+
+	// update all full width lines
+	if ( state.y > 0 )
 	{
-		// copy pixels to textures
 		m_renderer.UpdateVRam(
-			m_vramCopyState->left, m_vramCopyState->top,
-			m_vramCopyState->width, m_vramCopyState->height,
-			m_vramCopyState->pixelBuffer.get() );
+			state.left, state.top,
+			state.width, state.y,
+			state.pixelBuffer.get() );
 	}
-	else
+
+	// update any incomplete line
+	if ( state.x > 0 )
 	{
-		dbBreakMessage( "CPU to VRAM pixel transfer did not finish" );
-		// TODO: partial transfer
+		const uint32_t top = state.top + state.y;
+		const size_t bufferOffset = state.x + state.y * ( state.width + state.oddWidth );
+		m_renderer.UpdateVRam(
+			state.left, top,
+			state.x, 1,
+			state.pixelBuffer.get() + bufferOffset );
 	}
 
 	m_vramCopyState.reset();
