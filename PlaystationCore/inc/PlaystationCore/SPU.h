@@ -72,7 +72,6 @@ private:
 
 	union Control
 	{
-		Control() noexcept : value{ 0 } {}
 		struct
 		{
 			uint16_t cdAudioEnable : 1;
@@ -88,7 +87,7 @@ private:
 			uint16_t mute : 1;
 			uint16_t enable : 1;
 		};
-		uint16_t value;
+		uint16_t value = 0;
 
 		TransferMode GetTransfermode() const noexcept { return static_cast<TransferMode>( soundRamTransferMode ); }
 	};
@@ -96,7 +95,6 @@ private:
 
 	union Status
 	{
-		Status() noexcept : value{ 0 } {}
 		struct
 		{
 			// same as SPUCNT.Bit5-0, but, applied a bit delayed
@@ -115,7 +113,7 @@ private:
 			uint16_t writingToCaptureBufferHalf : 1;
 			uint16_t : 4;
 		};
-		uint16_t value;
+		uint16_t value = 0;
 
 		static constexpr uint16_t ControlMask = 0x003f;
 	};
@@ -185,7 +183,7 @@ private:
 
 	Volume m_mainVolume;
 	Volume m_reverbOutVolume;
-	Volume m_cdAudioInputVolume; // for nomrla CD-DA and compressed XA-ADPCM
+	Volume m_cdAudioInputVolume; // for normal CD-DA and compressed XA-ADPCM
 	Volume m_externalAudioInputVolume;
 	Volume m_currentMainVolume;
 
@@ -214,6 +212,8 @@ private:
 	std::array<uint16_t, ReverbRegister::NumRegisters> m_reverbRegisters{};
 
 	uint16_t m_internalCurrentAddress = 0;
+
+	Memory<0x80000> m_ram;
 };
 
 }
