@@ -63,6 +63,9 @@
     <ClInclude Include="inc\System\CommandLine.h">
       <Filter>inc\System</Filter>
     </ClInclude>
+    <ClInclude Include="inc\stdx\heap_array.h">
+      <Filter>inc\stdx</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp">
