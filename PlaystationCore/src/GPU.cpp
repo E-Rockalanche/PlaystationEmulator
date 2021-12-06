@@ -109,6 +109,11 @@ Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& 
 			dbExpects( cpuCycles <= m_cachedCyclesUntilNextEvent );
 			UpdateCycles( ConvertCpuToVideoCycles( cpuCycles ) );
 		} );
+
+	m_commandEvent = eventManager.CreateEvent( "GPU command event", [this]( cycles_t cpuCycles )
+		{
+			UpdateCommandCycles( ConvertCpuToVideoCycles( cpuCycles ) );
+		} );
 }
 
 Gpu::~Gpu() = default;
@@ -119,6 +124,7 @@ void Gpu::Reset()
 	m_commandBuffer.Reset();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
+	m_pendingCommandCycles = 0;
 	m_processingCommandBuffer = false;
 
 	m_gpuRead = 0;
@@ -203,8 +209,10 @@ void Gpu::ProcessCommandBuffer() noexcept
 
 	for ( ;; )
 	{
+		static constexpr float MaxRunAheadCommandCycles = 128;
+
 		bool stop = false;
-		while ( !m_commandBuffer.Empty() && !stop )
+		while ( !m_commandBuffer.Empty() && !stop && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
 		{
 			switch ( m_state )
 			{
@@ -287,19 +295,36 @@ void Gpu::ProcessCommandBuffer() noexcept
 			break;
 	}
 
+	if ( m_pendingCommandCycles > 0 )
+		m_commandEvent->Schedule( static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( m_pendingCommandCycles ) ) ) );
+
 	m_processingCommandBuffer = false;
+}
+
+void Gpu::UpdateCommandCycles( float gpuCycles ) noexcept
+{
+	m_pendingCommandCycles -= gpuCycles;
+	if ( m_pendingCommandCycles <= 0 )
+	{
+		m_pendingCommandCycles = 0;
+
+		if ( !m_processingCommandBuffer )
+			ProcessCommandBuffer();
+		else
+			UpdateDmaRequest();
+	}
 }
 
 void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::CpuToGp0 )
 	{
-		dbLogWarning( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
+		dbLogError( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
 		return;
 	}
 
 	if ( count > m_commandBuffer.Capacity() )
-		dbLogWarning( "GPU::DmaIn -- command buffer overrun" );
+		dbLogError( "GPU::DmaIn -- command buffer overrun" );
 
 	count = std::min( count, m_commandBuffer.Capacity() );
 	m_commandBuffer.Push( input, count );
@@ -307,13 +332,15 @@ void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 	// prevent recursive calls
 	if ( !m_processingCommandBuffer )
 		ProcessCommandBuffer();
+	else
+		UpdateDmaRequest();
 }
 
 void Gpu::DmaOut( uint32_t* output, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::GpuReadToCpu )
 	{
-		dbLogWarning( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
+		dbLogError( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
 		std::fill_n( output, count, uint32_t( 0xffffffff ) );
 		return;
 	}
@@ -406,7 +433,7 @@ void Gpu::FinishVRamWrite() noexcept
 
 	m_vramTransferState.reset();
 	m_transferBuffer.clear();
-	m_state = State::Idle;
+	EndCommand();
 }
 
 uint32_t Gpu::GetHorizontalResolution() const noexcept
@@ -887,27 +914,22 @@ void Gpu::UpdateDmaRequest() noexcept
 	{
 		case State::Idle:
 		case State::Parameters:
-			m_status.readyToReceiveCommand = true;
-			m_status.readyToReceiveDmaBlock = m_commandBuffer.Empty() || ( m_remainingParamaters > 0 );
+			m_status.readyToReceiveCommand = m_pendingCommandCycles <= 0;
 			m_status.readyToSendVRamToCpu = false;
+			m_status.readyToReceiveDmaBlock = m_commandBuffer.Size() < ( m_remainingParamaters + 1 );
 			break;
 
 		case State::WritingVRam:
+		case State::PolyLine:
 			m_status.readyToReceiveCommand = false;
-			m_status.readyToReceiveDmaBlock = true;
 			m_status.readyToSendVRamToCpu = false;
+			m_status.readyToReceiveDmaBlock = true;
 			break;
 
 		case State::ReadingVRam:
 			m_status.readyToReceiveCommand = false;
-			m_status.readyToReceiveDmaBlock = false;
 			m_status.readyToSendVRamToCpu = true;
-			break;
-
-		case State::PolyLine:
-			m_status.readyToReceiveCommand = true;
-			m_status.readyToReceiveDmaBlock = true;
-			m_status.readyToSendVRamToCpu = false;
+			m_status.readyToReceiveDmaBlock = false;
 			break;
 	}
 
@@ -915,7 +937,6 @@ void Gpu::UpdateDmaRequest() noexcept
 	switch ( static_cast<DmaDirection>( m_status.dmaDirection ) )
 	{
 		case DmaDirection::Off:
-			dmaRequest = false;
 			break;
 
 		case DmaDirection::Fifo:
@@ -952,6 +973,7 @@ void Gpu::Command_FillRectangle() noexcept
 		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
 	}
 
+	m_pendingCommandCycles += 46 + ( width / 8 + 9 ) * height;
 	EndCommand();
 }
 
@@ -968,6 +990,7 @@ void Gpu::Command_CopyRectangle() noexcept
 
 	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 
+	m_pendingCommandCycles += width * height * 2;
 	EndCommand();
 }
 
@@ -1000,6 +1023,9 @@ void Gpu::Command_RenderPolygon() noexcept
 	Vertex vertices[ 4 ];
 
 	const RenderCommand command = m_commandBuffer.Pop();
+
+	static constexpr float CommandCycles[ 2 ][ 2 ][ 2 ] = { { { 46, 226 }, { 334, 496 } }, { { 82, 262 }, { 370, 532 } } };
+	m_pendingCommandCycles += CommandCycles[ command.quadPolygon ][ command.shading ][ command.textureMapping ];
 
 	// vertex 1
 
@@ -1089,6 +1115,7 @@ void Gpu::Command_RenderLine() noexcept
 	// TODO
 	const RenderCommand command{ m_commandBuffer.Pop() };
 	m_commandBuffer.Ignore( command.shading ? 3 : 2 );
+	m_pendingCommandCycles += 16;
 	EndCommand();
 }
 
@@ -1096,6 +1123,7 @@ void Gpu::Command_RenderPolyLine() noexcept
 {
 	// TODO
 	m_transferBuffer.clear();
+	m_pendingCommandCycles += 16;
 	EndCommand();
 }
 
@@ -1104,6 +1132,8 @@ void Gpu::Command_RenderRectangle() noexcept
 	// FlushVRam();
 
 	Vertex vertices[ 4 ];
+
+	m_pendingCommandCycles += 16;
 
 	const RenderCommand command = m_commandBuffer.Pop();
 

@@ -174,6 +174,8 @@ private:
 		m_remainingParamaters = 0;
 	}
 
+	void UpdateCommandCycles( float gpuCycles ) noexcept;
+
 	// command functions
 
 	void Command_FillRectangle() noexcept;
@@ -215,11 +217,13 @@ private:
 	Timers* m_timers = nullptr; // circular dependency
 	Dma* m_dma = nullptr; // circular dependency
 	EventHandle m_clockEvent;
+	EventHandle m_commandEvent;
 
 	State m_state = State::Idle;
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;
 	CommandFunction m_commandFunction = nullptr;
+	float m_pendingCommandCycles = 0;
 	bool m_processingCommandBuffer = false;
 
 	uint32_t m_gpuRead = 0;
