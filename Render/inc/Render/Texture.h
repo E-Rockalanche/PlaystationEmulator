@@ -252,7 +252,7 @@ class Texture2D : public Detail::Texture<TextureType::Texture2D>
 {
 	using Parent = Detail::Texture<TextureType::Texture2D>;
 
-	friend class FrameBuffer;
+	friend class Framebuffer;
 
 public:
 
@@ -272,18 +272,21 @@ public:
 		return *this;
 	}
 
-	static Texture2D Create( InternalFormat internalColorFormat, GLsizei width, GLsizei height, PixelFormat pixelFormat, PixelType pixelType, const void* pixels = nullptr, GLint mipmapLevel = 0 )
+	static Texture2D Create()
 	{
-		dbExpects( width > 0 );
-		dbExpects( height > 0 );
-
 		Texture2D texture;
 		glGenTextures( 1, &texture.m_texture );
-		texture.UpdateImage( internalColorFormat, width, height, pixelFormat, pixelType, pixels, mipmapLevel );
-		texture.m_width = width;
-		texture.m_height = height;
+		texture.Bind();
 		texture.SetLinearFilering( false );
 		texture.SetTextureWrap( false );
+		dbCheckRenderErrors();
+		return texture;
+	}
+
+	static Texture2D Create( InternalFormat internalColorFormat, GLsizei width, GLsizei height, PixelFormat pixelFormat, PixelType pixelType, const void* pixels = nullptr, GLint mipmapLevel = 0 )
+	{
+		Texture2D texture = Create();
+		texture.UpdateImage( internalColorFormat, width, height, pixelFormat, pixelType, pixels, mipmapLevel );
 		return texture;
 	}
 

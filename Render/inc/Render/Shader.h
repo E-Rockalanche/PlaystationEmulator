@@ -71,13 +71,17 @@ public:
 	GLint GetAttributeLocation( const char* name )
 	{
 		dbExpects( m_program != 0 );
-		return glGetAttribLocation( m_program, name );
+		const GLint location = glGetAttribLocation( m_program, name );
+		dbAssert( location != -1 );
+		return location;
 	}
 
 	GLint GetUniformLocation( const char* name )
 	{
 		dbExpects( m_program != 0 );
-		return glGetUniformLocation( m_program, name );
+		const GLint location = glGetUniformLocation( m_program, name );
+		dbAssert( location != -1 );
+		return location;
 	}
 
 	void BindUniformBlock( const char* name, GLuint block )

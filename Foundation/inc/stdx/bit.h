@@ -4,6 +4,8 @@
 #include <stdx/cast.h>
 #include <type_traits>
 
+#include <intrin.h>
+
 namespace stdx
 {
 
@@ -73,21 +75,33 @@ inline constexpr size_t bitsizeof( const T& ) noexcept
 	return bitsizeof<T>();
 }
 
-template <typename T>
+template <typename T, STDX_requires( std::is_integral_v<T> )
 inline int countl_zero( T x ) noexcept
 {
 #ifdef _MSC_VER
 	if ( x == 0 )
-		return bitsizeof<T>();
+		return (int)bitsizeof<T>();
 
-	unsigned long index;
+	if constexpr ( sizeof( T ) == 1 )
+		return (int)__lzcnt16( static_cast<int16_t>( static_cast<uint8_t>( x ) ) ) - 8;
 
-	if constexpr ( sizeof( T ) < 8 )
-		_BitScanReverse( &index, stdx::unsigned_cast( x ) );
-	else
-		_BitScanReverse64( &index, stdx::unsigned_cast( x ) );
+	if constexpr ( sizeof( T ) == 2 )
+		return (int)__lzcnt16( static_cast<int16_t>( x ) );
 
-	return bitsizeof<T>() - index - 1;
+	if constexpr ( sizeof( T ) == 4 )
+		return (int)__lzcnt( static_cast<int32_t>( x ) );
+
+	if constexpr ( sizeof( T ) == 8 )
+	{
+		const int msb = (int)__lzcnt( static_cast<int32_t>( ( x >> 32 ) & 0xffffffff ) );
+		if ( msb < 32 )
+			return msb;
+		else
+			return 32 + (int)__lzcnt( static_cast<int32_t>( x & 0xffffffff ) );
+	}
+
+#else
+	static_assert( false ); // unimplemented
 #endif
 }
 

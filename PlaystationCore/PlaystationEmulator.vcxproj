@@ -28,9 +28,10 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
-    <ProjectGuid>{964438A3-86D4-48D7-AC32-E1BFF2177E11}</ProjectGuid>
-    <RootNamespace>Foundation</RootNamespace>
+    <ProjectGuid>{3F7572D6-2220-42E3-8C9A-463132223454}</ProjectGuid>
+    <RootNamespace>PlaystationEmulator</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>PlaystationCore</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -97,19 +98,21 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Shipping|Win32'" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <TreatWarningAsError>true</TreatWarningAsError>
-      <SupportJustMyCode>false</SupportJustMyCode>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -119,14 +122,13 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <SupportJustMyCode>false</SupportJustMyCode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <OmitFramePointers>false</OmitFramePointers>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -137,10 +139,9 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
@@ -154,10 +155,9 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
@@ -177,10 +177,9 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
@@ -194,10 +193,9 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>inc/PlaystationCore;../Render/inc;../Foundation/inc;../Render/Glad/include</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
@@ -213,27 +211,87 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="inc\Math\Color.h" />
-    <ClInclude Include="inc\Math\FixedPoint.h" />
-    <ClInclude Include="inc\Math\Matrix.h" />
-    <ClInclude Include="inc\Math\Rectangle.h" />
-    <ClInclude Include="inc\Math\Vector.h" />
-    <ClInclude Include="inc\stdx\assert.h" />
-    <ClInclude Include="inc\stdx\bit.h" />
-    <ClInclude Include="inc\stdx\cast.h" />
-    <ClInclude Include="inc\stdx\compiler.h" />
-    <ClInclude Include="inc\stdx\flat_unordered_map.h" />
-    <ClInclude Include="inc\stdx\heap_array.h" />
-    <ClInclude Include="inc\stdx\log.h" />
-    <ClInclude Include="inc\stdx\scope.h" />
-    <ClInclude Include="inc\stdx\string.h" />
-    <ClInclude Include="inc\System\CommandLine.h" />
+    <ClCompile Include="src\BIOS.cpp" />
+    <ClCompile Include="src\CDRomDrive.cpp" />
+    <ClCompile Include="src\CDXA.cpp" />
+    <ClCompile Include="src\Controller.cpp" />
+    <ClCompile Include="src\ControllerPorts.cpp" />
+    <ClCompile Include="src\Cop0.cpp" />
+    <ClCompile Include="src\CPU.cpp" />
+    <ClCompile Include="src\DMA.cpp" />
+    <ClCompile Include="src\EventManager.cpp" />
+    <ClCompile Include="src\File.cpp" />
+    <ClCompile Include="src\GTE.cpp" />
+    <ClCompile Include="src\GPU.cpp" />
+    <ClCompile Include="src\Instruction.cpp" />
+    <ClCompile Include="src\MacroblockDecoder.cpp" />
+    <ClCompile Include="src\MemoryCard.cpp" />
+    <ClCompile Include="src\MemoryControl.cpp" />
+    <ClCompile Include="src\MemoryMap.cpp" />
+    <ClCompile Include="src\Playstation.cpp" />
+    <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\SPU.cpp" />
+    <ClCompile Include="src\Timers.cpp" />
+    <ClCompile Include="src\VRamCopyShader.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\dummy.cpp" />
-    <ClCompile Include="src\System\CommandLine.cpp" />
+    <ProjectReference Include="..\Foundation\Foundation.vcxproj">
+      <Project>{964438a3-86d4-48d7-ac32-e1bff2177e11}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\Render\Render.vcxproj">
+      <Project>{1f311d5c-ae12-4939-b969-286785653870}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="inc\PlaystationCore\BIOS.h" />
+    <ClInclude Include="inc\PlaystationCore\CDRom.h" />
+    <ClInclude Include="inc\PlaystationCore\CDRomDrive.h" />
+    <ClInclude Include="inc\PlaystationCore\CDXA.h" />
+    <ClInclude Include="inc\PlaystationCore\ClutShader.h" />
+    <ClInclude Include="inc\PlaystationCore\Controller.h" />
+    <ClInclude Include="inc\PlaystationCore\ControllerPorts.h" />
+    <ClInclude Include="inc\PlaystationCore\Cop0.h" />
+    <ClInclude Include="inc\PlaystationCore\CPU.h" />
+    <ClInclude Include="inc\PlaystationCore\CueSheet.h" />
+    <ClInclude Include="inc\PlaystationCore\Defs.h" />
+    <ClInclude Include="inc\PlaystationCore\DMA.h" />
+    <ClInclude Include="inc\PlaystationCore\DualSerialPort.h" />
+    <ClInclude Include="inc\PlaystationCore\EventManager.h" />
+    <ClInclude Include="inc\PlaystationCore\FifoBuffer.h" />
+    <ClInclude Include="inc\PlaystationCore\File.h" />
+    <ClInclude Include="inc\PlaystationCore\FullscreenShader.h" />
+    <ClInclude Include="inc\PlaystationCore\GPU.h" />
+    <ClInclude Include="inc\PlaystationCore\GpuDefs.h" />
+    <ClInclude Include="inc\PlaystationCore\GTE.h" />
+    <ClInclude Include="inc\PlaystationCore\Instruction.h" />
+    <ClInclude Include="inc\PlaystationCore\InterruptControl.h" />
+    <ClInclude Include="inc\PlaystationCore\MacroblockDecoder.h" />
+    <ClInclude Include="inc\PlaystationCore\Memory.h" />
+    <ClInclude Include="inc\PlaystationCore\MemoryCard.h" />
+    <ClInclude Include="inc\PlaystationCore\MemoryControl.h" />
+    <ClInclude Include="inc\PlaystationCore\MemoryMap.h" />
+    <ClInclude Include="inc\PlaystationCore\Output16bitShader.h" />
+    <ClInclude Include="inc\PlaystationCore\Output24bitShader.h" />
+    <ClInclude Include="inc\PlaystationCore\Playstation.h" />
+    <ClInclude Include="inc\PlaystationCore\RAM.h" />
+    <ClInclude Include="inc\PlaystationCore\Renderer.h" />
+    <ClInclude Include="inc\PlaystationCore\SPU.h" />
+    <ClInclude Include="inc\PlaystationCore\Timers.h" />
+    <ClInclude Include="inc\PlaystationCore\VRamCopyShader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\sdl2.nuget.redist.2.0.16\build\native\sdl2.nuget.redist.targets" Condition="Exists('..\packages\sdl2.nuget.redist.2.0.16\build\native\sdl2.nuget.redist.targets')" />
+    <Import Project="..\packages\sdl2.nuget.2.0.16\build\native\sdl2.nuget.targets" Condition="Exists('..\packages\sdl2.nuget.2.0.16\build\native\sdl2.nuget.targets')" />
   </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\packages\sdl2.nuget.redist.2.0.16\build\native\sdl2.nuget.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\sdl2.nuget.redist.2.0.16\build\native\sdl2.nuget.redist.targets'))" />
+    <Error Condition="!Exists('..\packages\sdl2.nuget.2.0.16\build\native\sdl2.nuget.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\sdl2.nuget.2.0.16\build\native\sdl2.nuget.targets'))" />
+  </Target>
 </Project>
