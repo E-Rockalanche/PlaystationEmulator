@@ -213,7 +213,7 @@ private:
 
 	uint16_t m_internalCurrentAddress = 0;
 
-	Memory<0x80000> m_ram;
+	// Memory<0x80000> m_ram;
 };
 
 }
