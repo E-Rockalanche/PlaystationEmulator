@@ -298,7 +298,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		{
 			// The command word is followed by 64 unsigned parameter bytes for the Luminance Quant Table (used for Y1..Y4),
 			// and if Command.Bit0 was set, by another 64 unsigned parameter bytes for the Color Quant Table (used for Cb and Cr).
-			dbLog( "MacroblockDecoder::StartCommand -- SetQuantTable [color=%i]", value & 0x01 );
+			dbLogDebug( "MacroblockDecoder::StartCommand -- SetQuantTable [color=%i]", value & 0x01 );
 			m_state = State::ReadingQuantTable;
 			m_color = value & 0x01;
 			m_remainingHalfWords = ( 1 + m_color ) * 32;
@@ -309,7 +309,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		{
 			// The command is followed by 64 signed halfwords with 14bit fractional part, the values should be usually/always the same values
 			// (based on the standard JPEG constants, although, MDEC(3) allows to use other values than that constants).
-			dbLog( "MacroblockDecoder::StartCommand -- SetScaleTable" );
+			dbLogDebug( "MacroblockDecoder::StartCommand -- SetScaleTable" );
 			m_state = State::ReadingScaleTable;
 			m_remainingHalfWords = 64;
 			break;
