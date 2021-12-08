@@ -30,6 +30,8 @@ void Event::Schedule( cycles_t cyclesFromNow )
 {
 	dbExpects( cyclesFromNow > 0 ); // cannot schedule event to happen immediately
 
+	dbLogDebug( "Event::Schedule -- [%s] [%i]", m_name.c_str(), cyclesFromNow );
+
 	if ( !m_active )
 	{
 		// timer just started, so we must delay by the manager's current pending cycles
@@ -65,6 +67,8 @@ void Event::Update( cycles_t cycles )
 	dbExpects( m_active );
 	dbExpects( cycles > 0 );
 	dbExpects( cycles <= m_cyclesUntilEvent );
+
+	dbLogDebug( "Event::Update -- [%s] [%i]", m_name.c_str(), cycles );
 
 	m_cyclesUntilEvent -= cycles;
 	m_pendingCycles -= cycles;
@@ -116,8 +120,6 @@ void EventManager::Reset()
 void EventManager::UpdateNextEvent()
 {
 	dbAssert( m_nextEvent ); // an event should have been scheduled
-
-	dbLogDebug( "EventManager::UpdateNextEvent -- [%s]", m_nextEvent->GetName().c_str() );
 
 	if ( m_pendingCycles > 0 )
 	{

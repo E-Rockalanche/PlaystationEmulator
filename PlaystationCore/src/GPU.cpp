@@ -109,29 +109,31 @@ Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& 
 			dbExpects( cpuCycles <= m_cachedCyclesUntilNextEvent );
 			UpdateCycles( ConvertCpuToVideoCycles( cpuCycles ) );
 		} );
+
+	m_commandEvent = eventManager.CreateEvent( "GPU command event", [this]( cycles_t cpuCycles )
+		{
+			UpdateCommandCycles( ConvertCpuToVideoCycles( cpuCycles ) );
+		} );
 }
 
 Gpu::~Gpu() = default;
 
 void Gpu::Reset()
 {
+	m_clockEvent->Cancel();
+	m_commandEvent->Cancel();
+
 	m_state = State::Idle;
 	m_commandBuffer.Reset();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
+	m_pendingCommandCycles = 0;
 	m_processingCommandBuffer = false;
 
 	m_gpuRead = 0;
 
 	m_status.value = 0;
-	m_status.readyToReceiveCommand = true;
 	m_status.displayDisable = true;
-	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
-	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
-	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
-	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
-	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
-	m_renderer.SetDisplayEnable( !m_status.displayDisable );
 
 	m_texturedRectFlipX = false;
 	m_texturedRectFlipY = false;
@@ -140,20 +142,17 @@ void Gpu::Reset()
 	m_textureWindowMaskY = 0;
 	m_textureWindowOffsetX = 0;
 	m_textureWindowOffsetY = 0;
-	m_renderer.SetTextureWindow( 0, 0, 0, 0 );
 
 	m_drawAreaLeft = 0;
 	m_drawAreaTop = 0;
 	m_drawAreaRight = 0;
 	m_drawAreaBottom = 0;
-	m_renderer.SetDrawArea( 0, 0, 0, 0 );
 
 	m_drawOffsetX = 0;
 	m_drawOffsetY = 0;
 
 	m_displayAreaStartX = 0;
 	m_displayAreaStartY = 0;
-	m_renderer.SetDisplayStart( 0, 0 );
 
 	m_horDisplayRangeStart = 0;
 	m_horDisplayRangeEnd = 0;
@@ -172,12 +171,20 @@ void Gpu::Reset()
 
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
-	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
+	m_transferBuffer.clear();
 	m_vramTransferState.reset();
 
+	m_renderer.SetDisplayStart( 0, 0 );
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
-	m_renderer.SetColorDepth( static_cast<DisplayAreaColorDepth>( m_status.displayAreaColorDepth ) );
+	m_renderer.SetTextureWindow( 0, 0, 0, 0 );
+	m_renderer.SetDrawArea( 0, 0, 0, 0 );
+	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
+	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
+	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
+	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
+	m_renderer.SetDisplayEnable( !m_status.displayDisable );
+	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
 	ScheduleNextEvent();
 
@@ -203,8 +210,10 @@ void Gpu::ProcessCommandBuffer() noexcept
 
 	for ( ;; )
 	{
+		static constexpr float MaxRunAheadCommandCycles = 128;
+
 		bool stop = false;
-		while ( !m_commandBuffer.Empty() && !stop )
+		while ( !m_commandBuffer.Empty() && !stop && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
 		{
 			switch ( m_state )
 			{
@@ -287,19 +296,36 @@ void Gpu::ProcessCommandBuffer() noexcept
 			break;
 	}
 
+	if ( m_pendingCommandCycles > 0 )
+		m_commandEvent->Schedule( static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( m_pendingCommandCycles ) ) ) );
+
 	m_processingCommandBuffer = false;
+}
+
+void Gpu::UpdateCommandCycles( float gpuCycles ) noexcept
+{
+	m_pendingCommandCycles -= gpuCycles;
+	if ( m_pendingCommandCycles <= 0 )
+	{
+		m_pendingCommandCycles = 0;
+
+		if ( !m_processingCommandBuffer )
+			ProcessCommandBuffer();
+		else
+			UpdateDmaRequest();
+	}
 }
 
 void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::CpuToGp0 )
 	{
-		dbLogWarning( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
+		dbLogError( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
 		return;
 	}
 
 	if ( count > m_commandBuffer.Capacity() )
-		dbLogWarning( "GPU::DmaIn -- command buffer overrun" );
+		dbLogError( "GPU::DmaIn -- command buffer overrun" );
 
 	count = std::min( count, m_commandBuffer.Capacity() );
 	m_commandBuffer.Push( input, count );
@@ -307,13 +333,15 @@ void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 	// prevent recursive calls
 	if ( !m_processingCommandBuffer )
 		ProcessCommandBuffer();
+	else
+		UpdateDmaRequest();
 }
 
 void Gpu::DmaOut( uint32_t* output, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::GpuReadToCpu )
 	{
-		dbLogWarning( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
+		dbLogError( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
 		std::fill_n( output, count, uint32_t( 0xffffffff ) );
 		return;
 	}
@@ -334,9 +362,11 @@ void Gpu::ClearCommandBuffer() noexcept
 
 	m_state = State::Idle;
 	m_commandBuffer.Clear();
-	m_vramTransferState.reset();
 	m_remainingParamaters = 0;
 	m_commandFunction = nullptr;
+
+	m_transferBuffer.clear();
+	m_vramTransferState.reset();
 }
 
 void Gpu::InitCommand( uint32_t paramaterCount, CommandFunction function ) noexcept
@@ -406,24 +436,19 @@ void Gpu::FinishVRamWrite() noexcept
 
 	m_vramTransferState.reset();
 	m_transferBuffer.clear();
-	m_state = State::Idle;
+	EndCommand();
 }
 
 uint32_t Gpu::GetHorizontalResolution() const noexcept
 {
-	if ( m_status.horizontalResolution2 )
-		return 368;
-
-	switch ( m_status.horizontalResolution1 )
+	static constexpr std::array<uint32_t, 8> Resolutions
 	{
-		case 0:	return 256;
-		case 1:	return 320;
-		case 2:	return 512;
-		case 3:	return 640;
-	}
+		256, 320, 512, 640, // horizontal resolution 1
+		368, 368, 368, 368 // horizontal resolution 2
+	};
 
-	dbBreak();
-	return 0;
+	const size_t index = ( m_status.horizontalResolution2 << 2 ) | m_status.horizontalResolution1;
+	return Resolutions[ index ];
 }
 
 void Gpu::ExecuteCommand() noexcept
@@ -611,7 +636,7 @@ void Gpu::ExecuteCommand() noexcept
 
 				case PrimitiveType::Rectangle:
 				{
-					const uint32_t params = 1 + ( command.rectSize == 0 ) + command.textureMapping;
+					const uint32_t params = 1 + static_cast<uint32_t>( command.rectSize == 0 ) + command.textureMapping;
 					InitCommand( params, &Gpu::Command_RenderRectangle );
 					break;
 				}
@@ -713,10 +738,10 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			m_drawingEvenOddLine = false;
 
 			auto& dotTimer = m_timers->GetTimer( 0 );
-			dotTimer.UpdateBlank( m_hblank );
+			dotTimer.UpdateBlank( false );
 
 			auto& hblankTimer = m_timers->GetTimer( 1 );
-			hblankTimer.UpdateBlank( m_vblank );
+			hblankTimer.UpdateBlank( false );
 
 			// schedule timing events before DMA can run
 			ScheduleNextEvent();
@@ -887,27 +912,22 @@ void Gpu::UpdateDmaRequest() noexcept
 	{
 		case State::Idle:
 		case State::Parameters:
-			m_status.readyToReceiveCommand = true;
-			m_status.readyToReceiveDmaBlock = m_commandBuffer.Empty() || ( m_remainingParamaters > 0 );
+			m_status.readyToReceiveCommand = m_pendingCommandCycles <= 0;
 			m_status.readyToSendVRamToCpu = false;
+			m_status.readyToReceiveDmaBlock = m_commandBuffer.Size() < ( m_remainingParamaters + 1 );
 			break;
 
 		case State::WritingVRam:
+		case State::PolyLine:
 			m_status.readyToReceiveCommand = false;
-			m_status.readyToReceiveDmaBlock = true;
 			m_status.readyToSendVRamToCpu = false;
+			m_status.readyToReceiveDmaBlock = true;
 			break;
 
 		case State::ReadingVRam:
 			m_status.readyToReceiveCommand = false;
-			m_status.readyToReceiveDmaBlock = false;
 			m_status.readyToSendVRamToCpu = true;
-			break;
-
-		case State::PolyLine:
-			m_status.readyToReceiveCommand = true;
-			m_status.readyToReceiveDmaBlock = true;
-			m_status.readyToSendVRamToCpu = false;
+			m_status.readyToReceiveDmaBlock = false;
 			break;
 	}
 
@@ -915,7 +935,6 @@ void Gpu::UpdateDmaRequest() noexcept
 	switch ( static_cast<DmaDirection>( m_status.dmaDirection ) )
 	{
 		case DmaDirection::Off:
-			dmaRequest = false;
 			break;
 
 		case DmaDirection::Fifo:
@@ -952,6 +971,7 @@ void Gpu::Command_FillRectangle() noexcept
 		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
 	}
 
+	m_pendingCommandCycles += 46 + ( width / 8 + 9 ) * height; // formula from Duckstation
 	EndCommand();
 }
 
@@ -968,6 +988,7 @@ void Gpu::Command_CopyRectangle() noexcept
 
 	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 
+	m_pendingCommandCycles += width * height * 2; // formula from Duckstation
 	EndCommand();
 }
 
@@ -1000,6 +1021,10 @@ void Gpu::Command_RenderPolygon() noexcept
 	Vertex vertices[ 4 ];
 
 	const RenderCommand command = m_commandBuffer.Pop();
+
+	// Numbers from Duckstation
+	static constexpr float CommandCycles[ 2 ][ 2 ][ 2 ] = { { { 46, 226 }, { 334, 496 } }, { { 82, 262 }, { 370, 532 } } };
+	m_pendingCommandCycles += CommandCycles[ command.quadPolygon ][ command.shading ][ command.textureMapping ];
 
 	// vertex 1
 
@@ -1089,6 +1114,8 @@ void Gpu::Command_RenderLine() noexcept
 	// TODO
 	const RenderCommand command{ m_commandBuffer.Pop() };
 	m_commandBuffer.Ignore( command.shading ? 3 : 2 );
+
+	m_pendingCommandCycles += 16; // Number from Duckstation
 	EndCommand();
 }
 
@@ -1096,6 +1123,8 @@ void Gpu::Command_RenderPolyLine() noexcept
 {
 	// TODO
 	m_transferBuffer.clear();
+
+	m_pendingCommandCycles += 16; // Number from Duckstation
 	EndCommand();
 }
 
@@ -1104,6 +1133,8 @@ void Gpu::Command_RenderRectangle() noexcept
 	// FlushVRam();
 
 	Vertex vertices[ 4 ];
+
+	m_pendingCommandCycles += 16; // Number from Duckstation
 
 	const RenderCommand command = m_commandBuffer.Pop();
 
@@ -1218,7 +1249,7 @@ void Gpu::UpdateCycles( float gpuTicks ) noexcept
 		m_currentScanline = ( m_currentScanline + 1 ) % scanlineCount;
 
 		if ( !IsInterlaced() || m_currentScanline == 0 )
-			m_drawingEvenOddLine ^= 1;
+			m_drawingEvenOddLine = !m_drawingEvenOddLine;
 	}
 
 	// check for hblank
