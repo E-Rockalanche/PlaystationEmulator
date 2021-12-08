@@ -73,7 +73,7 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 			m_registers.Update();
 
 			// on average: 1 cycle to execute instruction, 1 cycle for memory load
-			m_eventManager.AddCycles( 1 ); // TODO: more accurate CPU timing
+			m_eventManager.AddCycles( 2 ); // TODO: more accurate CPU timing
 		}
 		else
 		{
