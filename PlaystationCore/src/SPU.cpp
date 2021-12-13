@@ -1,6 +1,8 @@
 #include "Spu.h"
 
+#include "EventManager.h"
 #include "DMA.h"
+#include "InterruptControl.h"
 
 #include <stdx/bit.h>
 
@@ -55,6 +57,41 @@ enum class SpuRegister : uint32_t
 
 } // namespace
 
+Spu::Spu( InterruptControl& interruptControl, EventManager& eventManager )
+	: m_interruptControl{ interruptControl }
+{
+	m_transferEvent = eventManager.CreateEvent( "SPU Transfer Event", [this]( cycles_t cycles ) { UpdateTransferEvent( cycles ); } );
+}
+
+void Spu::Reset()
+{
+	m_transferEvent->Cancel();
+
+	m_voices.fill( Voice{} );
+	m_currentVolumes.fill( Volume{} );
+	m_voiceFlags = VoiceFlags{};
+
+	m_mainVolume = Volume{};
+	m_reverbOutVolume = Volume{};
+	m_cdAudioInputVolume = Volume{};
+	m_externalAudioInputVolume = Volume{};
+	m_currentMainVolume = Volume{};
+
+	m_reverbWorkAreaStartAddress = 0;
+	m_irqAddress = 0;
+	m_transferAddressRegister = 0;
+
+	m_transferBuffer.Reset();
+
+	m_control.value = 0;
+	m_dataTransferControl.value = 0;
+	m_status.value = 0;
+
+	m_reverbRegisters.fill( 0 );
+
+	m_transferAddress = 0;
+	m_ram.Fill( 0 );
+}
 
 uint16_t Spu::Read( uint32_t offset ) noexcept
 {
@@ -86,10 +123,10 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 
 		case SpuRegister::ReverbWorkAreaStartAddress:	return m_reverbWorkAreaStartAddress;
 		case SpuRegister::IrqAddress:					return m_irqAddress;
-		case SpuRegister::DataTransferAddress:			return m_dataTransferAddress;
+		case SpuRegister::DataTransferAddress:			return m_transferAddressRegister;
 		case SpuRegister::DataTransferFifo:				return 0; // TODO
 		case SpuRegister::SpuControl:					return m_control.value;
-		case SpuRegister::DataTransferControl:			return m_dataTransferControl;
+		case SpuRegister::DataTransferControl:			return m_dataTransferControl.value;
 		case SpuRegister::SpuStatus:					return m_status.value;
 
 		case SpuRegister::CDVolumeLeft:		return m_cdAudioInputVolume.left;
@@ -105,18 +142,18 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 		{
 			if ( offset < SpuControlRegistersOffset )
 			{
-				// voice register
-				// TODO
-				return 0xffffu;
+				const size_t voiceIndex = ( offset - SpuVoiceRegistersOffset ) / sizeof( Voice );
+				const size_t registerIndex = ( offset - SpuVoiceRegistersOffset ) % ( sizeof( Voice ) / 2 );
+				return m_voices[ voiceIndex ].registers[ registerIndex ];
 			}
 			else if ( ( SpuReverbRegistersOffset <= offset ) && ( offset < SpuInternalRegistersOffset ) )
 			{
-				// reverb register
-				// TODO
-				return 0xffffu;
+				return m_reverbRegisters[ ( offset - SpuReverbRegistersOffset ) / 2 ];
 			}
 			else if ( SpuInternalRegistersOffset <= offset )
 			{
+
+
 				// internal
 				// TODO
 				return 0xffffu;
@@ -168,20 +205,20 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			// Used for manual write and DMA read/write Spu memory. Writing to this registers stores the written value in 1F801DA6h,
 			// and does additional store the value (multiplied by 8) in another internal "current address" register
 			// (that internal register does increment during transfers, whilst the 1F801DA6h value DOESN'T increment).
-			m_dataTransferAddress = value;
-			m_internalCurrentAddress = value * 8;
+			m_transferAddressRegister = value;
+			m_transferAddress = ( value * 8 ) & SpuRamAddressMask;
 			break;
 
 		case SpuRegister::DataTransferFifo:
 			// Used for manual-write. Not sure if it can be also used for manual read?
 
-			if ( m_dataTransferBuffer.Full() )
+			if ( m_transferBuffer.Full() )
 			{
 				dbLogWarning( "Spu::Write -- data transfer buffer is full" );
-				m_dataTransferBuffer.Pop();
+				m_transferBuffer.Pop();
 			}
 
-			m_dataTransferBuffer.Push( value );
+			m_transferBuffer.Push( value );
 			break;
 
 		case SpuRegister::SpuControl:
@@ -189,7 +226,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			break;
 
 		case SpuRegister::DataTransferControl:
-			m_dataTransferControl = value;
+			m_dataTransferControl.value = value;
 			break;
 
 		case SpuRegister::SpuStatus:
@@ -210,13 +247,13 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 		{
 			if ( offset < SpuControlRegistersOffset )
 			{
-				// voice register
-				// TODO
+				const size_t voiceIndex = ( offset - SpuVoiceRegistersOffset ) / sizeof( Voice );
+				const size_t registerIndex = ( offset - SpuVoiceRegistersOffset ) % ( sizeof( Voice ) / 2 );
+				m_voices[ voiceIndex ].registers[ registerIndex ] = value;
 			}
 			else if ( ( SpuReverbRegistersOffset <= offset ) && ( offset < SpuInternalRegistersOffset ) )
 			{
-				// reverb register
-				// TODO
+				m_reverbRegisters[ ( offset - SpuReverbRegistersOffset / 2 ) ] = value;
 			}
 			else if ( SpuInternalRegistersOffset <= offset )
 			{
@@ -233,51 +270,146 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 	}
 }
 
+void Spu::DmaWrite( const uint32_t* dataIn, uint32_t count ) noexcept
+{
+	const uint32_t halfwords = count * 2;
+	const uint32_t available = std::min( halfwords, m_transferBuffer.Capacity() );
+
+	if ( available < halfwords )
+		dbLogWarning( "Spu::DmaWrite -- fifo buffer overflow" );
+
+	m_transferBuffer.Push( reinterpret_cast<const uint16_t*>( dataIn ), available );
+
+	UpdateDmaRequest();
+	ScheduleTransferEvent();
+}
+
+void Spu::DmaRead( uint32_t* dataOut, uint32_t count ) noexcept
+{
+	const uint32_t halfwords = count * 2;
+	uint16_t* dest = reinterpret_cast<uint16_t*>( dataOut );
+
+	const uint32_t available = std::min( halfwords, m_transferBuffer.Size() );
+
+	for ( uint32_t i = 0; i < available; ++i )
+		dest[ i ] = m_transferBuffer.Pop();
+
+	if ( available < halfwords )
+	{
+		dbLogWarning( "Spu::DmaRead -- fifo buffer overflow" );
+		std::fill_n( dest + available, halfwords - available, uint16_t( 0xffff ) );
+	}
+
+	UpdateDmaRequest();
+	ScheduleTransferEvent();
+}
+
 void Spu::SetSpuControl( uint16_t value ) noexcept
 {
 	m_control.value = value;
 
-	// SPUSTAT bits 0-5 are the same as SPUCNT, but applied with a delay
-	// TODO: delay
+	// SPUSTAT bits 0-5 are the same as SPUCNT, but applied with a delay (delay not required)
 	m_status.value = value & Status::ControlMask;
-	m_status.dmaReadWriteRequest = stdx::any_of<uint16_t>( value, 1 << 5 ); // seems to be same as SPUCNT.Bit5
 
 	UpdateDmaRequest();
 }
 
+inline void Spu::TriggerInterrupt() noexcept
+{
+	dbExpects( CanTriggerInterrupt() );
+	m_status.irq = true;
+	m_interruptControl.SetInterrupt( Interrupt::Spu );
+}
+
 void Spu::UpdateDmaRequest() noexcept
 {
-	m_status.dmaWriteRequest = false;
-	m_status.dmaReadRequest = false;
-	bool dmaRequest = false;
+	bool request = false;
 
 	switch ( m_control.GetTransfermode() )
 	{
 		case TransferMode::Stop:
-			break;
-
 		case TransferMode::ManualWrite:
-			ExecuteManualWrite();
+			m_status.dmaRequest = false;
+			m_status.dmaReadRequest = false;
+			m_status.dmaWriteRequest = false;
 			break;
 
 		case TransferMode::DMAWrite:
-			m_status.dmaWriteRequest = true;
-			dmaRequest = true;
+			request = m_transferBuffer.Empty();
+			m_status.dmaWriteRequest = request;
+			m_status.dmaRequest = request;
+			m_status.dmaReadRequest = false;
 			break;
 
 		case TransferMode::DMARead:
-			m_status.dmaReadRequest = true;
-			dmaRequest = true;
+			request = !m_transferBuffer.Empty();
+			m_status.dmaReadRequest = request;
+			m_status.dmaRequest = request;
+			m_status.dmaWriteRequest = false;
 			break;
 	}
 
-	m_dma->SetRequest( Dma::Channel::Spu, dmaRequest );
+	m_dma->SetRequest( Dma::Channel::Spu, request );
 }
 
-void Spu::ExecuteManualWrite() noexcept
+void Spu::ScheduleTransferEvent() noexcept
 {
-	m_dataTransferBuffer.Clear();
-	m_status.dmaBusy = false;
+	auto schedule = [this]( uint32_t halfwords )
+	{
+		if ( halfwords == 0 )
+			m_transferEvent->Cancel();
+		else
+			m_transferEvent->Schedule( static_cast<cycles_t>( halfwords * TransferCyclesPerHalfword ) );
+	};
+
+	switch ( m_control.GetTransfermode() )
+	{
+		case TransferMode::Stop:
+			m_transferEvent->Cancel();
+			break;
+
+		case TransferMode::DMARead:
+			schedule( m_transferBuffer.Capacity() );
+			break;
+
+		case TransferMode::DMAWrite:
+		case TransferMode::ManualWrite:
+			schedule( m_transferBuffer.Size() );
+			break;
+	}
+
+	m_status.dmaBusy = m_transferEvent->IsActive();
+}
+
+void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
+{
+	dbExpects( m_control.GetTransfermode() != TransferMode::Stop );
+
+	if ( m_control.GetTransfermode() == TransferMode::DMARead )
+	{
+		dbAssert( static_cast<cycles_t>( m_transferBuffer.Capacity() * TransferCyclesPerHalfword ) == cycles );
+
+		while ( !m_transferBuffer.Full() )
+		{
+			m_transferBuffer.Push( m_ram.Read<uint16_t>( m_transferAddress ) );
+			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
+			TryTriggerInterrupt( m_transferAddress );
+		}
+	}
+	else
+	{
+		dbAssert( static_cast<cycles_t>( m_transferBuffer.Size() * TransferCyclesPerHalfword ) == cycles );
+
+		while ( !m_transferBuffer.Empty() )
+		{
+			m_ram.Write( m_transferAddress, m_transferBuffer.Pop() );
+			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
+			TryTriggerInterrupt( m_transferAddress );
+		}
+	}
+
+	// wait for a DMA before transfering more data
+	UpdateDmaRequest();
 }
 
 }

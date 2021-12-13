@@ -39,6 +39,7 @@ public:
 		Gpu& gpu,
 		CDRomDrive& cdromDRive,
 		MacroblockDecoder& mdec,
+		Spu& spu,
 		InterruptControl& interruptControl,
 		EventManager& eventManager );
 
@@ -206,6 +207,7 @@ private:
 	Gpu& m_gpu;
 	CDRomDrive& m_cdromDrive;
 	MacroblockDecoder& m_mdec;
+	Spu& m_spu;
 	InterruptControl& m_interruptControl;
 	EventManager& m_eventManager;
 
