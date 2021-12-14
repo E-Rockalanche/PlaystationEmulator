@@ -12,48 +12,65 @@ namespace PSX
 namespace
 {
 
-constexpr uint32_t SpuBase = 0x1F801C00;
-constexpr uint32_t SpuVoiceRegistersOffset = 0x1F801C00 - SpuBase;
-constexpr uint32_t SpuControlRegistersOffset = 0x1F801D80 - SpuBase;
-constexpr uint32_t SpuReverbRegistersOffset = 0x1F801DC0 - SpuBase;
-constexpr uint32_t SpuInternalRegistersOffset = 0x1F801E00 - SpuBase;
+constexpr uint32_t SpuBaseAddress = 0x1F801C00;
 
-enum class SpuRegister : uint32_t
+constexpr uint32_t VoiceRegisterOffset = 0;
+constexpr uint32_t ControlRegisterOffset = ( 0x1F801D80 - SpuBaseAddress ) / 2;
+constexpr uint32_t ReverbRegisterOffset = ( 0x1F801DC0 - SpuBaseAddress ) / 2;
+constexpr uint32_t VolumeRegisterOffset = ( 0x1F801E00 - SpuBaseAddress ) / 2;
+
+constexpr uint32_t VoiceRegisterCount = 24 * 8;
+constexpr uint32_t ReverbRegisterCount = 32;
+constexpr uint32_t VolumeRegisterCount = 24 * 2;
+
+enum class SpuControlRegister : uint32_t
 {
-	VolumeLeft = 0x1F801D80 - SpuBase,
-	VolumeRight = VolumeLeft + 2,
+	MainVolumeLeft = ControlRegisterOffset,
+	MainVolumeRight,
 
-	ReverbOutVolumeLeft = 0x1F801D84 - SpuBase,
-	ReverbOutVolumeRight = ReverbOutVolumeLeft + 2,
+	ReverbOutVolumeLeft,
+	ReverbOutVolumeRight,
 
-	VoiceKeyOnLow = 0x1F801D88 - SpuBase,
-	VoiceKeyOnHigh = VoiceKeyOnLow + 2,
-	VoiceKeyOffLow = 0x1F801D8C - SpuBase,
-	VoiceKeyOffHigh = VoiceKeyOffLow + 2,
-	VoicePitchLow = 0x1F801D90 - SpuBase,
-	VoicePitchHigh = VoicePitchLow + 2,
-	VoiceNoiseLow = 0x1F801D94 - SpuBase,
-	VoiceNoiseHigh = VoiceNoiseLow + 2,
-	VoiceReverbLow = 0x1F801D98 - SpuBase,
-	VoiceReverbHigh = VoiceReverbLow + 2,
-	VoiceStatusLow = 0x1F801D9C - SpuBase,
-	VoiceStatusHigh = VoiceStatusLow + 2,
+	VoiceKeyOnLow,
+	VoiceKeyOnHigh,
+	VoiceKeyOffLow,
+	VoiceKeyOffHigh,
+	VoicePitchLow,
+	VoicePitchHigh,
+	VoiceNoiseLow,
+	VoiceNoiseHigh,
+	VoiceReverbLow,
+	VoiceReverbHigh,
+	VoiceStatusLow,
+	VoiceStatusHigh,
 
-	ReverbWorkAreaStartAddress = 0x1F801DA2 - SpuBase,
-	IrqAddress = 0x1F801DA4 - SpuBase,
-	DataTransferAddress = 0x1F801DA6 - SpuBase,
-	DataTransferFifo = 0x1F801DA8 - SpuBase,
-	SpuControl = 0x1F801DAA - SpuBase,
-	DataTransferControl = 0x1F801DAC - SpuBase,
-	SpuStatus = 0x1F801DAE - SpuBase,
+	Unknown1,
 
-	CDVolumeLeft = 0x1F801DB0 - SpuBase,
-	CDVolumeRight = CDVolumeLeft + 2,
-	ExternVolumeLeft = 0x1F801DB4 - SpuBase,
-	ExternVolumeRight = ExternVolumeLeft + 2,
-	CurrentMainVolumeLeft = 0x1F801DB8 - SpuBase,
-	CurrentMainVolumeRight = CurrentMainVolumeLeft + 2,
+	ReverbWorkAreaStartAddress,
+	IrqAddress,
+	DataTransferAddress,
+	DataTransferFifo,
+
+	SpuControl,
+	DataTransferControl,
+	SpuStatus,
+
+	CdVolumeLeft,
+	CdVolumeRight,
+	ExternVolumeLeft,
+	ExternVolumeRight,
+	CurrentMainVolumeLeft,
+	CurrentMainVolumeRight,
+
+	Unknown2,
+	Unknown3
 };
+static_assert( static_cast<uint32_t>( SpuControlRegister::Unknown3 ) == ControlRegisterOffset + 31 );
+
+constexpr bool Within( uint32_t offset, uint32_t base, uint32_t size ) noexcept
+{
+	return ( base <= offset && offset < ( base + size ) );
+}
 
 } // namespace
 
@@ -68,100 +85,119 @@ void Spu::Reset()
 	m_transferEvent->Cancel();
 
 	m_voices.fill( Voice{} );
-	m_currentVolumes.fill( Volume{} );
-	m_voiceFlags = VoiceFlags{};
 
 	m_mainVolume = Volume{};
 	m_reverbOutVolume = Volume{};
-	m_cdAudioInputVolume = Volume{};
-	m_externalAudioInputVolume = Volume{};
-	m_currentMainVolume = Volume{};
+
+	m_voiceFlags = VoiceFlags{};
 
 	m_reverbWorkAreaStartAddress = 0;
 	m_irqAddress = 0;
 	m_transferAddressRegister = 0;
-
-	m_transferBuffer.Reset();
+	m_transferBufferRegister = 0;
 
 	m_control.value = 0;
 	m_dataTransferControl.value = 0;
 	m_status.value = 0;
 
-	m_reverbRegisters.fill( 0 );
+	m_cdAudioInputVolume = Volume{}; // for normal CD-DA and compressed XA-ADPCM
+	m_externalAudioInputVolume = Volume{};
+	m_currentMainVolume = Volume{};
+
+	m_reverb.registers.fill( 0 );
+
+	m_voiceVolumes.fill( Volume{} );
+
+	m_unknownRegisters.fill( 0 );
+
+	m_transferBuffer.Reset();
 
 	m_transferAddress = 0;
+
 	m_ram.Fill( 0 );
 }
 
 uint16_t Spu::Read( uint32_t offset ) noexcept
 {
-	switch ( static_cast<SpuRegister>( offset ) )
+	switch ( static_cast<SpuControlRegister>( offset ) )
 	{
-		case SpuRegister::VolumeLeft:	return m_mainVolume.left;
-		case SpuRegister::VolumeRight:	return m_mainVolume.right;
+		case SpuControlRegister::MainVolumeLeft:	return m_mainVolume.left;
+		case SpuControlRegister::MainVolumeRight:	return m_mainVolume.right;
 
-		case SpuRegister::ReverbOutVolumeLeft:	return m_reverbOutVolume.left;
-		case SpuRegister::ReverbOutVolumeRight:	return m_reverbOutVolume.right;
+		case SpuControlRegister::ReverbOutVolumeLeft:	return m_reverbOutVolume.left;
+		case SpuControlRegister::ReverbOutVolumeRight:	return m_reverbOutVolume.right;
 
-		case SpuRegister::VoiceKeyOnLow:	return static_cast<uint16_t>( m_voiceFlags.keyOn );
-		case SpuRegister::VoiceKeyOnHigh:	return static_cast<uint16_t>( m_voiceFlags.keyOn >> 16 );
+		case SpuControlRegister::VoiceKeyOnLow:		return static_cast<uint16_t>( m_voiceFlags.keyOn );
+		case SpuControlRegister::VoiceKeyOnHigh:	return static_cast<uint16_t>( m_voiceFlags.keyOn >> 16 );
 
-		case SpuRegister::VoiceKeyOffLow:	return static_cast<uint16_t>( m_voiceFlags.keyOff );
-		case SpuRegister::VoiceKeyOffHigh:	return static_cast<uint16_t>( m_voiceFlags.keyOff >> 16 );
+		case SpuControlRegister::VoiceKeyOffLow:	return static_cast<uint16_t>( m_voiceFlags.keyOff );
+		case SpuControlRegister::VoiceKeyOffHigh:	return static_cast<uint16_t>( m_voiceFlags.keyOff >> 16 );
 
-		case SpuRegister::VoicePitchLow:	return static_cast<uint16_t>( m_voiceFlags.pitchModulationEnable );
-		case SpuRegister::VoicePitchHigh:	return static_cast<uint16_t>( m_voiceFlags.pitchModulationEnable >> 16 );
+		case SpuControlRegister::VoicePitchLow:		return static_cast<uint16_t>( m_voiceFlags.pitchModulationEnable );
+		case SpuControlRegister::VoicePitchHigh:	return static_cast<uint16_t>( m_voiceFlags.pitchModulationEnable >> 16 );
 
-		case SpuRegister::VoiceNoiseLow:	return static_cast<uint16_t>( m_voiceFlags.noiseModeEnable );
-		case SpuRegister::VoiceNoiseHigh:	return static_cast<uint16_t>( m_voiceFlags.noiseModeEnable >> 16 );
+		case SpuControlRegister::VoiceNoiseLow:		return static_cast<uint16_t>( m_voiceFlags.noiseModeEnable );
+		case SpuControlRegister::VoiceNoiseHigh:	return static_cast<uint16_t>( m_voiceFlags.noiseModeEnable >> 16 );
 
-		case SpuRegister::VoiceReverbLow:	return static_cast<uint16_t>( m_voiceFlags.reverbEnable );
-		case SpuRegister::VoiceReverbHigh:	return static_cast<uint16_t>( m_voiceFlags.reverbEnable >> 16 );
+		case SpuControlRegister::VoiceReverbLow:	return static_cast<uint16_t>( m_voiceFlags.reverbEnable );
+		case SpuControlRegister::VoiceReverbHigh:	return static_cast<uint16_t>( m_voiceFlags.reverbEnable >> 16 );
 
-		case SpuRegister::VoiceStatusLow:	return static_cast<uint16_t>( m_voiceFlags.status );
-		case SpuRegister::VoiceStatusHigh:	return static_cast<uint16_t>( m_voiceFlags.status >> 16 );
+		case SpuControlRegister::VoiceStatusLow:	return static_cast<uint16_t>( m_voiceFlags.status );
+		case SpuControlRegister::VoiceStatusHigh:	return static_cast<uint16_t>( m_voiceFlags.status >> 16 );
 
-		case SpuRegister::ReverbWorkAreaStartAddress:	return m_reverbWorkAreaStartAddress;
-		case SpuRegister::IrqAddress:					return m_irqAddress;
-		case SpuRegister::DataTransferAddress:			return m_transferAddressRegister;
-		case SpuRegister::DataTransferFifo:				return 0; // TODO
-		case SpuRegister::SpuControl:					return m_control.value;
-		case SpuRegister::DataTransferControl:			return m_dataTransferControl.value;
-		case SpuRegister::SpuStatus:					return m_status.value;
+		case SpuControlRegister::ReverbWorkAreaStartAddress:	return m_reverbWorkAreaStartAddress;
+		case SpuControlRegister::IrqAddress:					return m_irqAddress;
+		case SpuControlRegister::DataTransferAddress:			return m_transferAddressRegister;
+		case SpuControlRegister::DataTransferFifo:				return 0xffff;
+		case SpuControlRegister::SpuControl:					return m_control.value;
+		case SpuControlRegister::DataTransferControl:			return m_dataTransferControl.value;
+		case SpuControlRegister::SpuStatus:						return m_status.value;
 
-		case SpuRegister::CDVolumeLeft:		return m_cdAudioInputVolume.left;
-		case SpuRegister::CDVolumeRight:	return m_cdAudioInputVolume.right;
+		case SpuControlRegister::CdVolumeLeft:	return m_cdAudioInputVolume.left;
+		case SpuControlRegister::CdVolumeRight:	return m_cdAudioInputVolume.right;
 
-		case SpuRegister::ExternVolumeLeft:		return m_externalAudioInputVolume.left;
-		case SpuRegister::ExternVolumeRight:	return m_externalAudioInputVolume.right;
+		case SpuControlRegister::ExternVolumeLeft:	return m_externalAudioInputVolume.left;
+		case SpuControlRegister::ExternVolumeRight:	return m_externalAudioInputVolume.right;
 
-		case SpuRegister::CurrentMainVolumeLeft:	return m_currentMainVolume.left;
-		case SpuRegister::CurrentMainVolumeRight:	return m_currentMainVolume.right;
+		case SpuControlRegister::CurrentMainVolumeLeft:		return m_currentMainVolume.left;
+		case SpuControlRegister::CurrentMainVolumeRight:	return m_currentMainVolume.right;
+
+		case SpuControlRegister::Unknown1:
+		case SpuControlRegister::Unknown2:
+		case SpuControlRegister::Unknown3:	return 0xffff;
 
 		default:
 		{
-			if ( offset < SpuControlRegistersOffset )
+			if ( Within( offset, 0, VoiceRegisterCount ) )
 			{
-				const size_t voiceIndex = ( offset - SpuVoiceRegistersOffset ) / sizeof( Voice );
-				const size_t registerIndex = ( offset - SpuVoiceRegistersOffset ) % ( sizeof( Voice ) / 2 );
-				return m_voices[ voiceIndex ].registers[ registerIndex ];
-			}
-			else if ( ( SpuReverbRegistersOffset <= offset ) && ( offset < SpuInternalRegistersOffset ) )
-			{
-				return m_reverbRegisters[ ( offset - SpuReverbRegistersOffset ) / 2 ];
-			}
-			else if ( SpuInternalRegistersOffset <= offset )
-			{
+				// voices
 
+				const uint32_t voiceIndex = offset / 8;
+				const uint32_t voiceRegister = offset % 8;
 
-				// internal
 				// TODO
-				return 0xffffu;
+				return 0;
+			}
+			else if ( Within( offset, ReverbRegisterOffset, ReverbRegisterCount ) )
+			{
+				// reverb
+
+				return m_reverb.registers[ offset - ReverbRegisterOffset ];
+			}
+			else if ( Within( offset, VolumeRegisterOffset, VolumeRegisterCount ) )
+			{
+				// volumes
+
+				const uint32_t volumeIndex = ( offset - VolumeRegisterOffset ) / 2;
+				const uint32_t volumeRegister = ( offset - VolumeRegisterOffset ) % 2;
+
+				// TODO
+				return 0;
 			}
 			else
 			{
-				dbLogWarning( "Spu::Read -- invalid offset [%X], address [%X]", offset, offset + SpuBase );
-				return 0xffffu;
+				dbLogWarning( "Spu::Read -- unknown register [%u]", offset );
+				return 0xffff;
 			}
 		}
 	}
@@ -172,44 +208,47 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 	static constexpr uint32_t LowMask = 0x0000ffffu;
 	static constexpr uint32_t HighMask = 0xffff0000u;
 
-	switch ( static_cast<SpuRegister>( offset ) )
+	switch ( static_cast<SpuControlRegister>( offset ) )
 	{
-		case SpuRegister::VolumeLeft:	m_mainVolume.left = static_cast<int16_t>( value );	break;
-		case SpuRegister::VolumeRight:	m_mainVolume.right = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::MainVolumeLeft:	m_mainVolume.left = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::MainVolumeRight:	m_mainVolume.right = static_cast<int16_t>( value );	break;
 
-		case SpuRegister::ReverbOutVolumeLeft:	m_reverbOutVolume.left = static_cast<int16_t>( value );		break;
-		case SpuRegister::ReverbOutVolumeRight:	m_reverbOutVolume.right = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::ReverbOutVolumeLeft:	m_reverbOutVolume.left = static_cast<int16_t>( value );		break;
+		case SpuControlRegister::ReverbOutVolumeRight:	m_reverbOutVolume.right = static_cast<int16_t>( value );	break;
 
-		case SpuRegister::VoiceKeyOnLow:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, LowMask, value );			break;
-		case SpuRegister::VoiceKeyOnHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceKeyOnLow:		stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, LowMask, value );			break;
+		case SpuControlRegister::VoiceKeyOnHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, HighMask, value << 16 );	break;
 
-		case SpuRegister::VoiceKeyOffLow:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, LowMask, value );			break;
-		case SpuRegister::VoiceKeyOffHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceKeyOffLow:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, LowMask, value );			break;
+		case SpuControlRegister::VoiceKeyOffHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, HighMask, value << 16 );	break;
 
-		case SpuRegister::VoicePitchLow:	stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, LowMask, value );			break;
-		case SpuRegister::VoicePitchHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoicePitchLow:		stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, LowMask, value );			break;
+		case SpuControlRegister::VoicePitchHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, HighMask, value << 16 );	break;
 
-		case SpuRegister::VoiceNoiseLow:	stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, LowMask, value );			break;
-		case SpuRegister::VoiceNoiseHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceNoiseLow:		stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, LowMask, value );			break;
+		case SpuControlRegister::VoiceNoiseHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, HighMask, value << 16 );	break;
 
-		case SpuRegister::VoiceReverbLow:	stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, LowMask, value );		break;
-		case SpuRegister::VoiceReverbHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceReverbLow:	stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, LowMask, value );		break;
+		case SpuControlRegister::VoiceReverbHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, HighMask, value << 16 );	break;
 
-		case SpuRegister::VoiceStatusLow:	stdx::masked_set<uint32_t>( m_voiceFlags.status, LowMask, value );			break;
-		case SpuRegister::VoiceStatusHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.status, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceStatusLow:	stdx::masked_set<uint32_t>( m_voiceFlags.status, LowMask, value );			break;
+		case SpuControlRegister::VoiceStatusHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.status, HighMask, value << 16 );	break;
 
-		case SpuRegister::ReverbWorkAreaStartAddress:	m_reverbWorkAreaStartAddress = value;	break;
-		case SpuRegister::IrqAddress:					m_irqAddress = value;					break;
+		case SpuControlRegister::ReverbWorkAreaStartAddress:	m_reverbWorkAreaStartAddress = value;	break;
+		case SpuControlRegister::IrqAddress:					m_irqAddress = value;					break;
 
-		case SpuRegister::DataTransferAddress:
+		case SpuControlRegister::DataTransferAddress:
+		{
 			// Used for manual write and DMA read/write Spu memory. Writing to this registers stores the written value in 1F801DA6h,
 			// and does additional store the value (multiplied by 8) in another internal "current address" register
 			// (that internal register does increment during transfers, whilst the 1F801DA6h value DOESN'T increment).
 			m_transferAddressRegister = value;
 			m_transferAddress = ( value * 8 ) & SpuRamAddressMask;
 			break;
+		}
 
-		case SpuRegister::DataTransferFifo:
+		case SpuControlRegister::DataTransferFifo:
+		{
 			// Used for manual-write. Not sure if it can be also used for manual read?
 
 			if ( m_transferBuffer.Full() )
@@ -220,51 +259,60 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 
 			m_transferBuffer.Push( value );
 			break;
+		}
 
-		case SpuRegister::SpuControl:
+		case SpuControlRegister::SpuControl:
 			SetSpuControl( value );
 			break;
 
-		case SpuRegister::DataTransferControl:
+		case SpuControlRegister::DataTransferControl:
 			m_dataTransferControl.value = value;
 			break;
 
-		case SpuRegister::SpuStatus:
+		case SpuControlRegister::SpuStatus:
 			// The SPUSTAT register should be treated read - only( writing is possible in so far that the written value can be read - back for a short moment,
 			// however, thereafter the hardware is overwriting that value ).
 			break; 
 
-		case SpuRegister::CDVolumeLeft:		m_cdAudioInputVolume.left = static_cast<int16_t>( value );	break;
-		case SpuRegister::CDVolumeRight:	m_cdAudioInputVolume.right = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::CdVolumeLeft:	m_cdAudioInputVolume.left = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::CdVolumeRight:	m_cdAudioInputVolume.right = static_cast<int16_t>( value );	break;
 
-		case SpuRegister::ExternVolumeLeft:		m_externalAudioInputVolume.left = static_cast<int16_t>( value );	break;
-		case SpuRegister::ExternVolumeRight:	m_externalAudioInputVolume.right = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::ExternVolumeLeft:	m_externalAudioInputVolume.left = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::ExternVolumeRight:	m_externalAudioInputVolume.right = static_cast<int16_t>( value );	break;
 
-		case SpuRegister::CurrentMainVolumeLeft:	m_currentMainVolume.left = static_cast<int16_t>( value );	break;
-		case SpuRegister::CurrentMainVolumeRight:	m_currentMainVolume.right = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::CurrentMainVolumeLeft:		m_currentMainVolume.left = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::CurrentMainVolumeRight:	m_currentMainVolume.right = static_cast<int16_t>( value );	break;
 
 		default:
 		{
-			if ( offset < SpuControlRegistersOffset )
+			if ( Within( offset, 0, VoiceRegisterCount ) )
 			{
-				const size_t voiceIndex = ( offset - SpuVoiceRegistersOffset ) / sizeof( Voice );
-				const size_t registerIndex = ( offset - SpuVoiceRegistersOffset ) % ( sizeof( Voice ) / 2 );
-				m_voices[ voiceIndex ].registers[ registerIndex ] = value;
+				// voices
+
+				const uint32_t voiceIndex = offset / 8;
+				const uint32_t voiceRegister = offset % 8;
+
+				// TODO
 			}
-			else if ( ( SpuReverbRegistersOffset <= offset ) && ( offset < SpuInternalRegistersOffset ) )
+			else if ( Within( offset, ReverbRegisterOffset, ReverbRegisterCount ) )
 			{
-				m_reverbRegisters[ ( offset - SpuReverbRegistersOffset / 2 ) ] = value;
+				// reverb
+
+				m_reverb.registers[ offset - ReverbRegisterOffset ] = value;
 			}
-			else if ( SpuInternalRegistersOffset <= offset )
+			else if ( Within( offset, VolumeRegisterOffset, VolumeRegisterCount ) )
 			{
-				// internal
+				// volumes
+
+				const uint32_t volumeIndex = ( offset - VolumeRegisterOffset ) / 2;
+				const uint32_t volumeRegister = ( offset - VolumeRegisterOffset ) % 2;
+
 				// TODO
 			}
 			else
 			{
-				dbLogWarning( "Spu::Write -- invalid offset [%X], address [%X]", offset, offset + SpuBase );
+				dbLogWarning( "Spu::Write -- unknown register [%X -> %u]", value, offset );
 			}
-
 			break;
 		}
 	}

@@ -230,25 +230,25 @@ void MemoryMap::AccessSpu( uint32_t offset, T& value ) const noexcept
 	{
 		if constexpr ( sizeof( T ) == 4 )
 		{
-			const uint32_t low = m_spu.Read( offset );
-			const uint32_t high = m_spu.Read( offset + 2 );
+			const uint32_t low = m_spu.Read( offset / 2 );
+			const uint32_t high = m_spu.Read( offset / 2 + 1 );
 			value = static_cast<T>( low | ( high << 16 ) );
 		}
 		else
 		{
-			value = static_cast<T>( m_spu.Read( offset ) );
+			value = static_cast<T>( m_spu.Read( offset / 2 ) );
 		}
 	}
 	else
 	{
 		if constexpr ( sizeof( T ) == 4 )
 		{
-			m_spu.Write( offset, static_cast<uint16_t>( value ) );
-			m_spu.Write( offset + 2, static_cast<uint16_t>( value >> 16 ) );
+			m_spu.Write( offset / 2, static_cast<uint16_t>( value ) );
+			m_spu.Write( offset / 2 + 1, static_cast<uint16_t>( value >> 16 ) );
 		}
 		else
 		{
-			m_spu.Write( offset, static_cast<uint16_t>( value ) );
+			m_spu.Write( offset / 2, static_cast<uint16_t>( value ) );
 		}
 	}
 }

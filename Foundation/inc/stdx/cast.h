@@ -39,10 +39,11 @@ constexpr std::make_signed_t<T> signed_cast( T value ) noexcept
 // safe casting between differently signed or sized integral types
 template <typename To, typename From, STDX_requires(
 	std::is_integral_v<To> &&
-	std::is_integral_v<From> &&
-	( ( sizeof( To ) < sizeof( From ) ) || ( std::is_signed_v<To> != std::is_signed_v<From> ) ) )
+	std::is_integral_v<From> )
 constexpr To narrow_cast( From from ) noexcept
 {
+	static_assert( ( sizeof( To ) < sizeof( From ) ) || ( std::is_signed_v<To> != std::is_signed_v<From> ) ); // narrow_cast is unnecessary otherwise
+
 	const To result = static_cast<From>( from );
 
 	dbAssert( ( result < 0 ) == ( from < 0 ) ); // ensure sign is preserved

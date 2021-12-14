@@ -36,39 +36,20 @@ private:
 		DMARead
 	};
 
-	enum class TransferType
+	struct Volume
 	{
-		Fill = 0, // and 1, 6, 7
-		Normal = 2,
-		Rep2 = 3,
-		Rep4 = 4,
-		Rep8 = 5
+		int16_t left;
+		int16_t right;
 	};
 
-	union Volume
+	struct Voice
 	{
-		constexpr Volume() noexcept : channels{} {}
-		struct
-		{
-			int16_t left;
-			int16_t right;
-		};
-		std::array<int16_t, 2> channels;
-	};
-
-	union Voice
-	{
-		constexpr Voice() noexcept : registers{} {}
-		struct
-		{
-			Volume volume;
-			uint16_t adpcmSampleRate;
-			uint16_t adpcmStartAddress;
-			uint32_t adsr; // attack, decay, sustain, release
-			uint16_t currentADSRVolume;
-			uint16_t adpcmRepeatAddress;
-		};
-		std::array<uint16_t, 8> registers;
+		Volume volume;
+		uint16_t adpcmSampleRate;
+		uint16_t adpcmStartAddress;
+		uint32_t adsr; // attack, decay, sustain, release
+		uint16_t currentADSRVolume;
+		uint16_t adpcmRepeatAddress;
 	};
 	static_assert( sizeof( Voice ) == 16 );
 
@@ -81,6 +62,7 @@ private:
 		uint32_t reverbEnable = 0;
 		uint32_t status = 0;
 	};
+	static_assert( sizeof( VoiceFlags ) == 24 );
 
 	union Control
 	{
@@ -130,7 +112,7 @@ private:
 	{
 		struct
 		{
-			// same as SPUCNT.Bit5-0, but, applied a bit delayed
+			// same as SPUCNT.Bit5-0
 			uint16_t cdAudioEnable : 1;
 			uint16_t externalAudioEnable : 1;
 			uint16_t cdAudioReverb : 1;
@@ -152,57 +134,51 @@ private:
 	};
 	static_assert( sizeof( Status ) == 2 );
 
-	struct ReverbRegister
+	union ReverbRegisters
 	{
-		enum : uint32_t
+		struct
 		{
-			OutVolumeLeft,
-			OutVolumeRight,
-			WorkAreaStartAddress,
-			APFOffset1,
-			APFOffset2,
-			ReflectionVolume1,
-			CombVolume1,
-			CombVolume2,
-			CombVolume3,
-			CombVolume4,
-			ReflectionVolume2,
-			APFVolume1,
-			APFVolume2,
-			SameSideReflectionAddress1Left,
-			SameSideReflectionAddress1Right,
-			CombAddress1Left,
-			CombAddress1Right,
-			CombAddress2Left,
-			CombAddress2Right,
-			SameSideReflectionAddress2Left,
-			SameSideReflectionAddress2Right,
-			DifferentSideReflectAddress1Left,
-			DifferentSideReflectAddress1Right,
-			CombAddress3Left,
-			CombAddress3Right,
-			CombAddress4Left,
-			CombAddress4Right,
-			DifferentSideReflectAddress2Left,
-			DifferentSideReflectAddress2Right,
-			APFAddress1Left,
-			APFAddress1Right,
-			APFAddress2Left,
-			APFAddress2Right,
-			InVolumeLeft,
-			InVolumeRight,
-
-			NumRegisters
+			uint16_t apfOffset1;
+			uint16_t apfOffset2;
+			int16_t reflectionVolume1;
+			int16_t combVolume1;
+			int16_t combVolume2;
+			int16_t combVolume3;
+			int16_t combVolume4;
+			int16_t reflectionVolume2;
+			int16_t apfVolume1;
+			int16_t apfVolume2;
+			uint16_t sameSideReflectionAddress1Left;
+			uint16_t sameSideReflectionAddress1Right;
+			uint16_t combAddress1Left;
+			uint16_t combAddress1Right;
+			uint16_t combAddress2Left;
+			uint16_t combAddress2Right;
+			uint16_t sameSideReflectionAddress2Left;
+			uint16_t sameSideReflectionAddress2Right;
+			uint16_t differentSideReflectionAddress1Left;
+			uint16_t differentSideReflectionAddress1Right;
+			uint16_t combAddress3Left;
+			uint16_t combAddress3Right;
+			uint16_t combAddress4Left;
+			uint16_t combAddress4Right;
+			uint16_t differentSideReflectionAddress2Left;
+			uint16_t differentSideReflectionAddress2Right;
+			uint16_t apfAddress1Left;
+			uint16_t apfAddress1Right;
+			uint16_t apfAddress2Left;
+			uint16_t apfAddress2Right;
+			int16_t inputVolumeLeft;
+			int16_t inputVolumeRight;
 		};
+		std::array<uint16_t, 32> registers{};
 	};
+	static_assert( sizeof( ReverbRegisters ) == 64 );
 
 	static constexpr uint32_t VoiceCount = 24;
-
 	static constexpr uint32_t SpuFifoSize = 32;
-
 	static constexpr uint32_t SpuRamSize = 0x80000;
 	static constexpr uint32_t SpuRamAddressMask = SpuRamSize - 1;
-
 	static constexpr cycles_t TransferCyclesPerHalfword = 16;
 
 private:
@@ -226,49 +202,44 @@ private:
 			TriggerInterrupt();
 	}
 
-private:
-	// meaningful registers range from 0x1F801C00 to 0x1F801E5f
+	void GeneratePendingSamples();
 
+private:
 	InterruptControl& m_interruptControl;
 	Dma* m_dma = nullptr;
 
 	EventHandle m_transferEvent;
 
-	union
-	{
-		std::array<Voice, VoiceCount> m_voices{};
-		std::array<uint16_t, VoiceCount * 8> m_voiceRegisters;
-	};
-
-	union
-	{
-		std::array<Volume, VoiceCount> m_voiceVolumes;
-		std::array<uint16_t, VoiceCount * 2> m_voiceVolumeRegisters;
-	};
+	std::array<Voice, VoiceCount> m_voices;
 
 	Volume m_mainVolume;
 	Volume m_reverbOutVolume;
-	
+
 	VoiceFlags m_voiceFlags;
 
-	Volume m_cdAudioInputVolume; // for normal CD-DA and compressed XA-ADPCM
-	Volume m_externalAudioInputVolume;
-	Volume m_currentMainVolume;
-
-	// sound RAM
 	uint16_t m_reverbWorkAreaStartAddress = 0;
 	uint16_t m_irqAddress = 0;
 	uint16_t m_transferAddressRegister = 0;
-
-	FifoBuffer<uint16_t, SpuFifoSize> m_transferBuffer;
+	uint16_t m_transferBufferRegister = 0;
 
 	Control m_control;
 	DataTransferControl m_dataTransferControl;
 	Status m_status;
 
-	std::array<uint16_t, ReverbRegister::NumRegisters> m_reverbRegisters{};
+	Volume m_cdAudioInputVolume; // for normal CD-DA and compressed XA-ADPCM
+	Volume m_externalAudioInputVolume;
+	Volume m_currentMainVolume;
+
+	ReverbRegisters m_reverb;
+
+	std::array<Volume, VoiceCount> m_voiceVolumes;
+
+	std::array<uint16_t, 0x20> m_unknownRegisters{}; // read/write
+	
+	FifoBuffer<uint16_t, SpuFifoSize> m_transferBuffer;
 
 	uint16_t m_transferAddress = 0;
+
 	Memory<SpuRamSize> m_ram;
 };
 
