@@ -36,22 +36,83 @@ private:
 		DMARead
 	};
 
-	struct Volume
+	union ADPCMHeader
 	{
-		int16_t left;
-		int16_t right;
+		struct
+		{
+			uint8_t loopEnd : 1;
+			uint8_t loopRepeat : 1;
+			uint8_t loopStart : 1;
+			uint8_t : 5;
+		};
+		uint8_t value = 0;
 	};
+	static_assert( sizeof( ADPCMHeader ) == 1 );
 
-	struct Voice
+	union VoiceADSR
 	{
-		Volume volume;
-		uint16_t adpcmSampleRate;
-		uint16_t adpcmStartAddress;
-		uint32_t adsr; // attack, decay, sustain, release
-		uint16_t currentADSRVolume;
-		uint16_t adpcmRepeatAddress;
+		struct
+		{
+			uint16_t sustainLevel : 4;
+			uint16_t decayShift : 4;
+			uint16_t attackStep : 2;
+			uint16_t attackShift : 5;
+			uint16_t attackMode : 1;
+
+			uint16_t releaseShift : 5;
+			uint16_t releaseMode : 1;
+			uint16_t sustainStep : 2;
+			uint16_t sustainShift : 5;
+			uint16_t sustainDirection : 1;
+			uint16_t sustainMode : 1;
+		};
+		struct
+		{
+			uint16_t valueLow;
+			uint16_t valueHigh;
+		};
+		uint32_t value = 0;
 	};
-	static_assert( sizeof( Voice ) == 16 );
+	static_assert( sizeof( VoiceADSR ) == 4 );
+
+	union Volume
+	{
+		struct
+		{
+			int16_t fixedVolume : 15; // divided by 2
+			int16_t : 1;
+		};
+		struct
+		{
+			uint16_t sweepStep : 2;
+			uint16_t sweepShift : 5;
+			uint16_t : 5;
+			uint16_t sweepPhase : 1;
+			uint16_t sweepDirection : 1;
+			uint16_t sweepMode : 1;
+			uint16_t sweepVolume : 1; // 0=fixed volume, 1=sweep volume
+		};
+		uint16_t value = 0;
+	};
+	static_assert( sizeof( Volume ) == 2 );
+
+	union VoiceRegisters
+	{
+		VoiceRegisters() : registers{} {}
+
+		struct
+		{
+			Volume volumeLeft;
+			Volume volumeRight;
+			uint16_t adpcmSampleRate; // (VxPitch)
+			uint16_t adpcmStartAddress; // x8
+			VoiceADSR adsr;
+			uint16_t currentADSRVolume;
+			uint16_t adpcmRepeatAddress; // x8
+		};
+		std::array<uint16_t, 8> registers;
+	};
+	static_assert( sizeof( VoiceRegisters ) == 16 );
 
 	struct VoiceFlags
 	{
@@ -124,7 +185,7 @@ private:
 
 			uint16_t dmaWriteRequest : 1;
 			uint16_t dmaReadRequest : 1;
-			uint16_t dmaBusy : 1;
+			uint16_t transferBusy : 1;
 			uint16_t writingToCaptureBufferHalf : 1;
 			uint16_t : 4;
 		};
@@ -210,10 +271,10 @@ private:
 
 	EventHandle m_transferEvent;
 
-	std::array<Voice, VoiceCount> m_voices;
+	std::array<VoiceRegisters, VoiceCount> m_voiceRegisters;
 
-	Volume m_mainVolume;
-	Volume m_reverbOutVolume;
+	std::array<Volume, 2> m_mainVolume;
+	std::array<Volume, 2> m_reverbOutVolume;
 
 	VoiceFlags m_voiceFlags;
 
@@ -226,13 +287,13 @@ private:
 	DataTransferControl m_dataTransferControl;
 	Status m_status;
 
-	Volume m_cdAudioInputVolume; // for normal CD-DA and compressed XA-ADPCM
-	Volume m_externalAudioInputVolume;
-	Volume m_currentMainVolume;
+	std::array<int16_t, 2> m_cdAudioInputVolume; // for normal CD-DA and compressed XA-ADPCM
+	std::array<int16_t, 2> m_externalAudioInputVolume;
+	std::array<int16_t, 2> m_currentMainVolume;
 
 	ReverbRegisters m_reverb;
 
-	std::array<Volume, VoiceCount> m_voiceVolumes;
+	std::array<std::array<Volume, 2>, VoiceCount> m_voiceVolumes;
 
 	std::array<uint16_t, 0x20> m_unknownRegisters{}; // read/write
 	
