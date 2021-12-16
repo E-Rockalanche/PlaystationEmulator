@@ -19,11 +19,6 @@ constexpr uint32_t ControlRegisterOffset = ( 0x1F801D80 - SpuBaseAddress ) / 2;
 constexpr uint32_t ReverbRegisterOffset = ( 0x1F801DC0 - SpuBaseAddress ) / 2;
 constexpr uint32_t VolumeRegisterOffset = ( 0x1F801E00 - SpuBaseAddress ) / 2;
 
-constexpr uint32_t VoiceRegisterCount = 24 * 8;
-constexpr uint32_t ControlRegisterCount = 32;
-constexpr uint32_t ReverbRegisterCount = 32;
-constexpr uint32_t VolumeRegisterCount = 24 * 2;
-
 enum class SpuControlRegister : uint32_t
 {
 	MainVolumeLeft = ControlRegisterOffset,
@@ -66,7 +61,18 @@ enum class SpuControlRegister : uint32_t
 	Unknown2,
 	Unknown3
 };
-static_assert( static_cast<uint32_t>( SpuControlRegister::Unknown3 ) == ControlRegisterOffset + ControlRegisterCount - 1 );
+
+enum class VoiceRegister
+{
+	VolumeLeft,
+	VolumeRight,
+	ADPCMSampleRate,
+	ADPCMStartAddress,
+	ADSRLow,
+	ADSRHigh,
+	CurrentADSRVolume,
+	ADPCMRepeatAddress
+};
 
 constexpr bool Within( uint32_t offset, uint32_t base, uint32_t size ) noexcept
 {
@@ -147,13 +153,15 @@ Spu::Spu( InterruptControl& interruptControl, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
 {
 	m_transferEvent = eventManager.CreateEvent( "SPU Transfer Event", [this]( cycles_t cycles ) { UpdateTransferEvent( cycles ); } );
+
+	m_generateSoundEvent = eventManager.CreateEvent( "SPU Generate Sound Event", [this]( cycles_t cycles ) { GenerateSamples( cycles ); } );
 }
 
 void Spu::Reset()
 {
 	m_transferEvent->Cancel();
 
-	m_voiceRegisters = {};
+	m_voices = {};
 
 	m_mainVolume = {};
 	m_reverbOutVolume = {};
@@ -220,7 +228,10 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 		case SpuControlRegister::DataTransferFifo:				return 0xffff;
 		case SpuControlRegister::SpuControl:					return m_control.value;
 		case SpuControlRegister::DataTransferControl:			return m_dataTransferControl.value;
-		case SpuControlRegister::SpuStatus:						return m_status.value;
+
+		case SpuControlRegister::SpuStatus:
+			GeneratePendingSamples();
+			return m_status.value;
 
 		case SpuControlRegister::CdVolumeLeft:	return m_cdAudioInputVolume[ 0 ];
 		case SpuControlRegister::CdVolumeRight:	return m_cdAudioInputVolume[ 1 ];
@@ -228,8 +239,13 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 		case SpuControlRegister::ExternVolumeLeft:	return m_externalAudioInputVolume[ 0 ];
 		case SpuControlRegister::ExternVolumeRight:	return m_externalAudioInputVolume[ 1 ];
 
-		case SpuControlRegister::CurrentMainVolumeLeft:		return m_currentMainVolume[ 0 ];
-		case SpuControlRegister::CurrentMainVolumeRight:	return m_currentMainVolume[ 1 ];
+		case SpuControlRegister::CurrentMainVolumeLeft:
+			GeneratePendingSamples();
+			return m_currentMainVolume[ 0 ];
+
+		case SpuControlRegister::CurrentMainVolumeRight:
+			GeneratePendingSamples();
+			return m_currentMainVolume[ 1 ];
 
 		case SpuControlRegister::Unknown1:
 		case SpuControlRegister::Unknown2:
@@ -237,15 +253,11 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 
 		default:
 		{
-			if ( Within( offset, 0, VoiceRegisterCount ) )
+			if ( Within( offset, 0, VoiceCount * VoiceRegisterCount ) )
 			{
 				// voices
 
-				const uint32_t voiceIndex = offset / 8;
-				const uint32_t voiceRegister = offset % 8;
-
-				// TODO
-				return 0;
+				return ReadVoiceRegister( offset );
 			}
 			else if ( Within( offset, ReverbRegisterOffset, ReverbRegisterCount ) )
 			{
@@ -253,15 +265,14 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 
 				return m_reverb.registers[ offset - ReverbRegisterOffset ];
 			}
-			else if ( Within( offset, VolumeRegisterOffset, VolumeRegisterCount ) )
+			else if ( Within( offset, VolumeRegisterOffset, VoiceCount * VoiceVolumeRegisterCount ) )
 			{
 				// volumes
 
+				GeneratePendingSamples();
 				const uint32_t volumeIndex = ( offset - VolumeRegisterOffset ) / 2;
 				const uint32_t volumeRegister = ( offset - VolumeRegisterOffset ) % 2;
-
-				// TODO
-				return 0;
+				return m_voiceVolumes[ volumeIndex ][ volumeRegister ].value;
 			}
 			else
 			{
@@ -279,32 +290,86 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 
 	switch ( static_cast<SpuControlRegister>( offset ) )
 	{
-		case SpuControlRegister::MainVolumeLeft:	m_mainVolume[ 0 ].value = static_cast<int16_t>( value );	break;
-		case SpuControlRegister::MainVolumeRight:	m_mainVolume[ 1 ].value = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::MainVolumeLeft:
+			GeneratePendingSamples();
+			m_mainVolume[ 0 ].value = static_cast<int16_t>( value );
+			break;
 
-		case SpuControlRegister::ReverbOutVolumeLeft:	m_reverbOutVolume[ 0 ].value = static_cast<int16_t>( value );		break;
-		case SpuControlRegister::ReverbOutVolumeRight:	m_reverbOutVolume[ 1 ].value = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::MainVolumeRight:
+			GeneratePendingSamples();
+			m_mainVolume[ 1 ].value = static_cast<int16_t>( value );
+			break;
 
-		case SpuControlRegister::VoiceKeyOnLow:		stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, LowMask, value );			break;
-		case SpuControlRegister::VoiceKeyOnHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, HighMask, value << 16 );	break;
+		case SpuControlRegister::ReverbOutVolumeLeft:
+			GeneratePendingSamples();
+			m_reverbOutVolume[ 0 ].value = static_cast<int16_t>( value );
+			break;
 
-		case SpuControlRegister::VoiceKeyOffLow:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, LowMask, value );			break;
-		case SpuControlRegister::VoiceKeyOffHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, HighMask, value << 16 );	break;
+		case SpuControlRegister::ReverbOutVolumeRight:
+			GeneratePendingSamples();
+			m_reverbOutVolume[ 1 ].value = static_cast<int16_t>( value );
+			break;
 
-		case SpuControlRegister::VoicePitchLow:		stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, LowMask, value );			break;
-		case SpuControlRegister::VoicePitchHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceKeyOnLow:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, LowMask, value );		
+			break;
 
-		case SpuControlRegister::VoiceNoiseLow:		stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, LowMask, value );			break;
-		case SpuControlRegister::VoiceNoiseHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceKeyOnHigh:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, HighMask, value << 16 );
+			break;
 
-		case SpuControlRegister::VoiceReverbLow:	stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, LowMask, value );		break;
-		case SpuControlRegister::VoiceReverbHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceKeyOffLow:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, LowMask, value );		
+			break;
 
-		case SpuControlRegister::VoiceStatusLow:	stdx::masked_set<uint32_t>( m_voiceFlags.status, LowMask, value );			break;
-		case SpuControlRegister::VoiceStatusHigh:	stdx::masked_set<uint32_t>( m_voiceFlags.status, HighMask, value << 16 );	break;
+		case SpuControlRegister::VoiceKeyOffHigh:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, HighMask, value << 16 );
+			break;
 
-		case SpuControlRegister::ReverbWorkAreaStartAddress:	m_reverbWorkAreaStartAddress = value;	break;
-		case SpuControlRegister::IrqAddress:					m_irqAddress = value;					break;
+		case SpuControlRegister::VoicePitchLow:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, LowMask, value );		
+			break;
+
+		case SpuControlRegister::VoicePitchHigh:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, HighMask, value << 16 );
+			break;
+
+		case SpuControlRegister::VoiceNoiseLow:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, LowMask, value );		
+			break;
+
+		case SpuControlRegister::VoiceNoiseHigh:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, HighMask, value << 16 );
+			break;
+
+		case SpuControlRegister::VoiceReverbLow:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, LowMask, value );	
+			break;
+
+		case SpuControlRegister::VoiceReverbHigh:
+			GeneratePendingSamples();
+			stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, HighMask, value << 16 );
+			break;
+
+		case SpuControlRegister::ReverbWorkAreaStartAddress:
+			GeneratePendingSamples();
+			m_reverbWorkAreaStartAddress = value;
+			break;
+
+		case SpuControlRegister::IrqAddress:
+			GeneratePendingSamples();
+			m_irqAddress = value;
+			TryTriggerInterrupt();
+			break;
 
 		case SpuControlRegister::DataTransferAddress:
 		{
@@ -313,6 +378,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			// (that internal register does increment during transfers, whilst the 1F801DA6h value DOESN'T increment).
 			m_transferAddressRegister = value;
 			m_transferAddress = ( value * 8 ) & SpuRamAddressMask;
+			TryTriggerInterrupt();
 			break;
 		}
 
@@ -323,10 +389,11 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			if ( m_transferBuffer.Full() )
 			{
 				dbLogWarning( "Spu::Write -- data transfer buffer is full" );
-				m_transferBuffer.Pop();
+				break;
 			}
 
 			m_transferBuffer.Push( value );
+			ScheduleTransferEvent();
 			break;
 		}
 
@@ -338,50 +405,131 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			m_dataTransferControl.value = value;
 			break;
 
-		case SpuControlRegister::SpuStatus:
-			// The SPUSTAT register should be treated read - only( writing is possible in so far that the written value can be read - back for a short moment,
-			// however, thereafter the hardware is overwriting that value ).
-			break; 
+		case SpuControlRegister::CdVolumeLeft:
+			GeneratePendingSamples();
+			m_cdAudioInputVolume[ 0 ] = static_cast<int16_t>( value );
+			break;
 
-		case SpuControlRegister::CdVolumeLeft:	m_cdAudioInputVolume[ 0 ] = static_cast<int16_t>( value );	break;
-		case SpuControlRegister::CdVolumeRight:	m_cdAudioInputVolume[ 1 ] = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::CdVolumeRight:
+			GeneratePendingSamples();
+			m_cdAudioInputVolume[ 1 ] = static_cast<int16_t>( value );
+			break;
 
-		case SpuControlRegister::ExternVolumeLeft:	m_externalAudioInputVolume[ 0 ] = static_cast<int16_t>( value );	break;
-		case SpuControlRegister::ExternVolumeRight:	m_externalAudioInputVolume[ 1 ] = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::ExternVolumeLeft:
+			GeneratePendingSamples();
+			m_externalAudioInputVolume[ 0 ] = static_cast<int16_t>( value );
+			break;
 
-		case SpuControlRegister::CurrentMainVolumeLeft:		m_currentMainVolume[ 0 ] = static_cast<int16_t>( value );	break;
-		case SpuControlRegister::CurrentMainVolumeRight:	m_currentMainVolume[ 1 ] = static_cast<int16_t>( value );	break;
+		case SpuControlRegister::ExternVolumeRight:
+			GeneratePendingSamples();
+			m_externalAudioInputVolume[ 1 ] = static_cast<int16_t>( value );
+			break;
 
 		default:
 		{
-			if ( Within( offset, 0, VoiceRegisterCount ) )
+			if ( Within( offset, 0, VoiceCount * VoiceRegisterCount ) )
 			{
 				// voices
 
-				const uint32_t voiceIndex = offset / 8;
-				const uint32_t voiceRegister = offset % 8;
-
-				// TODO
+				WriteVoiceRegister( offset, value );
 			}
 			else if ( Within( offset, ReverbRegisterOffset, ReverbRegisterCount ) )
 			{
 				// reverb
 
+				GeneratePendingSamples();
 				m_reverb.registers[ offset - ReverbRegisterOffset ] = value;
-			}
-			else if ( Within( offset, VolumeRegisterOffset, VolumeRegisterCount ) )
-			{
-				// volumes
-
-				const uint32_t volumeIndex = ( offset - VolumeRegisterOffset ) / 2;
-				const uint32_t volumeRegister = ( offset - VolumeRegisterOffset ) % 2;
-
-				// TODO
 			}
 			else
 			{
 				dbLogWarning( "Spu::Write -- unknown register [%X -> %u]", value, offset );
 			}
+			break;
+		}
+	}
+}
+
+uint16_t Spu::ReadVoiceRegister( uint32_t offset ) noexcept
+{
+	const uint32_t voiceIndex = offset / 8;
+	const uint32_t registerIndex = offset % 8;
+
+	const auto& voice = m_voices[ voiceIndex ];
+
+	// update if reading volume and voice is on or pending key on
+	if ( ( static_cast<VoiceRegister>( registerIndex ) == VoiceRegister::CurrentADSRVolume ) &&
+		( voice.IsOn() || ( m_voiceFlags.keyOn & ( 1 << voiceIndex ) ) ) )
+	{
+		GeneratePendingSamples();
+	}
+
+	return voice.registers.values[ registerIndex ];
+}
+
+void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
+{
+	const uint32_t voiceIndex = offset / 8;
+	const uint32_t registerIndex = offset % 8;
+
+	auto& voice = m_voices[ voiceIndex ];
+
+	// update if voice is on or pending on
+	if ( voice.IsOn() || ( m_voiceFlags.keyOn & ( 1 << voiceIndex ) ) )
+		GeneratePendingSamples();
+
+	switch ( static_cast<VoiceRegister>( registerIndex ) )
+	{
+		case VoiceRegister::VolumeLeft:
+			voice.registers.volumeLeft.value = value;
+			voice.volumeLeft.Reset( voice.registers.volumeLeft );
+			break;
+
+		case VoiceRegister::VolumeRight:
+			voice.registers.volumeRight.value = value;
+			voice.volumeRight.Reset( voice.registers.volumeRight );
+			break;
+
+		case VoiceRegister::ADPCMSampleRate:
+			voice.registers.adpcmSampleRate = value;
+			break;
+
+		case VoiceRegister::ADPCMStartAddress:
+			voice.registers.adpcmStartAddress = value;
+			break;
+
+		case VoiceRegister::ADSRLow:
+		{
+			voice.registers.adsr.valueLow = value;
+			if ( voice.IsOn() )
+				voice.UpdateADSREnvelope();
+
+			break;
+		}
+
+		case VoiceRegister::ADSRHigh:
+		{
+			voice.registers.adsr.valueHigh = value;
+			if ( voice.IsOn() )
+				voice.UpdateADSREnvelope();
+
+			break;
+		}
+
+		case VoiceRegister::CurrentADSRVolume:
+			voice.registers.currentADSRVolume = value;
+			break;
+
+		case VoiceRegister::ADPCMRepeatAddress:
+		{
+			// There is a short window of time here between the voice being keyed on and the first block finishing decoding
+			// where setting the repeat address will *NOT* ignore the block/loop start flag. Games sensitive to this are:
+			//  - The Misadventures of Tron Bonne
+			//  - Re-Loaded - The Hardcore Sequel
+			//  - Valkyrie Profile
+
+			const bool ignoreLoopAddress = voice.IsOn() && !voice.firstBlock;
+			voice.registers.adpcmRepeatAddress = value;
+			voice.ignoreLoopAddress |= ignoreLoopAddress;
 			break;
 		}
 	}
@@ -423,10 +571,32 @@ void Spu::DmaRead( uint32_t* dataOut, uint32_t count ) noexcept
 
 void Spu::SetSpuControl( uint16_t value ) noexcept
 {
+	GeneratePendingSamples();
+
+	Control newControl{ value };
+
+	// duckstation finishes partial transfer and clears fifo here
+	if ( newControl.soundRamTransferMode != m_control.soundRamTransferMode &&
+		newControl.GetTransfermode() == TransferMode::Stop )
+	{
+		m_transferBuffer.Clear();
+	}
+
+	if ( !newControl.enable && m_control.enable )
+	{
+		for ( auto& voice : m_voices )
+			voice.ForceOff();
+	}
+
 	m_control.value = value;
 
 	// SPUSTAT bits 0-5 are the same as SPUCNT, but applied with a delay (delay not required)
 	m_status.value = value & Status::ControlMask;
+
+	if ( !newControl.irqEnable )
+		m_status.irq = false;
+	else
+		TryTriggerInterrupt();
 
 	UpdateDmaRequest();
 	ScheduleTransferEvent();
@@ -511,7 +681,7 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 		{
 			m_transferBuffer.Push( m_ram.Read<uint16_t>( m_transferAddress ) );
 			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
-			TryTriggerInterrupt( m_transferAddress );
+			TryTriggerInterrupt();
 		}
 	}
 	else
@@ -522,7 +692,7 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 		{
 			m_ram.Write( m_transferAddress, m_transferBuffer.Pop() );
 			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
-			TryTriggerInterrupt( m_transferAddress );
+			TryTriggerInterrupt();
 		}
 	}
 
@@ -531,4 +701,4 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 	ScheduleTransferEvent();
 }
 
-}
+} // namespace PSX

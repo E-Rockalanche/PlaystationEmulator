@@ -27,6 +27,18 @@ public:
 	void DmaRead( uint32_t* dataOut, uint32_t count ) noexcept;
 
 private:
+	static constexpr uint32_t VoiceCount = 24;
+	static constexpr uint32_t VoiceRegisterCount = 8;
+	static constexpr uint32_t ControlRegisterCount = 32;
+	static constexpr uint32_t ReverbRegisterCount = 32;
+	static constexpr uint32_t VoiceVolumeRegisterCount = 2;
+	static constexpr uint32_t SpuFifoSize = 32;
+	static constexpr uint32_t SpuRamSize = 0x80000;
+	static constexpr uint32_t SpuRamAddressMask = SpuRamSize - 1;
+	static constexpr uint32_t SampleRate = 44100;
+	static constexpr uint32_t SamplesPerADPCMBlock = 28;
+	static constexpr uint32_t OldSamplesForInterpolation = 3;
+	static constexpr cycles_t TransferCyclesPerHalfword = 16;
 
 	enum class TransferMode
 	{
@@ -38,6 +50,30 @@ private:
 
 	union ADPCMHeader
 	{
+		uint8_t GetShift() const noexcept
+		{
+			const uint8_t s = shift;
+			return ( s < 13 ) ? s : 9;
+		}
+
+		uint8_t GetFilter() const noexcept
+		{
+			const uint8_t f = filter;
+			return ( f <= 4 ) ? f : 4;
+		}
+
+		struct
+		{
+			uint8_t shift : 4;
+			uint8_t filter : 3;
+			uint8_t : 1;
+		};
+		uint8_t value = 0;
+	};
+	static_assert( sizeof( ADPCMHeader ) == 1 );
+
+	union ADPCMFlags
+	{
 		struct
 		{
 			uint8_t loopEnd : 1;
@@ -47,7 +83,15 @@ private:
 		};
 		uint8_t value = 0;
 	};
-	static_assert( sizeof( ADPCMHeader ) == 1 );
+	static_assert( sizeof( ADPCMFlags ) == 1 );
+
+	struct ADPCMBlock
+	{
+		ADPCMHeader header;
+		ADPCMFlags flags;
+		std::array<uint8_t, SamplesPerADPCMBlock / 2> data;
+	};
+	static_assert( sizeof( ADPCMBlock ) == 16 );
 
 	union VoiceADSR
 	{
@@ -98,7 +142,7 @@ private:
 
 	union VoiceRegisters
 	{
-		VoiceRegisters() : registers{} {}
+		VoiceRegisters() : values{} {}
 
 		struct
 		{
@@ -110,9 +154,9 @@ private:
 			uint16_t currentADSRVolume;
 			uint16_t adpcmRepeatAddress; // x8
 		};
-		std::array<uint16_t, 8> registers;
+		std::array<uint16_t, VoiceRegisterCount> values;
 	};
-	static_assert( sizeof( VoiceRegisters ) == 16 );
+	static_assert( sizeof( VoiceRegisters ) == VoiceRegisterCount * 2 );
 
 	struct VoiceFlags
 	{
@@ -123,10 +167,12 @@ private:
 		uint32_t reverbEnable = 0;
 		uint32_t status = 0;
 	};
-	static_assert( sizeof( VoiceFlags ) == 24 );
 
 	union Control
 	{
+		Control() noexcept = default;
+		Control( uint16_t v ) noexcept : value{ v } {}
+
 		struct
 		{
 			uint16_t cdAudioEnable : 1;
@@ -232,17 +278,87 @@ private:
 			int16_t inputVolumeLeft;
 			int16_t inputVolumeRight;
 		};
-		std::array<uint16_t, 32> registers{};
+		std::array<uint16_t, ReverbRegisterCount> registers{};
 	};
-	static_assert( sizeof( ReverbRegisters ) == 64 );
+	static_assert( sizeof( ReverbRegisters ) == ReverbRegisterCount * 2 );
 
-	static constexpr uint32_t VoiceCount = 24;
-	static constexpr uint32_t SpuFifoSize = 32;
-	static constexpr uint32_t SpuRamSize = 0x80000;
-	static constexpr uint32_t SpuRamAddressMask = SpuRamSize - 1;
-	static constexpr cycles_t TransferCyclesPerHalfword = 16;
+	union VoiceCounter
+	{
+		struct
+		{
+			uint32_t : 4;
+			uint32_t interpolationIndex : 8;
+			uint32_t sampleIndex : 5;
+			uint32_t : 5;
+		};
+		uint32_t value = 0;
+	};
+	static_assert( sizeof( VoiceCounter ) == 4 );
+
+	struct VolumeEnvelope
+	{
+		int32_t counter = 0;
+		uint8_t rate = 0;
+		bool decreasing = false;
+		bool exponential = false;
+	};
+
+	struct VolumeSweep
+	{
+		VolumeEnvelope envelope;
+		bool envelopeActive = false;
+		int16_t currentLevel = 0;
+
+		void Reset( Volume ) noexcept {} // TODO
+	};
+
+	enum class ADSRPhase : uint8_t
+	{
+		Off,
+		Attack,
+		Delay,
+		Sustain,
+		Release
+	};
+
+	static constexpr ADSRPhase GetNextPhase( ADSRPhase phase ) noexcept
+	{
+		constexpr std::array<ADSRPhase, 5> NextPhase{ ADSRPhase::Off, ADSRPhase::Delay, ADSRPhase::Sustain, ADSRPhase::Sustain, ADSRPhase::Off };
+		return NextPhase[ static_cast<size_t>( phase ) ];
+	}
+
+	struct Voice
+	{
+		VoiceRegisters registers;
+
+		int16_t currentAddress = 0;
+		VoiceCounter counter;
+		ADPCMFlags currentBlockFlags;
+		bool firstBlock = false;
+		std::array<int16_t, SamplesPerADPCMBlock + OldSamplesForInterpolation> currentBlockSamples{};
+		std::array<int16_t, 2> adpcmLastSamples{};
+		int32_t lastVolume = 0;
+
+		VolumeSweep volumeLeft;
+		VolumeSweep volumeRight;
+
+		VolumeEnvelope adsrEnvelope;
+		ADSRPhase adsrPhase;
+		int16_t adsrTarget = 0;
+		bool hasSamples = false;
+		bool ignoreLoopAddress = false;
+
+		bool IsOn() const noexcept { return adsrPhase != ADSRPhase::Off; }
+
+		void ForceOff() noexcept {} // TODO
+
+		void UpdateADSREnvelope() noexcept {} // TODO
+	};
 
 private:
+	uint16_t ReadVoiceRegister( uint32_t offset ) noexcept;
+	void WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept;
+
 	void SetSpuControl( uint16_t value ) noexcept;
 
 	void UpdateDmaRequest() noexcept;
@@ -257,21 +373,23 @@ private:
 	bool CanTriggerInterrupt() const noexcept { return m_control.irqEnable && !m_status.irq; }
 	bool CheckIrqAddress( uint32_t address ) const noexcept { return static_cast<uint32_t>( m_irqAddress * 8 ) == address; }
 
-	void TryTriggerInterrupt( uint32_t address )
+	void TryTriggerInterrupt()
 	{
-		if ( CheckIrqAddress( address ) && CanTriggerInterrupt() )
+		if ( CheckIrqAddress( m_transferAddress ) && CanTriggerInterrupt() )
 			TriggerInterrupt();
 	}
 
-	void GeneratePendingSamples();
+	void GeneratePendingSamples() {} // TODO
+	void GenerateSamples( cycles_t ) {} // TODO
 
 private:
 	InterruptControl& m_interruptControl;
 	Dma* m_dma = nullptr;
 
+	EventHandle m_generateSoundEvent;
 	EventHandle m_transferEvent;
 
-	std::array<VoiceRegisters, VoiceCount> m_voiceRegisters;
+	std::array<Voice, VoiceCount> m_voices;
 
 	std::array<Volume, 2> m_mainVolume;
 	std::array<Volume, 2> m_reverbOutVolume;
