@@ -1,5 +1,3 @@
-#include "AudioQueue.h"
-
 #include <PlaystationCore/Playstation.h>
 #include <PlaystationCore/Controller.h>
 #include <PlaystationCore/EventManager.h>
@@ -191,15 +189,6 @@ int main( int argc, char** argv )
 
 	playstationCore->Reset();
 
-	auto audioQueue = std::make_unique<AudioQueue>();
-	if ( !audioQueue->Initialize( 44100, AUDIO_S16, 2, 1024 ) )
-		return 1;
-
-	playstationCore->GetCDRomDrive().SetPushSamplesFunc( [&audioQueue]( const int16_t* samples, size_t count )
-		{
-			audioQueue->PushSamples( samples, count );
-		} );
-
 	bool quit = false;
 	bool paused = false;
 	bool stepFrame = false;
@@ -264,16 +253,6 @@ int main( int argc, char** argv )
 							SDL_SetWindowFullscreen( window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0 );
 							break;
 						}
-
-						case SDLK_AUDIOPLAY:
-						case SDLK_F7:
-							audioQueue->SetPaused( false );
-							break;
-
-						case SDLK_AUDIOSTOP:
-						case SDLK_F8:
-							audioQueue->SetPaused( true );
-							break;
 					}
 
 					auto it = keyboardButtonMap.find( key );
@@ -413,8 +392,6 @@ int main( int argc, char** argv )
 
 	if ( memCard2 && memCard2->Written() )
 		memCard2->Save();
-
-	audioQueue.reset();
 
 	playstationCore.reset();
 

@@ -16,17 +16,10 @@ namespace PSX
 class CDRomDrive
 {
 public:
-	using PushSamplesFunc = std::function<void( const int16_t*, size_t )>;
-
 	CDRomDrive( InterruptControl& interruptControl, EventManager& eventManager );
 	~CDRomDrive();
 
 	void SetDma( Dma& dma ) { m_dma = &dma; }
-
-	void SetPushSamplesFunc( PushSamplesFunc pushSamplesFunc )
-	{
-		m_pushSamplesFunc = std::move( pushSamplesFunc );
-	}
 
 	void Reset();
 
@@ -404,8 +397,6 @@ private:
 	uint8_t m_resampleP = 0;
 
 	FifoBuffer<uint32_t, AudioFifoSize> m_audioBuffer;
-
-	PushSamplesFunc m_pushSamplesFunc;
 };
 
 }

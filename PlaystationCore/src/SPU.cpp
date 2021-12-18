@@ -1,7 +1,9 @@
 #include "Spu.h"
 
-#include "EventManager.h"
+#include "AudioQueue.h"
+#include "CDRomDrive.h"
 #include "DMA.h"
+#include "EventManager.h"
 #include "InterruptControl.h"
 
 #include <stdx/bit.h>
@@ -79,7 +81,22 @@ constexpr bool Within( uint32_t offset, uint32_t base, uint32_t size ) noexcept
 	return ( base <= offset && offset < ( base + size ) );
 }
 
-std::array<int16_t, 0x200> GaussTable
+ constexpr int32_t ApplyVolume( int32_t sample, int16_t volume ) noexcept
+{
+	return static_cast<int32_t>( ( sample * volume ) >> 15 );
+}
+
+constexpr int16_t SaturateSample( int32_t sample ) noexcept
+{
+	constexpr int32_t Min = std::numeric_limits<int16_t>::min();
+	constexpr int32_t Max = std::numeric_limits<int16_t>::max();
+	return static_cast<int16_t>( ( sample < Min ) ? Min : ( sample > Max ) ? Max : sample );
+}
+
+constexpr std::array<int32_t, 5> AdpcmPosTable = { { 0, 60, 115, 98, 122 } };
+constexpr std::array<int32_t, 5> AdpcmNegTable = { { 0, 0, -52, -55, -60 } };
+
+constexpr std::array<int16_t, 0x200> GaussTable
 {
 	-0x001, -0x001, -0x001, -0x001, -0x001, -0x001, -0x001, -0x001,
 	-0x001, -0x001, -0x001, -0x001, -0x001, -0x001, -0x001, -0x001,
@@ -147,19 +164,266 @@ std::array<int16_t, 0x200> GaussTable
 	0x5997, 0x599E, 0x59A4, 0x59A9, 0x59AD, 0x59B0, 0x59B2, 0x59B3,
 };
 
+// ADSR table code from Duckstation
+struct ADSRTableEntry
+{
+	int32_t ticks;
+	int32_t step;
+};
+static constexpr uint32_t ADSRTableEntryCount = 128;
+static constexpr uint32_t ADSRDirectionCount = 2;
+
+using ADSRTableEntries = std::array<std::array<ADSRTableEntry, ADSRTableEntryCount>, ADSRDirectionCount>;
+
+static constexpr ADSRTableEntries ComputeADSRTableEntries()
+{
+	ADSRTableEntries entries = {};
+	for ( uint32_t direction = 0; direction < ADSRDirectionCount; direction++ )
+	{
+		for ( uint32_t rate = 0; rate < ADSRTableEntryCount; rate++ )
+		{
+			if ( rate < 48 )
+			{
+				entries[ direction ][ rate ].ticks = 1;
+				if ( direction != 0 )
+					entries[ direction ][ rate ].step =
+					static_cast<int32_t>( static_cast<uint32_t>( -8 + static_cast<int32_t>( rate & 3 ) ) << ( 11 - ( rate >> 2 ) ) );
+				else
+					entries[ direction ][ rate ].step = ( 7 - static_cast<int32_t>( rate & 3 ) ) << ( 11 - ( rate >> 2 ) );
+			}
+			else
+			{
+				entries[ direction ][ rate ].ticks = 1 << ( static_cast<int32_t>( rate >> 2 ) - 11 );
+				if ( direction != 0 )
+					entries[ direction ][ rate ].step = ( -8 + static_cast<int32_t>( rate & 3 ) );
+				else
+					entries[ direction ][ rate ].step = ( 7 - static_cast<int32_t>( rate & 3 ) );
+			}
+		}
+	}
+
+	return entries;
+}
+
+constexpr ADSRTableEntries ADSRTable = ComputeADSRTableEntries();
+
 } // namespace
 
-Spu::Spu( InterruptControl& interruptControl, EventManager& eventManager )
-	: m_interruptControl{ interruptControl }
+void Spu::VolumeEnvelope::Reset( uint8_t rate_, bool decreasing_, bool exponential_ ) noexcept
+{
+	rate = rate_;
+	decreasing = decreasing_;
+	exponential = exponential_;
+	counter = ADSRTable[ decreasing_ ][ rate_ ].ticks;
+}
+
+int16_t Spu::VolumeEnvelope::Tick( int16_t currentLevel ) noexcept
+{
+	counter--;
+	if ( counter > 0 )
+		return currentLevel;
+
+	const auto& entry = ADSRTable[ decreasing ][ rate ];
+	int32_t curStep = entry.step;
+	counter = entry.ticks;
+
+	if ( exponential )
+	{
+		if ( decreasing )
+		{
+			curStep = ( curStep * currentLevel ) >> 5;
+		}
+		else
+		{
+			if ( currentLevel >= 0x6000 )
+			{
+				if ( rate < 40 )
+				{
+					curStep >>= 2;
+				}
+				else if ( rate >= 44 )
+				{
+					counter >>= 2;
+				}
+				else
+				{
+					curStep >>= 1;
+					counter >>= 1;
+				}
+			}
+		}
+	}
+
+	return static_cast<int16_t>( std::clamp<int32_t>( currentLevel + curStep, EnvelopeMinVolume, EnvelopeMaxVolume ) );
+}
+
+void Spu::VolumeSweep::Reset( VolumeRegister reg ) noexcept
+{
+	if ( reg.sweepVolume )
+	{
+		envelope.Reset( reg.sweepRate, reg.sweepDirection, reg.sweepMode );
+		envelopeActive = true;
+	}
+	else
+	{
+		currentLevel = reg.fixedVolume * 2;
+		envelopeActive = false;
+	}
+}
+
+void Spu::VolumeSweep::Tick() noexcept
+{
+	if ( envelopeActive )
+	{
+		currentLevel = envelope.Tick( currentLevel );
+		envelopeActive = envelope.decreasing ? ( currentLevel > EnvelopeMinVolume ) : ( currentLevel < EnvelopeMaxVolume );
+	}
+}
+
+void Spu::Voice::KeyOn() noexcept
+{
+	currentAddress = registers.adpcmStartAddress & ~1;
+	counter.value = 0;
+	registers.currentADSRVolume = 0;
+	adpcmLastSamples.fill( 0 );
+
+	// duckstation clears previous block samples to fix audio clicks in Breath of Fire 3
+	std::fill_n( currentBlockSamples.data() + SamplesPerADPCMBlock, OldSamplesForInterpolation, int16_t{ 0 } );
+
+	hasSamples = false;
+	firstBlock = true;
+	ignoreLoopAddress = false;
+	adsrPhase = ADSRPhase::Attack;
+
+	UpdateADSREnvelope();
+}
+
+void Spu::Voice::KeyOff() noexcept
+{
+	switch ( adsrPhase )
+	{
+		case ADSRPhase::Off:
+		case ADSRPhase::Release:
+			break;
+
+		default:
+			adsrPhase = ADSRPhase::Release;
+			UpdateADSREnvelope();
+			break;
+	}
+}
+
+void Spu::Voice::ForceOff() noexcept
+{
+	adsrPhase = ADSRPhase::Off;
+	registers.currentADSRVolume = 0;
+}
+
+void Spu::Voice::UpdateADSREnvelope() noexcept
+{
+	switch ( adsrPhase )
+	{
+		case ADSRPhase::Off:
+			adsrTarget = 0;
+			adsrEnvelope.Reset( 0, false, false );
+			break;
+
+		case ADSRPhase::Attack:
+			adsrTarget = EnvelopeMaxVolume;
+			adsrEnvelope.Reset( registers.adsr.attackRate, false, registers.adsr.attackMode ); // always increasing
+			break;
+
+		case ADSRPhase::Decay:
+			adsrTarget = static_cast<int16_t>( std::min<int32_t>( ( registers.adsr.sustainLevel + 1 ) * 0x800, EnvelopeMaxVolume ) );
+			adsrEnvelope.Reset( static_cast<uint8_t>( registers.adsr.decayShift << 2 ), true, true ); // always decreasing, always exponential
+			break;
+
+		case ADSRPhase::Sustain:
+			adsrTarget = 0;
+			adsrEnvelope.Reset( registers.adsr.sustainRate, registers.adsr.sustainDirection, registers.adsr.sustainMode );
+			break;
+
+		case ADSRPhase::Release:
+			adsrTarget = 0;
+			adsrEnvelope.Reset( static_cast<uint8_t>( registers.adsr.releaseShift << 2 ), true, registers.adsr.releaseMode ); // always decreasing
+			break;
+	}
+}
+
+void Spu::Voice::TickADSR() noexcept
+{
+	registers.currentADSRVolume = adsrEnvelope.Tick( registers.currentADSRVolume );
+
+	if ( adsrPhase != ADSRPhase::Sustain )
+	{
+		const bool hitTarget = adsrEnvelope.decreasing ? ( registers.currentADSRVolume <= adsrTarget ) : ( registers.currentADSRVolume >= adsrTarget );
+		if ( hitTarget )
+		{
+			adsrPhase = GetNextADSRPhase( adsrPhase );
+			UpdateADSREnvelope();
+		}
+	}
+}
+
+void Spu::Voice::DecodeBlock( const ADPCMBlock& block ) noexcept
+{
+	// shift latest 3 samples to beginning for interpolation
+	for ( size_t i = 0; i < 3; ++i )
+		currentBlockSamples[ i ] = currentBlockSamples[ currentBlockSamples.size() - 3 + i ];
+
+	const uint8_t shift = block.header.GetShift();
+	const uint8_t filterIndex = block.header.GetFilter();
+	const int32_t filterPos = AdpcmPosTable[ filterIndex ];
+	const int32_t filterNeg = AdpcmNegTable[ filterIndex ];
+
+	std::array<int16_t, 2> lastSamples = adpcmLastSamples;
+
+	for ( uint32_t i = 0; i < SamplesPerADPCMBlock; ++i )
+	{
+		const uint8_t byte = block.data[ i / 2 ];
+		const uint8_t nibble = ( byte >> ( ( i % 2 ) ? 0 : 4 ) ) & 0xf;
+
+		const int16_t sample = SaturateSample( static_cast<int32_t>( static_cast<int16_t>( nibble << 12 ) >> shift ) +
+			( ( lastSamples[ 0 ] * filterPos ) >> 6 ) +
+			( ( lastSamples[ 1 ] * filterNeg ) >> 6 ) );
+
+		lastSamples[ 1 ] = lastSamples[ 0 ];
+		lastSamples[ 0 ] = sample;
+		currentBlockSamples[ OldSamplesForInterpolation + i ] = sample;
+	}
+
+	adpcmLastSamples = lastSamples;
+	currentBlockFlags.value = block.flags.value;
+	hasSamples = true;
+}
+
+int32_t Spu::Voice::Interpolate() const noexcept
+{
+	const uint8_t i = counter.interpolationIndex;
+	const int32_t s = counter.sampleIndex + OldSamplesForInterpolation;
+
+	const int32_t output = static_cast<int32_t>( GaussTable[ 0x0ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 3 ] ) +
+		static_cast<int32_t>( GaussTable[ 0x1ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 2 ] ) +
+		static_cast<int32_t>( GaussTable[ 0x100 + i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 1 ] ) +
+		static_cast<int32_t>( GaussTable[ 0x000 + i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 0 ] );
+
+	return output >> 15;
+}
+
+Spu::Spu( CDRomDrive& cdromDrive, InterruptControl& interruptControl, EventManager& eventManager, AudioQueue& audioQueue )
+	: m_cdromDrive{ cdromDrive }
+	, m_interruptControl{ interruptControl }
+	, m_audioQueue{ audioQueue }
 {
 	m_transferEvent = eventManager.CreateEvent( "SPU Transfer Event", [this]( cycles_t cycles ) { UpdateTransferEvent( cycles ); } );
 
-	m_generateSoundEvent = eventManager.CreateEvent( "SPU Generate Sound Event", [this]( cycles_t cycles ) { GenerateSamples( cycles ); } );
+	m_generateSamplesEvent = eventManager.CreateEvent( "SPU Generate Sound Event", [this]( cycles_t cycles ) { GenerateSamples( cycles ); } );
 }
 
 void Spu::Reset()
 {
 	m_transferEvent->Cancel();
+	m_generateSamplesEvent->Cancel();
 
 	m_voices = {};
 
@@ -183,26 +447,26 @@ void Spu::Reset()
 
 	m_reverb.registers.fill( 0 );
 
-	m_voiceVolumes = {};
-
-	m_unknownRegisters.fill( 0 );
-
 	m_transferBuffer.Reset();
 
 	m_transferAddress = 0;
 
+	m_pendingCarryCycles = 0;
+
 	m_ram.Fill( 0 );
+
+	ScheduleGenerateSamplesEvent();
 }
 
 uint16_t Spu::Read( uint32_t offset ) noexcept
 {
 	switch ( static_cast<SpuControlRegister>( offset ) )
 	{
-		case SpuControlRegister::MainVolumeLeft:	return m_mainVolume[ 0 ].value;
-		case SpuControlRegister::MainVolumeRight:	return m_mainVolume[ 1 ].value;
+		case SpuControlRegister::MainVolumeLeft:	return m_mainVolumeRegisters[ 0 ].value;
+		case SpuControlRegister::MainVolumeRight:	return m_mainVolumeRegisters[ 1 ].value;
 
-		case SpuControlRegister::ReverbOutVolumeLeft:	return m_reverbOutVolume[ 0 ].value;
-		case SpuControlRegister::ReverbOutVolumeRight:	return m_reverbOutVolume[ 1 ].value;
+		case SpuControlRegister::ReverbOutVolumeLeft:	return m_reverbOutVolumeRegisters[ 0 ].value;
+		case SpuControlRegister::ReverbOutVolumeRight:	return m_reverbOutVolumeRegisters[ 1 ].value;
 
 		case SpuControlRegister::VoiceKeyOnLow:		return static_cast<uint16_t>( m_voiceFlags.keyOn );
 		case SpuControlRegister::VoiceKeyOnHigh:	return static_cast<uint16_t>( m_voiceFlags.keyOn >> 16 );
@@ -219,8 +483,8 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 		case SpuControlRegister::VoiceReverbLow:	return static_cast<uint16_t>( m_voiceFlags.reverbEnable );
 		case SpuControlRegister::VoiceReverbHigh:	return static_cast<uint16_t>( m_voiceFlags.reverbEnable >> 16 );
 
-		case SpuControlRegister::VoiceStatusLow:	return static_cast<uint16_t>( m_voiceFlags.status );
-		case SpuControlRegister::VoiceStatusHigh:	return static_cast<uint16_t>( m_voiceFlags.status >> 16 );
+		case SpuControlRegister::VoiceStatusLow:	return static_cast<uint16_t>( m_voiceFlags.endx );
+		case SpuControlRegister::VoiceStatusHigh:	return static_cast<uint16_t>( m_voiceFlags.endx >> 16 );
 
 		case SpuControlRegister::ReverbWorkAreaStartAddress:	return m_reverbWorkAreaStartAddress;
 		case SpuControlRegister::IrqAddress:					return m_irqAddress;
@@ -272,7 +536,7 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 				GeneratePendingSamples();
 				const uint32_t volumeIndex = ( offset - VolumeRegisterOffset ) / 2;
 				const uint32_t volumeRegister = ( offset - VolumeRegisterOffset ) % 2;
-				return m_voiceVolumes[ volumeIndex ][ volumeRegister ].value;
+				return m_voices[ volumeIndex ].volume[ volumeRegister ].currentLevel;
 			}
 			else
 			{
@@ -292,22 +556,24 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 	{
 		case SpuControlRegister::MainVolumeLeft:
 			GeneratePendingSamples();
-			m_mainVolume[ 0 ].value = static_cast<int16_t>( value );
+			m_mainVolumeRegisters[ 0 ].value = static_cast<int16_t>( value );
+			m_mainVolume[ 0 ].Reset( m_mainVolumeRegisters[ 0 ] );
 			break;
 
 		case SpuControlRegister::MainVolumeRight:
 			GeneratePendingSamples();
-			m_mainVolume[ 1 ].value = static_cast<int16_t>( value );
+			m_mainVolumeRegisters[ 1 ].value = static_cast<int16_t>( value );
+			m_mainVolume[ 1 ].Reset( m_mainVolumeRegisters[ 1 ] );
 			break;
 
 		case SpuControlRegister::ReverbOutVolumeLeft:
 			GeneratePendingSamples();
-			m_reverbOutVolume[ 0 ].value = static_cast<int16_t>( value );
+			m_reverbOutVolumeRegisters[ 0 ].value = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::ReverbOutVolumeRight:
 			GeneratePendingSamples();
-			m_reverbOutVolume[ 1 ].value = static_cast<int16_t>( value );
+			m_reverbOutVolumeRegisters[ 1 ].value = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::VoiceKeyOnLow:
@@ -368,7 +634,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 		case SpuControlRegister::IrqAddress:
 			GeneratePendingSamples();
 			m_irqAddress = value;
-			TryTriggerInterrupt();
+			CheckForLateInterrupt();
 			break;
 
 		case SpuControlRegister::DataTransferAddress:
@@ -376,6 +642,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			// Used for manual write and DMA read/write Spu memory. Writing to this registers stores the written value in 1F801DA6h,
 			// and does additional store the value (multiplied by 8) in another internal "current address" register
 			// (that internal register does increment during transfers, whilst the 1F801DA6h value DOESN'T increment).
+			m_transferEvent->UpdateEarly();
 			m_transferAddressRegister = value;
 			m_transferAddress = ( value * 8 ) & SpuRamAddressMask;
 			TryTriggerInterrupt();
@@ -481,12 +748,12 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 	{
 		case VoiceRegister::VolumeLeft:
 			voice.registers.volumeLeft.value = value;
-			voice.volumeLeft.Reset( voice.registers.volumeLeft );
+			voice.volume[ 0 ].Reset( voice.registers.volumeLeft );
 			break;
 
 		case VoiceRegister::VolumeRight:
 			voice.registers.volumeRight.value = value;
-			voice.volumeRight.Reset( voice.registers.volumeRight );
+			voice.volume[ 1 ].Reset( voice.registers.volumeRight );
 			break;
 
 		case VoiceRegister::ADPCMSampleRate:
@@ -575,10 +842,11 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 
 	Control newControl{ value };
 
-	// duckstation finishes partial transfer and clears fifo here
 	if ( newControl.soundRamTransferMode != m_control.soundRamTransferMode &&
 		newControl.GetTransfermode() == TransferMode::Stop )
 	{
+		// duckstation only finishes DMA writes
+		m_transferEvent->UpdateEarly();
 		m_transferBuffer.Clear();
 	}
 
@@ -596,7 +864,7 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 	if ( !newControl.irqEnable )
 		m_status.irq = false;
 	else
-		TryTriggerInterrupt();
+		CheckForLateInterrupt();
 
 	UpdateDmaRequest();
 	ScheduleTransferEvent();
@@ -607,6 +875,33 @@ inline void Spu::TriggerInterrupt() noexcept
 	dbExpects( CanTriggerInterrupt() );
 	m_status.irq = true;
 	m_interruptControl.SetInterrupt( Interrupt::Spu );
+}
+
+void Spu::CheckForLateInterrupt() noexcept
+{
+	if ( CanTriggerInterrupt() )
+	{
+		if ( CheckIrqAddress( m_transferAddress ) )
+		{
+			TriggerInterrupt();
+			return;
+		}
+
+		for ( uint32_t i = 0; i < VoiceCount; ++i )
+		{
+			const auto& voice = m_voices[ i ];
+			if ( voice.hasSamples )
+			{
+				const uint32_t address = voice.currentAddress * 8;
+				if ( CheckIrqAddress( address ) || CheckIrqAddress( ( address + 8 ) & SpuRamAddressMask ) )
+				{
+					TriggerInterrupt();
+					return;
+				}
+			}
+		}
+	}
+
 }
 
 void Spu::UpdateDmaRequest() noexcept
@@ -630,7 +925,7 @@ void Spu::UpdateDmaRequest() noexcept
 			break;
 
 		case TransferMode::DMARead:
-			request = !m_transferBuffer.Empty();
+			request = m_transferBuffer.Full();
 			m_status.dmaReadRequest = request;
 			m_status.dmaRequest = request;
 			m_status.dmaWriteRequest = false;
@@ -671,27 +966,23 @@ void Spu::ScheduleTransferEvent() noexcept
 
 void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 {
-	dbExpects( m_control.GetTransfermode() != TransferMode::Stop );
-
 	if ( m_control.GetTransfermode() == TransferMode::DMARead )
 	{
-		dbAssert( static_cast<cycles_t>( m_transferBuffer.Capacity() * TransferCyclesPerHalfword ) == cycles );
-
-		while ( !m_transferBuffer.Full() )
+		while ( !m_transferBuffer.Full() && cycles > 0 )
 		{
 			m_transferBuffer.Push( m_ram.Read<uint16_t>( m_transferAddress ) );
 			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
+			cycles -= TransferCyclesPerHalfword;
 			TryTriggerInterrupt();
 		}
 	}
 	else
 	{
-		dbAssert( static_cast<cycles_t>( m_transferBuffer.Size() * TransferCyclesPerHalfword ) == cycles );
-
-		while ( !m_transferBuffer.Empty() )
+		while ( !m_transferBuffer.Empty() && cycles > 0 )
 		{
 			m_ram.Write( m_transferAddress, m_transferBuffer.Pop() );
 			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
+			cycles -= TransferCyclesPerHalfword;
 			TryTriggerInterrupt();
 		}
 	}
@@ -699,6 +990,274 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 	// wait for a DMA before transfering more data
 	UpdateDmaRequest();
 	ScheduleTransferEvent();
+}
+
+void Spu::ScheduleGenerateSamplesEvent() noexcept
+{
+	const uint32_t queueCapacity = m_audioQueue.Capacity() / 2; // two samples per frame
+	const uint32_t frames = ( m_control.enable && m_control.irqEnable ) ? 1 : queueCapacity;
+	const cycles_t cycles = frames * CyclesPerAudioFrame - m_pendingCarryCycles;
+	m_generateSamplesEvent->Schedule( cycles );
+}
+
+void Spu::GeneratePendingSamples() noexcept
+{
+	m_transferEvent->UpdateEarly();
+
+	const cycles_t pendingCycles = m_generateSamplesEvent->GetPendingCycles();
+	const uint32_t pendingFrames = ( pendingCycles + m_pendingCarryCycles ) / CyclesPerAudioFrame;
+	if ( pendingFrames > 0 )
+		m_generateSamplesEvent->UpdateEarly();
+}
+
+void Spu::GenerateSamples( cycles_t cycles ) noexcept
+{
+	uint32_t remainingFrames = ( cycles + m_pendingCarryCycles ) / CyclesPerAudioFrame;
+	m_pendingCarryCycles = ( cycles + m_pendingCarryCycles ) % CyclesPerAudioFrame;
+
+	while ( remainingFrames > 0 )
+	{
+		auto writer = m_audioQueue.GetBatchWriter();
+		const size_t batchFrames = std::min( remainingFrames, writer.GetBatchSize() / 2 );
+		remainingFrames -= batchFrames;
+
+		for ( uint32_t i = 0; i < batchFrames; ++i )
+		{
+			int32_t leftSum = 0;
+			int32_t rightSum = 0;
+
+			int32_t reverbInLeft = 0;
+			int32_t reverbInRight = 0;
+
+			for ( uint32_t voiceIndex = 0; voiceIndex < VoiceCount; ++voiceIndex )
+			{
+				const auto [left, right] = SampleVoice( voiceIndex );
+				leftSum += left;
+				rightSum += right;
+
+				if ( m_voiceFlags.reverbEnable & ( 1 << voiceIndex ) )
+				{
+					reverbInLeft += left;
+					reverbInRight += right;
+				}
+			}
+
+			if ( !m_control.unmute )
+			{
+				leftSum = 0;
+				rightSum = 0;
+			}
+
+			UpdateNoise();
+
+			// mix in CD audio
+			const auto [cdSampleLeft, cdSampleRight] = m_cdromDrive.GetAudioFrame();
+			if ( m_control.cdAudioEnable )
+			{
+				const int32_t cdVolumeLeft = ApplyVolume( cdSampleLeft, m_cdAudioInputVolume[ 0 ] );
+				const int32_t cdVolumeRight = ApplyVolume( cdSampleRight, m_cdAudioInputVolume[ 1 ] );
+
+				leftSum += cdVolumeLeft;
+				rightSum += cdVolumeRight;
+
+				if ( m_control.cdAudioReverb )
+				{
+					reverbInLeft += cdVolumeLeft;
+					reverbInRight += cdVolumeRight;
+				}
+			}
+
+			// process and mix in reverb
+			const auto [reverbOutLeft, reverbOutRight] = ProcessReverb( reverbInLeft, reverbInRight );
+			leftSum += reverbOutLeft;
+			rightSum += reverbOutRight;
+
+			const int16_t outputLeft = static_cast<int16_t>( ApplyVolume( SaturateSample( leftSum ), m_mainVolume[ 0 ].currentLevel ) );
+			const int16_t outputRight = static_cast<int16_t>( ApplyVolume( SaturateSample( rightSum ), m_mainVolume[ 1 ].currentLevel ) );
+
+			writer.PushSample( outputLeft );
+			writer.PushSample( outputRight );
+
+			WriteToCaptureBuffer( 0, cdSampleLeft );
+			WriteToCaptureBuffer( 1, cdSampleRight );
+			WriteToCaptureBuffer( 2, SaturateSample( m_voices[ 1 ].lastVolume ) );
+			WriteToCaptureBuffer( 3, SaturateSample( m_voices[ 3 ].lastVolume ) );
+			m_captureBufferPosition = ( m_captureBufferPosition + 2 ) % CaptureBufferSize;
+			m_status.writingToCaptureBufferHalf = ( m_captureBufferPosition >= CaptureBufferSize / 2 );
+
+			// duckstation keys voices AFTER the first processed frame
+			if ( i == 0 && ( m_voiceFlags.keyOn != 0 || m_voiceFlags.keyOff != 0 ) )
+				KeyVoices();
+		}
+	}
+
+	ScheduleGenerateSamplesEvent();
+}
+
+void Spu::KeyVoices() noexcept
+{
+	const uint32_t keyOn = std::exchange( m_voiceFlags.keyOn, 0 );
+	const uint32_t keyOff = std::exchange( m_voiceFlags.keyOff, 0 );
+
+	for ( uint32_t i = 0; i < VoiceCount; ++i )
+	{
+		const uint32_t voiceFlag = 1u << i;
+
+		if ( keyOff & voiceFlag )
+			m_voices[ i ].KeyOff();
+
+		if ( keyOn & voiceFlag )
+		{
+			m_voiceFlags.endx &= ~voiceFlag; // key on clears endx flag
+			m_voices[ i ].KeyOn();
+		}
+	}
+}
+
+std::pair<int32_t, int32_t> Spu::SampleVoice( uint32_t voiceIndex ) noexcept
+{
+	auto& voice = m_voices[ voiceIndex ];
+
+	if ( !voice.IsOn() && !m_control.irqEnable )
+	{
+		voice.lastVolume = 0;
+		return { 0, 0 };
+	}
+
+	if ( !voice.hasSamples )
+	{
+		const ADPCMBlock block = ReadADPCMBlock( voice.currentAddress );
+		voice.DecodeBlock( block );
+
+		if ( voice.currentBlockFlags.loopStart && !voice.ignoreLoopAddress )
+			voice.registers.adpcmRepeatAddress = voice.currentAddress;
+	}
+
+	const uint32_t voiceFlag = 1u << voiceIndex;
+
+	int32_t volume = 0;
+	if ( voice.registers.currentADSRVolume != 0 )
+	{
+		const int32_t sample = ( m_voiceFlags.noiseModeEnable & voiceFlag ) ? GetCurrentNoiseLevel() : voice.Interpolate();
+		volume = ApplyVolume( sample, voice.registers.currentADSRVolume );
+	}
+
+	voice.lastVolume = volume;
+
+	if ( voice.adsrPhase != ADSRPhase::Off )
+		voice.TickADSR();
+
+	// pitch modulation
+	uint16_t step = voice.registers.adpcmSampleRate;
+	if ( ( voiceIndex > 0 ) && ( m_voiceFlags.pitchModulationEnable & voiceFlag ) )
+	{
+		const int32_t factor = std::clamp<int32_t>( m_voices[ voiceIndex - 1 ].lastVolume, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max() ) + 0x8000;
+		step = static_cast<uint16_t>( static_cast<uint32_t>( step * factor ) >> 15 );
+	}
+	step = std::min<uint16_t>( step, 0x3fff );
+
+	dbAssert( voice.counter.sampleIndex < SamplesPerADPCMBlock );
+	voice.counter.value += step;
+
+	if ( voice.counter.sampleIndex >= SamplesPerADPCMBlock )
+	{
+		// next block
+		voice.counter.sampleIndex -= SamplesPerADPCMBlock;
+		voice.hasSamples = false;
+		voice.firstBlock = false;
+		voice.currentAddress += 2;
+
+		if ( voice.currentBlockFlags.loopEnd )
+		{
+			m_voiceFlags.endx |= voiceFlag;
+			voice.currentAddress = voice.registers.adpcmRepeatAddress & ~1u;
+
+			if ( !voice.currentBlockFlags.loopRepeat )
+				voice.ForceOff();
+		}
+	}
+
+	const int32_t left = ApplyVolume( volume, voice.volume[ 0 ].currentLevel );
+	const int32_t right = ApplyVolume( volume, voice.volume[ 1 ].currentLevel );
+	voice.volume[ 0 ].Tick();
+	voice.volume[ 1 ].Tick();
+
+	return { left, right };
+}
+
+Spu::ADPCMBlock Spu::ReadADPCMBlock( uint16_t address ) noexcept
+{
+	ADPCMBlock block;
+
+	uint32_t curAddress = ( address * 8 ) & SpuRamAddressMask;
+
+	if ( CanTriggerInterrupt() && ( CheckIrqAddress( curAddress ) || CheckIrqAddress( ( curAddress + 8 ) & SpuRamAddressMask ) ) )
+		TriggerInterrupt();
+
+	if ( curAddress + sizeof( ADPCMBlock ) <= SpuRamSize )
+	{
+		// no wrapping, simply copy
+
+		std::memcpy( &block, m_ram.Data() + curAddress, sizeof( ADPCMBlock ) );
+	}
+	else
+	{
+		// wrapping
+
+		block.header.value = m_ram[ curAddress ];
+		curAddress = ( curAddress + 1 ) & SpuRamAddressMask;
+
+		block.flags.value = m_ram[ curAddress ];
+		curAddress = ( curAddress + 1 ) & SpuRamAddressMask;
+
+		for ( uint32_t i = 0; i < block.data.size(); ++i )
+		{
+			block.data[ i ] = m_ram[ curAddress ];
+			curAddress = ( curAddress + 1 ) & SpuRamAddressMask;
+		}
+	}
+
+	return block;
+}
+
+void Spu::UpdateNoise() noexcept
+{
+	// Dr Hell's noise waveform, implementation borrowed from Duckstation
+
+	static constexpr std::array<uint8_t, 64> NoiseWaveAdd
+	{
+		1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0,
+		0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1
+	};
+
+	static constexpr std::array<uint8_t, 5> NoiseFrequencyAdd = { 0, 84, 140, 180, 210 };
+
+	const uint32_t noiseClock = m_control.noiseFrequencyRate;
+	const uint32_t level = ( 0x8000u >> ( noiseClock >> 2 ) ) << 16;
+
+	m_noiseCount += 0x10000u + NoiseFrequencyAdd[ noiseClock & 3u ];
+
+	if ( ( m_noiseCount & 0xffffu ) >= NoiseFrequencyAdd[ 4 ] )
+	{
+		m_noiseCount += 0x10000;
+		m_noiseCount -= NoiseFrequencyAdd[ noiseClock & 3u ];
+	}
+
+	if ( m_noiseCount < level )
+		return;
+
+	m_noiseCount %= level;
+	m_noiseLevel = ( m_noiseLevel << 1 ) | NoiseWaveAdd[ ( m_noiseLevel >> 10 ) & 63u ];
+}
+
+void Spu::WriteToCaptureBuffer( uint32_t index, int16_t sample ) noexcept
+{
+	const uint32_t address = ( index * CaptureBufferSize ) | m_captureBufferPosition;
+
+	m_ram.Write<uint16_t>( address, sample );
+
+	if ( CheckIrqAddress( address ) && CanTriggerInterrupt() )
+		TriggerInterrupt();
 }
 
 } // namespace PSX

@@ -31,7 +31,7 @@ union BlockHeader
 };
 static_assert( sizeof( BlockHeader ) == 1 );
 
-// XA_ADPCM only supports 4 filters
+// same as SPU tables but XA_ADPCM only supports 4 filters
 constexpr std::array<int32_t, 4> AdpcmPosTable{ 0, 60, 115, 98 };
 constexpr std::array<int32_t, 4> AdpcmNegTable{ 0, 0, -52, -55 };
 

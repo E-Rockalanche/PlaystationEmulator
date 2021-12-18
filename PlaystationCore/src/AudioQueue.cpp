@@ -1,5 +1,8 @@
 #include "AudioQueue.h"
 
+namespace PSX
+{
+
 void AudioQueue::Destroy()
 {
 	if ( m_deviceId != 0 )
@@ -43,8 +46,8 @@ bool AudioQueue::Initialize( int frequency, SDL_AudioFormat format, uint8_t chan
 	m_deviceId = deviceId;
 	m_settings = obtained;
 
-	m_queueReservedSize = frequency * channels;
-	m_queue = std::make_unique<int16_t[]>( m_queueReservedSize );
+	m_bufferSize = frequency * channels;
+	m_queue = std::make_unique<int16_t[]>( m_bufferSize );
 
 	SDL_PauseAudioDevice( m_deviceId, m_paused );
 
@@ -66,19 +69,19 @@ inline void AudioQueue::FillSamples( DestType* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
 
-	// if ( m_queueSize < count )
-	//	dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
+	if ( m_size < count )
+		dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
 
-	const size_t available = std::min( m_queueSize, count );
-	const size_t seg1Size = std::min( available, m_queueReservedSize - m_queueFirst );
+	const size_t available = std::min( m_size, count );
+	const size_t seg1Size = std::min( available, m_bufferSize - m_first );
 	const size_t seg2Size = available - seg1Size;
 
-	std::copy_n( m_queue.get() + m_queueFirst, seg1Size, samples );
+	std::copy_n( m_queue.get() + m_first, seg1Size, samples );
 	std::copy_n( m_queue.get(), seg2Size, samples + seg1Size );
 	std::fill_n( samples + available, count - available, DestType( 0 ) );
 
-	m_queueSize -= available;
-	m_queueFirst = ( m_queueFirst + available ) % m_queueReservedSize;
+	m_size -= available;
+	m_first = ( m_first + available ) % m_bufferSize;
 }
 
 void AudioQueue::StaticFillAudioDeviceBuffer( void* userData, uint8_t* buffer, int length )
@@ -105,40 +108,42 @@ void AudioQueue::PushSamples( const int16_t* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
 
-	const size_t capacity = m_queueReservedSize - m_queueSize;
+	const size_t capacity = m_bufferSize - m_size;
 	if ( capacity < count )
 	{
 		const size_t dropCount = count - capacity;
 		dbLogWarning( "AudioQueue::PushSamples -- Exceeding queue capacity. Dropping %u samples", (uint32_t)dropCount );
 
-		m_queueSize -= dropCount;
-		m_queueFirst = ( m_queueFirst + dropCount ) % m_queueReservedSize;
+		m_size -= dropCount;
+		m_first = ( m_first + dropCount ) % m_bufferSize;
 	}
 
-	const size_t seg1Count = std::min( count, m_queueReservedSize - m_queueLast );
+	const size_t seg1Count = std::min( count, m_bufferSize - m_last );
 	const size_t seg2Count = count - seg1Count;
 
-	std::copy_n( samples, seg1Count, m_queue.get() + m_queueLast );
+	std::copy_n( samples, seg1Count, m_queue.get() + m_last );
 	std::copy_n( samples + seg1Count, seg2Count, m_queue.get() );
 
-	m_queueSize += count;
-	m_queueLast = ( m_queueLast + count ) % m_queueReservedSize;
+	m_size += count;
+	m_last = ( m_last + count ) % m_bufferSize;
 }
 
 void AudioQueue::IgnoreSamples( size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
 
-	count = std::min( count, m_queueSize );
-	m_queueSize -= count;
-	m_queueFirst = ( m_queueFirst + count ) % m_queueReservedSize;
+	count = std::min( count, m_size );
+	m_size -= count;
+	m_first = ( m_first + count ) % m_bufferSize;
 }
 
 void AudioQueue::Clear()
 {
 	std::unique_lock lock{ m_queueMutex };
 
-	m_queueSize = 0;
-	m_queueFirst = 0;
-	m_queueLast = 0;
+	m_size = 0;
+	m_first = 0;
+	m_last = 0;
+}
+
 }

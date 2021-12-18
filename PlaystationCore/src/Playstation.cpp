@@ -1,5 +1,6 @@
 #include "Playstation.h"
 
+#include "AudioQueue.h"
 #include "BIOS.h"
 #include "CDRom.h"
 #include "CDRomDrive.h"
@@ -33,6 +34,13 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 		return false;
 	}
 
+	m_audioQueue = std::make_unique<AudioQueue>();
+	if ( !m_audioQueue->Initialize( 44100, AUDIO_S16, 2, 128 ) )
+	{
+		LogError( "Failed to initialize audio queue" );
+		return false;
+	}
+
 	m_bios = std::make_unique<Bios>();
 	if ( !LoadBios( biosFilename, *m_bios ) )
 	{
@@ -47,13 +55,13 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 	m_eventManager = std::make_unique<EventManager>();
 	m_mdec = std::make_unique<MacroblockDecoder>( *m_eventManager );
 
-	m_spu = std::make_unique<Spu>( *m_interruptControl, *m_eventManager );
-
 	m_timers = std::make_unique<Timers>( *m_interruptControl, *m_eventManager );
 
 	m_gpu = std::make_unique<Gpu>( *m_interruptControl, *m_renderer, *m_eventManager );
 
 	m_cdromDrive = std::make_unique<CDRomDrive>( *m_interruptControl, *m_eventManager );
+
+	m_spu = std::make_unique<Spu>( *m_cdromDrive, *m_interruptControl, *m_eventManager, *m_audioQueue );
 
 	m_dma = std::make_unique<Dma>( *m_ram, *m_gpu, *m_cdromDrive, *m_mdec, *m_spu, *m_interruptControl, *m_eventManager );
 

@@ -13,7 +13,7 @@ namespace PSX
 class Spu
 {
 public:
-	Spu( InterruptControl& interruptControl, EventManager& eventManager );
+	Spu( CDRomDrive& cdromDrive, InterruptControl& interruptControl, EventManager& eventManager, AudioQueue& audioQueue );
 
 	void Reset();
 
@@ -38,7 +38,15 @@ private:
 	static constexpr uint32_t SampleRate = 44100;
 	static constexpr uint32_t SamplesPerADPCMBlock = 28;
 	static constexpr uint32_t OldSamplesForInterpolation = 3;
+	static constexpr uint32_t CaptureBufferSize = 0x400;
+
 	static constexpr cycles_t TransferCyclesPerHalfword = 16;
+	static constexpr cycles_t CyclesPerAudioFrame = CpuCyclesPerSecond / SampleRate;
+
+	static constexpr int16_t EnvelopeMinVolume = 0;
+	static constexpr int16_t EnvelopeMaxVolume = std::numeric_limits<int16_t>::max();
+
+	static_assert( CyclesPerAudioFrame* SampleRate == CpuCyclesPerSecond );
 
 	enum class TransferMode
 	{
@@ -98,15 +106,22 @@ private:
 		struct
 		{
 			uint16_t sustainLevel : 4;
+
+			// decayStep always -8
 			uint16_t decayShift : 4;
-			uint16_t attackStep : 2;
-			uint16_t attackShift : 5;
+			// decayDirection always decreasing
+			// decayMode always exponential
+
+			uint16_t attackRate : 7; // step and shift
+			// attackDirection always increasing
 			uint16_t attackMode : 1;
 
+			// releaseStep always -8
 			uint16_t releaseShift : 5;
+			// releaseDirection always decreasing
 			uint16_t releaseMode : 1;
-			uint16_t sustainStep : 2;
-			uint16_t sustainShift : 5;
+
+			uint16_t sustainRate : 7; // step and shift
 			uint16_t sustainDirection : 1;
 			uint16_t sustainMode : 1;
 		};
@@ -119,7 +134,7 @@ private:
 	};
 	static_assert( sizeof( VoiceADSR ) == 4 );
 
-	union Volume
+	union VolumeRegister
 	{
 		struct
 		{
@@ -128,8 +143,7 @@ private:
 		};
 		struct
 		{
-			uint16_t sweepStep : 2;
-			uint16_t sweepShift : 5;
+			uint16_t sweepRate : 7; // step and shift
 			uint16_t : 5;
 			uint16_t sweepPhase : 1;
 			uint16_t sweepDirection : 1;
@@ -138,7 +152,7 @@ private:
 		};
 		uint16_t value = 0;
 	};
-	static_assert( sizeof( Volume ) == 2 );
+	static_assert( sizeof( VolumeRegister ) == 2 );
 
 	union VoiceRegisters
 	{
@@ -146,8 +160,8 @@ private:
 
 		struct
 		{
-			Volume volumeLeft;
-			Volume volumeRight;
+			VolumeRegister volumeLeft;
+			VolumeRegister volumeRight;
 			uint16_t adpcmSampleRate; // (VxPitch)
 			uint16_t adpcmStartAddress; // x8
 			VoiceADSR adsr;
@@ -160,12 +174,12 @@ private:
 
 	struct VoiceFlags
 	{
-		uint32_t keyOn = 0;
-		uint32_t keyOff = 0;
+		uint32_t keyOn = 0;					// 0=No change, 1=Start Attack/Decay/Sustain
+		uint32_t keyOff = 0;				// 0=No change, 1=Start Release
 		uint32_t pitchModulationEnable = 0;
 		uint32_t noiseModeEnable = 0;
 		uint32_t reverbEnable = 0;
-		uint32_t status = 0;
+		uint32_t endx = 0;					// 0=Newly Keyed On, 1=Reached LOOP-END
 	};
 
 	union Control
@@ -183,9 +197,8 @@ private:
 			uint16_t irqEnable : 1;
 			uint16_t reverbMasterEnable : 1;
 
-			uint16_t noiseFrequencyStep : 2;
-			uint16_t noiseFrequencyShift : 4;
-			uint16_t mute : 1;
+			uint16_t noiseFrequencyRate : 6; // step and shift
+			uint16_t unmute : 1;
 			uint16_t enable : 1;
 		};
 		uint16_t value = 0;
@@ -289,7 +302,7 @@ private:
 			uint32_t : 4;
 			uint32_t interpolationIndex : 8;
 			uint32_t sampleIndex : 5;
-			uint32_t : 5;
+			uint32_t : 15;
 		};
 		uint32_t value = 0;
 	};
@@ -301,6 +314,9 @@ private:
 		uint8_t rate = 0;
 		bool decreasing = false;
 		bool exponential = false;
+
+		void Reset( uint8_t rate_, bool decreasing_, bool exponential_ ) noexcept;
+		int16_t Tick( int16_t currentLevel ) noexcept;
 	};
 
 	struct VolumeSweep
@@ -309,21 +325,29 @@ private:
 		bool envelopeActive = false;
 		int16_t currentLevel = 0;
 
-		void Reset( Volume ) noexcept {} // TODO
+		void Reset( VolumeRegister reg ) noexcept;
+		void Tick() noexcept;
 	};
 
 	enum class ADSRPhase : uint8_t
 	{
 		Off,
 		Attack,
-		Delay,
+		Decay,
 		Sustain,
 		Release
 	};
 
-	static constexpr ADSRPhase GetNextPhase( ADSRPhase phase ) noexcept
+	static constexpr ADSRPhase GetNextADSRPhase( ADSRPhase phase ) noexcept
 	{
-		constexpr std::array<ADSRPhase, 5> NextPhase{ ADSRPhase::Off, ADSRPhase::Delay, ADSRPhase::Sustain, ADSRPhase::Sustain, ADSRPhase::Off };
+		constexpr std::array<ADSRPhase, 5> NextPhase
+		{
+			ADSRPhase::Off,		// off     -> off
+			ADSRPhase::Decay,	// attack  -> decay
+			ADSRPhase::Sustain,	// decay   -> sustain
+			ADSRPhase::Sustain,	// sustain -> sustain (until key off)
+			ADSRPhase::Off		// release -> off
+		};
 		return NextPhase[ static_cast<size_t>( phase ) ];
 	}
 
@@ -339,8 +363,7 @@ private:
 		std::array<int16_t, 2> adpcmLastSamples{};
 		int32_t lastVolume = 0;
 
-		VolumeSweep volumeLeft;
-		VolumeSweep volumeRight;
+		std::array<VolumeSweep, 2> volume;
 
 		VolumeEnvelope adsrEnvelope;
 		ADSRPhase adsrPhase;
@@ -350,9 +373,16 @@ private:
 
 		bool IsOn() const noexcept { return adsrPhase != ADSRPhase::Off; }
 
-		void ForceOff() noexcept {} // TODO
+		void KeyOn() noexcept;
+		void KeyOff() noexcept;
+		void ForceOff() noexcept;
 
-		void UpdateADSREnvelope() noexcept {} // TODO
+		void DecodeBlock( const ADPCMBlock& block ) noexcept;
+		int32_t Interpolate() const noexcept;
+
+		void UpdateADSREnvelope() noexcept;
+
+		void TickADSR() noexcept;
 	};
 
 private:
@@ -379,20 +409,47 @@ private:
 			TriggerInterrupt();
 	}
 
-	void GeneratePendingSamples() {} // TODO
-	void GenerateSamples( cycles_t ) {} // TODO
+	void CheckForLateInterrupt() noexcept;
+
+	void ScheduleGenerateSamplesEvent() noexcept;
+	void GeneratePendingSamples() noexcept;
+	void GenerateSamples( cycles_t cycles ) noexcept;
+
+	std::pair<int32_t, int32_t> SampleVoice( uint32_t voiceIndex ) noexcept;
+
+	ADPCMBlock ReadADPCMBlock( uint16_t address ) noexcept;
+
+	void UpdateNoise() noexcept;
+
+	std::pair<int32_t, int32_t> ProcessReverb( int32_t inLeft, int32_t inRight ) noexcept
+	{
+		// STUB
+		(void)inLeft, inRight;
+		return { 0, 0 };
+	}
+
+	void WriteToCaptureBuffer( uint32_t index, int16_t sample ) noexcept;
+
+	void KeyVoices() noexcept;
+
+	int16_t GetCurrentNoiseLevel() const noexcept { return static_cast<int16_t>( m_noiseLevel ); }
 
 private:
+	CDRomDrive& m_cdromDrive;
 	InterruptControl& m_interruptControl;
+	AudioQueue& m_audioQueue;
 	Dma* m_dma = nullptr;
 
-	EventHandle m_generateSoundEvent;
+	EventHandle m_generateSamplesEvent;
 	EventHandle m_transferEvent;
 
 	std::array<Voice, VoiceCount> m_voices;
 
-	std::array<Volume, 2> m_mainVolume;
-	std::array<Volume, 2> m_reverbOutVolume;
+	std::array<VolumeRegister, 2> m_mainVolumeRegisters;
+	std::array<VolumeRegister, 2> m_reverbOutVolumeRegisters;
+
+	std::array<VolumeSweep, 2> m_mainVolume;
+	std::array<int16_t, 2> m_reverbOutVolume;
 
 	VoiceFlags m_voiceFlags;
 
@@ -410,14 +467,16 @@ private:
 	std::array<int16_t, 2> m_currentMainVolume;
 
 	ReverbRegisters m_reverb;
-
-	std::array<std::array<Volume, 2>, VoiceCount> m_voiceVolumes;
-
-	std::array<uint16_t, 0x20> m_unknownRegisters{}; // read/write
 	
 	FifoBuffer<uint16_t, SpuFifoSize> m_transferBuffer;
 
 	uint16_t m_transferAddress = 0;
+	uint32_t m_captureBufferPosition = 0;
+
+	uint32_t m_noiseCount = 0;
+	uint32_t m_noiseLevel = 0;
+
+	cycles_t m_pendingCarryCycles = 0;
 
 	Memory<SpuRamSize> m_ram;
 };

@@ -65,6 +65,8 @@ private:
 	std::unique_ptr<Scratchpad> m_scratchpad;
 	std::unique_ptr<Spu> m_spu;
 	std::unique_ptr<Timers> m_timers;
+
+	std::unique_ptr<AudioQueue> m_audioQueue;
 };
 
 }
