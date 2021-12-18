@@ -382,8 +382,7 @@ void Spu::Voice::DecodeBlock( const ADPCMBlock& block ) noexcept
 
 	for ( uint32_t i = 0; i < SamplesPerADPCMBlock; ++i )
 	{
-		const uint8_t byte = block.data[ i / 2 ];
-		const uint8_t nibble = ( byte >> ( ( i % 2 ) ? 0 : 4 ) ) & 0xf;
+		const uint16_t nibble = ( block.data[ i / 2 ] >> ( ( i % 2 ) * 4 ) ) & 0xf;
 
 		int32_t rawSample = static_cast<int32_t>( static_cast<int16_t>( nibble << 12 ) >> shift );
 		rawSample += ( lastSamples[ 0 ] * filterPos ) >> 6;
@@ -404,7 +403,7 @@ void Spu::Voice::DecodeBlock( const ADPCMBlock& block ) noexcept
 int32_t Spu::Voice::Interpolate() const noexcept
 {
 	const uint8_t i = counter.interpolationIndex;
-	const int32_t s = counter.sampleIndex + OldSamplesForInterpolation;
+	const uint32_t s = counter.sampleIndex + OldSamplesForInterpolation;
 
 	int32_t output = static_cast<int32_t>( GaussTable[ 0x0ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 3 ] );
 	output += static_cast<int32_t>( GaussTable[ 0x1ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 2 ] );
@@ -431,7 +430,9 @@ void Spu::Reset()
 
 	m_voices = {};
 
+	m_mainVolumeRegisters = {};
 	m_mainVolume = {};
+
 	m_reverbOutVolume = {};
 
 	m_voiceFlags = {};
@@ -441,7 +442,9 @@ void Spu::Reset()
 	m_reverbCurrentAddress = 0;
 
 	m_irqAddress = 0;
+
 	m_transferAddressRegister = 0;
+	m_transferAddress = 0;
 
 	m_control.value = 0;
 	m_dataTransferControl.value = 0;
@@ -455,7 +458,10 @@ void Spu::Reset()
 
 	m_transferBuffer.Reset();
 
-	m_transferAddress = 0;
+	m_captureBufferPosition = 0;
+
+	m_noiseCount = 0;
+	m_noiseLevel = 1;
 
 	m_pendingCarryCycles = 0;
 
@@ -1173,7 +1179,7 @@ std::pair<int32_t, int32_t> Spu::SampleVoice( uint32_t voiceIndex ) noexcept
 	if ( ( voiceIndex > 0 ) && ( m_voiceFlags.pitchModulationEnable & voiceFlag ) )
 	{
 		const int32_t factor = std::clamp<int32_t>( m_voices[ voiceIndex - 1 ].lastVolume, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max() ) + 0x8000;
-		step = static_cast<uint16_t>( static_cast<uint32_t>( step * factor ) >> 15 );
+		step = static_cast<uint16_t>( static_cast<uint32_t>( static_cast<int16_t>( step ) * factor ) >> 15 );
 	}
 	step = std::min<uint16_t>( step, 0x3fff );
 

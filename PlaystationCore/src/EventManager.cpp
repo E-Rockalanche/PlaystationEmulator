@@ -16,9 +16,6 @@ void Event::UpdateEarly()
 		return;
 
 	const cycles_t updateCycles = m_pendingCycles + m_manager.GetPendingCycles();
-
-	dbAssert( updateCycles < m_cyclesUntilEvent ); // event should not be ready if it is updating early
-
 	if ( updateCycles > 0 )
 	{
 		m_manager.UpdateEvent( this, updateCycles );
