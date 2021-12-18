@@ -15,9 +15,11 @@ void Event::UpdateEarly()
 	if ( !m_active )
 		return;
 
-	const cycles_t updateCycles = m_pendingCycles + m_manager.GetPendingCycles();
-	if ( updateCycles > 0 )
+	cycles_t pendingCycles = m_pendingCycles + m_manager.GetPendingCycles();
+	while( pendingCycles > 0 )
 	{
+		const cycles_t updateCycles = std::min( pendingCycles, m_cyclesUntilEvent );
+		pendingCycles -= updateCycles;
 		m_manager.UpdateEvent( this, updateCycles );
 		m_manager.ScheduleNextEvent();
 	}

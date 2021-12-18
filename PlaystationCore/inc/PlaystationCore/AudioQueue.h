@@ -18,22 +18,8 @@ public:
 	class BatchWriter
 	{
 	public:
-		BatchWriter( AudioQueue& queue ) : m_queue{ queue }, m_lock{ queue.m_queueMutex }
-		{
-			m_start = m_pos = m_queue.m_queue.get() + m_queue.m_last;
-			m_batchSize = std::min( m_queue.m_bufferSize - m_queue.m_last, m_queue.m_bufferSize - m_queue.m_size );
-		}
-
-		~BatchWriter()
-		{
-			const size_t count = GetCount();
-			dbAssert( count <= m_batchSize );
-
-			m_queue.m_last = ( m_queue.m_last + count ) % m_queue.m_bufferSize;
-			m_queue.m_size += count;
-
-			// release lock
-		}
+		BatchWriter( AudioQueue& queue );
+		~BatchWriter();
 
 		size_t GetBatchSize() const { return m_batchSize; }
 
@@ -96,7 +82,7 @@ private:
 private:
 	SDL_AudioDeviceID m_deviceId = 0;
 	SDL_AudioSpec m_settings = {};
-	bool m_paused = false;
+	bool m_paused = true;
 
 	mutable std::mutex m_queueMutex;
 

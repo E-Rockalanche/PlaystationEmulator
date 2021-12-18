@@ -95,6 +95,9 @@ void Playstation::Reset()
 	m_spu->Reset();
 	m_timers->Reset();
 	m_gpu->Reset(); // must go after timers reset so it can schedule event
+
+	m_audioQueue->Clear();
+	m_audioQueue->SetPaused( false );
 }
 
 void Playstation::SetController( size_t slot, Controller* controller )

@@ -3,6 +3,26 @@
 namespace PSX
 {
 
+AudioQueue::BatchWriter::BatchWriter( AudioQueue& queue ) : m_queue{ queue }, m_lock{ queue.m_queueMutex }
+{
+	m_start = m_pos = m_queue.m_queue.get() + m_queue.m_last;
+	m_batchSize = std::min( m_queue.m_bufferSize - m_queue.m_last, m_queue.m_bufferSize - m_queue.m_size );
+}
+
+AudioQueue::BatchWriter::~BatchWriter()
+{
+	if ( !m_queue.m_paused )
+	{
+		const size_t count = GetCount();
+		dbAssert( count <= m_batchSize );
+
+		m_queue.m_last = ( m_queue.m_last + count ) % m_queue.m_bufferSize;
+		m_queue.m_size += count;
+	}
+
+	// release lock
+}
+
 void AudioQueue::Destroy()
 {
 	if ( m_deviceId != 0 )
@@ -60,8 +80,14 @@ void AudioQueue::SetPaused( bool pause )
 	dbAssert( m_deviceId > 0 );
 	if ( m_paused != pause )
 	{
+		std::unique_lock lock{ m_queueMutex };
+
 		SDL_PauseAudioDevice( m_deviceId, pause );
 		m_paused = pause;
+
+		m_size = 0;
+		m_first = 0;
+		m_last = 0;
 	}
 }
 
@@ -69,6 +95,9 @@ template <typename DestType>
 inline void AudioQueue::FillSamples( DestType* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
+
+	if ( m_paused )
+		return;
 
 	if ( m_size < count )
 		dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
