@@ -35,7 +35,7 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 	}
 
 	m_audioQueue = std::make_unique<AudioQueue>();
-	if ( !m_audioQueue->Initialize( 44100, AUDIO_S16, 2, 128 * 2 ) )
+	if ( !m_audioQueue->Initialize() )
 	{
 		LogError( "Failed to initialize audio queue" );
 		return false;
@@ -115,7 +115,7 @@ void Playstation::RunFrame()
 	while ( !m_gpu->GetDisplayFrame() )
 		m_cpu->RunUntilEvent();
 
-	m_spu->GeneratePendingSamples();
+	m_spu->EndFrame();
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
 }

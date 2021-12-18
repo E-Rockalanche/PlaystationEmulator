@@ -26,7 +26,7 @@ public:
 	void DmaWrite( const uint32_t* dataIn, uint32_t count ) noexcept;
 	void DmaRead( uint32_t* dataOut, uint32_t count ) noexcept;
 
-	void GeneratePendingSamples() noexcept;
+	void EndFrame() noexcept;
 
 private:
 	static constexpr uint32_t VoiceCount = 24;
@@ -414,6 +414,7 @@ private:
 	void CheckForLateInterrupt() noexcept;
 
 	void ScheduleGenerateSamplesEvent() noexcept;
+	void GeneratePendingSamples() noexcept;
 	void GenerateSamples( cycles_t cycles ) noexcept;
 
 	std::pair<int32_t, int32_t> SampleVoice( uint32_t voiceIndex ) noexcept;

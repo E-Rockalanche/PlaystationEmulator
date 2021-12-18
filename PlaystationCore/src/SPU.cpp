@@ -470,6 +470,11 @@ void Spu::Reset()
 	ScheduleGenerateSamplesEvent();
 }
 
+void Spu::EndFrame() noexcept
+{
+	GeneratePendingSamples();
+}
+
 uint16_t Spu::Read( uint32_t offset ) noexcept
 {
 	switch ( static_cast<SpuControlRegister>( offset ) )
@@ -650,6 +655,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			break;
 
 		case SpuControlRegister::IrqAddress:
+			m_transferEvent->UpdateEarly();
 			GeneratePendingSamples();
 			m_irqAddress = value;
 			CheckForLateInterrupt();
@@ -861,12 +867,13 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 
 	Control newControl{ value };
 
-	if ( newControl.soundRamTransferMode != m_control.soundRamTransferMode &&
-		newControl.GetTransfermode() == TransferMode::Stop )
+	if ( newControl.soundRamTransferMode != m_control.soundRamTransferMode )
 	{
-		// duckstation only finishes DMA writes
 		m_transferEvent->UpdateEarly();
-		m_transferBuffer.Clear();
+
+		// duckstation clears the fifo on stop
+		if ( newControl.GetTransfermode() == TransferMode::Stop )
+			m_transferBuffer.Clear();
 	}
 
 	if ( !newControl.enable && m_control.enable )
@@ -879,9 +886,14 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 	m_status.value = value & Status::ControlMask; // SPUSTAT bits 0-5 are the same as SPUCNT, but applied with a delay (delay not required)
 
 	if ( !newControl.irqEnable )
+	{
 		m_status.irq = false;
+	}
 	else
+	{
+		m_transferEvent->UpdateEarly();
 		CheckForLateInterrupt();
+	}
 
 	UpdateDmaRequest();
 	ScheduleTransferEvent();
@@ -899,7 +911,6 @@ void Spu::CheckForLateInterrupt() noexcept
 {
 	if ( !CanTriggerInterrupt() )
 		return;
-
 
 	if ( CheckIrqAddress( m_transferAddress ) )
 	{
@@ -1024,12 +1035,13 @@ void Spu::ScheduleGenerateSamplesEvent() noexcept
 
 void Spu::GeneratePendingSamples() noexcept
 {
-	m_transferEvent->UpdateEarly();
-
 	const cycles_t pendingCycles = m_generateSamplesEvent->GetPendingCycles();
 	const uint32_t pendingFrames = ( pendingCycles + m_pendingCarryCycles ) / CyclesPerAudioFrame;
 	if ( pendingFrames > 0 )
+	{
+		m_transferEvent->UpdateEarly();
 		m_generateSamplesEvent->UpdateEarly();
+	}
 }
 
 void Spu::GenerateSamples( cycles_t cycles ) noexcept

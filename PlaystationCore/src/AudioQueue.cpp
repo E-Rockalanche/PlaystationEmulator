@@ -18,6 +18,8 @@ AudioQueue::BatchWriter::~BatchWriter()
 
 		m_queue.m_last = ( m_queue.m_last + count ) % m_queue.m_bufferSize;
 		m_queue.m_size += count;
+
+		m_queue.CheckFullBuffer();
 	}
 
 	// release lock
@@ -32,7 +34,7 @@ void AudioQueue::Destroy()
 	}
 }
 
-bool AudioQueue::Initialize( int frequency, SDL_AudioFormat format, uint8_t channels, uint16_t bufferSize )
+bool AudioQueue::Initialize( int frequency, uint8_t channels, uint16_t bufferSize )
 {
 	if ( channels != 1 && channels != 2 )
 	{
@@ -42,7 +44,7 @@ bool AudioQueue::Initialize( int frequency, SDL_AudioFormat format, uint8_t chan
 
 	SDL_AudioSpec request;
 	request.freq = frequency;
-	request.format = format;
+	request.format = AUDIO_S16;
 	request.channels = channels;
 	request.samples = bufferSize;
 	request.callback = &StaticFillAudioDeviceBuffer;
@@ -66,11 +68,12 @@ bool AudioQueue::Initialize( int frequency, SDL_AudioFormat format, uint8_t chan
 	m_deviceId = deviceId;
 	m_settings = obtained;
 
-	// create queue big enough for 1 second of audio
-	m_bufferSize = frequency * channels;
+	m_bufferSize = static_cast<size_t>( m_settings.freq * m_settings.channels );
 	m_queue = std::make_unique<int16_t[]>( m_bufferSize );
 
-	SDL_PauseAudioDevice( m_deviceId, m_paused );
+	ClearInternal();
+
+	SDL_PauseAudioDevice( m_deviceId, true );
 
 	return true;
 }
@@ -81,13 +84,8 @@ void AudioQueue::SetPaused( bool pause )
 	if ( m_paused != pause )
 	{
 		std::unique_lock lock{ m_queueMutex };
-
-		SDL_PauseAudioDevice( m_deviceId, pause );
+		ClearInternal();
 		m_paused = pause;
-
-		m_size = 0;
-		m_first = 0;
-		m_last = 0;
 	}
 }
 
@@ -97,7 +95,10 @@ inline void AudioQueue::FillSamples( DestType* samples, size_t count )
 	std::unique_lock lock{ m_queueMutex };
 
 	if ( m_paused )
+	{
+		std::fill_n( samples, count, DestType( 0 ) );
 		return;
+	}
 
 	if ( m_size < count )
 		dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
@@ -156,6 +157,8 @@ void AudioQueue::PushSamples( const int16_t* samples, size_t count )
 
 	m_size += count;
 	m_last = ( m_last + count ) % m_bufferSize;
+
+	CheckFullBuffer();
 }
 
 void AudioQueue::IgnoreSamples( size_t count )
@@ -167,13 +170,24 @@ void AudioQueue::IgnoreSamples( size_t count )
 	m_first = ( m_first + count ) % m_bufferSize;
 }
 
-void AudioQueue::Clear()
+void AudioQueue::ClearInternal()
 {
-	std::unique_lock lock{ m_queueMutex };
-
 	m_size = 0;
 	m_first = 0;
 	m_last = 0;
+	m_waitForFullBuffer = true;
+	SDL_PauseAudioDevice( m_deviceId, true );
+}
+
+void AudioQueue::CheckFullBuffer()
+{
+	if ( m_waitForFullBuffer && m_size >= static_cast<size_t>( m_settings.samples * 2 ) )
+	{
+		m_waitForFullBuffer = false;
+
+		if ( !m_paused )
+			SDL_PauseAudioDevice( m_deviceId, false );
+	}
 }
 
 }

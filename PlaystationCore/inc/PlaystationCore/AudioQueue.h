@@ -40,6 +40,13 @@ public:
 	};
 
 public:
+	using SampleType = int16_t;
+
+	static constexpr int DefaultSampleRate = 44100;
+	static constexpr uint16_t DefaultBufferSize = 2048;
+	static constexpr uint8_t DefaultChannelCount = 2;
+
+public:
 	AudioQueue() = default;
 
 	~AudioQueue()
@@ -49,7 +56,7 @@ public:
 
 	void Destroy();
 
-	bool Initialize( int frequency, SDL_AudioFormat format, uint8_t channels, uint16_t bufferSize );
+	bool Initialize( int frequency = DefaultSampleRate, uint8_t channels = DefaultChannelCount, uint16_t bufferSize = DefaultBufferSize );
 
 	void SetPaused( bool pause );
 	bool GetPaused() const { return m_paused; }
@@ -58,7 +65,11 @@ public:
 
 	void IgnoreSamples( size_t count );
 
-	void Clear();
+	void Clear()
+	{
+		std::unique_lock lock{ m_queueMutex };
+		ClearInternal();
+	}
 
 	BatchWriter GetBatchWriter()
 	{
@@ -71,6 +82,17 @@ public:
 		return m_bufferSize - m_size;
 	}
 
+	size_t Size() const
+	{
+		std::unique_lock lock{ m_queueMutex };
+		return m_size;
+	}
+
+	size_t GetFrameBufferSize() const
+	{
+		return m_settings.samples;
+	}
+
 private:
 	template <typename DestType>
 	void FillSamples( DestType* samples, size_t count );
@@ -79,10 +101,15 @@ private:
 
 	void FillAudioDeviceBuffer( uint8_t* buffer, int length );
 
+	void CheckFullBuffer();
+
+	void ClearInternal();
+
 private:
 	SDL_AudioDeviceID m_deviceId = 0;
 	SDL_AudioSpec m_settings = {};
-	bool m_paused = true;
+	bool m_paused = false;
+	bool m_waitForFullBuffer = true;
 
 	mutable std::mutex m_queueMutex;
 
