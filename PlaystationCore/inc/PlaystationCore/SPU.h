@@ -17,7 +17,7 @@ public:
 
 	void Reset();
 
-	void SetDma( Dma& dma ) { m_dma = &dma; }
+	void SetDma( Dma& dma ) noexcept { m_dma = &dma; }
 
 	uint16_t Read( uint32_t offset ) noexcept;
 
@@ -25,6 +25,8 @@ public:
 
 	void DmaWrite( const uint32_t* dataIn, uint32_t count ) noexcept;
 	void DmaRead( uint32_t* dataOut, uint32_t count ) noexcept;
+
+	void GeneratePendingSamples() noexcept;
 
 private:
 	static constexpr uint32_t VoiceCount = 24;
@@ -403,16 +405,15 @@ private:
 	bool CanTriggerInterrupt() const noexcept { return m_control.irqEnable && !m_status.irq; }
 	bool CheckIrqAddress( uint32_t address ) const noexcept { return static_cast<uint32_t>( m_irqAddress * 8 ) == address; }
 
-	void TryTriggerInterrupt()
+	void TryTriggerInterrupt( uint32_t address )
 	{
-		if ( CheckIrqAddress( m_transferAddress ) && CanTriggerInterrupt() )
+		if ( CheckIrqAddress( address ) && CanTriggerInterrupt() )
 			TriggerInterrupt();
 	}
 
 	void CheckForLateInterrupt() noexcept;
 
 	void ScheduleGenerateSamplesEvent() noexcept;
-	void GeneratePendingSamples() noexcept;
 	void GenerateSamples( cycles_t cycles ) noexcept;
 
 	std::pair<int32_t, int32_t> SampleVoice( uint32_t voiceIndex ) noexcept;
@@ -446,17 +447,20 @@ private:
 	std::array<Voice, VoiceCount> m_voices;
 
 	std::array<VolumeRegister, 2> m_mainVolumeRegisters;
-	std::array<VolumeRegister, 2> m_reverbOutVolumeRegisters;
-
 	std::array<VolumeSweep, 2> m_mainVolume;
+
 	std::array<int16_t, 2> m_reverbOutVolume;
 
 	VoiceFlags m_voiceFlags;
 
-	uint16_t m_reverbWorkAreaStartAddress = 0;
+	uint16_t m_reverbBaseAddressRegister = 0;
+	uint16_t m_reverbBaseAddress = 0;
+	uint16_t m_reverbCurrentAddress = 0;
+
 	uint16_t m_irqAddress = 0;
+
 	uint16_t m_transferAddressRegister = 0;
-	uint16_t m_transferBufferRegister = 0;
+	uint32_t m_transferAddress = 0;
 
 	Control m_control;
 	DataTransferControl m_dataTransferControl;
@@ -470,7 +474,6 @@ private:
 	
 	FifoBuffer<uint16_t, SpuFifoSize> m_transferBuffer;
 
-	uint16_t m_transferAddress = 0;
 	uint32_t m_captureBufferPosition = 0;
 
 	uint32_t m_noiseCount = 0;

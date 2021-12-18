@@ -287,8 +287,9 @@ void Spu::Voice::KeyOn() noexcept
 	registers.currentADSRVolume = 0;
 	adpcmLastSamples.fill( 0 );
 
-	// duckstation clears previous block samples to fix audio clicks in Breath of Fire 3
-	std::fill_n( currentBlockSamples.data() + SamplesPerADPCMBlock, OldSamplesForInterpolation, int16_t{ 0 } );
+	// previous samples should be 0 to prevent audio clicks
+	for ( uint32_t i = 0; i < OldSamplesForInterpolation; ++i )
+		currentBlockSamples[ SamplesPerADPCMBlock + i ] = 0;
 
 	hasSamples = false;
 	firstBlock = true;
@@ -304,6 +305,7 @@ void Spu::Voice::KeyOff() noexcept
 	{
 		case ADSRPhase::Off:
 		case ADSRPhase::Release:
+			// already off or releasing. No change
 			break;
 
 		default:
@@ -368,8 +370,8 @@ void Spu::Voice::TickADSR() noexcept
 void Spu::Voice::DecodeBlock( const ADPCMBlock& block ) noexcept
 {
 	// shift latest 3 samples to beginning for interpolation
-	for ( size_t i = 0; i < 3; ++i )
-		currentBlockSamples[ i ] = currentBlockSamples[ currentBlockSamples.size() - 3 + i ];
+	for ( uint32_t i = 0; i < OldSamplesForInterpolation; ++i )
+		currentBlockSamples[ i ] = currentBlockSamples[ SamplesPerADPCMBlock + i ];
 
 	const uint8_t shift = block.header.GetShift();
 	const uint8_t filterIndex = block.header.GetFilter();
@@ -383,9 +385,11 @@ void Spu::Voice::DecodeBlock( const ADPCMBlock& block ) noexcept
 		const uint8_t byte = block.data[ i / 2 ];
 		const uint8_t nibble = ( byte >> ( ( i % 2 ) ? 0 : 4 ) ) & 0xf;
 
-		const int16_t sample = SaturateSample( static_cast<int32_t>( static_cast<int16_t>( nibble << 12 ) >> shift ) +
-			( ( lastSamples[ 0 ] * filterPos ) >> 6 ) +
-			( ( lastSamples[ 1 ] * filterNeg ) >> 6 ) );
+		int32_t rawSample = static_cast<int32_t>( static_cast<int16_t>( nibble << 12 ) >> shift );
+		rawSample += ( lastSamples[ 0 ] * filterPos ) >> 6;
+		rawSample += ( lastSamples[ 1 ] * filterNeg ) >> 6;
+
+		const int16_t sample = SaturateSample( rawSample );
 
 		lastSamples[ 1 ] = lastSamples[ 0 ];
 		lastSamples[ 0 ] = sample;
@@ -402,10 +406,10 @@ int32_t Spu::Voice::Interpolate() const noexcept
 	const uint8_t i = counter.interpolationIndex;
 	const int32_t s = counter.sampleIndex + OldSamplesForInterpolation;
 
-	const int32_t output = static_cast<int32_t>( GaussTable[ 0x0ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 3 ] ) +
-		static_cast<int32_t>( GaussTable[ 0x1ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 2 ] ) +
-		static_cast<int32_t>( GaussTable[ 0x100 + i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 1 ] ) +
-		static_cast<int32_t>( GaussTable[ 0x000 + i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 0 ] );
+	int32_t output = static_cast<int32_t>( GaussTable[ 0x0ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 3 ] );
+	output += static_cast<int32_t>( GaussTable[ 0x1ff - i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 2 ] );
+	output += static_cast<int32_t>( GaussTable[ 0x100 + i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 1 ] );
+	output += static_cast<int32_t>( GaussTable[ 0x000 + i ] ) * static_cast<int32_t>( currentBlockSamples[ s - 0 ] );
 
 	return output >> 15;
 }
@@ -432,10 +436,12 @@ void Spu::Reset()
 
 	m_voiceFlags = {};
 
-	m_reverbWorkAreaStartAddress = 0;
+	m_reverbBaseAddressRegister = 0;
+	m_reverbBaseAddress = 0;
+	m_reverbCurrentAddress = 0;
+
 	m_irqAddress = 0;
 	m_transferAddressRegister = 0;
-	m_transferBufferRegister = 0;
 
 	m_control.value = 0;
 	m_dataTransferControl.value = 0;
@@ -465,8 +471,8 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 		case SpuControlRegister::MainVolumeLeft:	return m_mainVolumeRegisters[ 0 ].value;
 		case SpuControlRegister::MainVolumeRight:	return m_mainVolumeRegisters[ 1 ].value;
 
-		case SpuControlRegister::ReverbOutVolumeLeft:	return m_reverbOutVolumeRegisters[ 0 ].value;
-		case SpuControlRegister::ReverbOutVolumeRight:	return m_reverbOutVolumeRegisters[ 1 ].value;
+		case SpuControlRegister::ReverbOutVolumeLeft:	return static_cast<uint16_t>( m_reverbOutVolume[ 0 ] );
+		case SpuControlRegister::ReverbOutVolumeRight:	return static_cast<uint16_t>( m_reverbOutVolume[ 1 ] );
 
 		case SpuControlRegister::VoiceKeyOnLow:		return static_cast<uint16_t>( m_voiceFlags.keyOn );
 		case SpuControlRegister::VoiceKeyOnHigh:	return static_cast<uint16_t>( m_voiceFlags.keyOn >> 16 );
@@ -486,7 +492,7 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 		case SpuControlRegister::VoiceStatusLow:	return static_cast<uint16_t>( m_voiceFlags.endx );
 		case SpuControlRegister::VoiceStatusHigh:	return static_cast<uint16_t>( m_voiceFlags.endx >> 16 );
 
-		case SpuControlRegister::ReverbWorkAreaStartAddress:	return m_reverbWorkAreaStartAddress;
+		case SpuControlRegister::ReverbWorkAreaStartAddress:	return m_reverbBaseAddressRegister;
 		case SpuControlRegister::IrqAddress:					return m_irqAddress;
 		case SpuControlRegister::DataTransferAddress:			return m_transferAddressRegister;
 		case SpuControlRegister::DataTransferFifo:				return 0xffff;
@@ -568,12 +574,12 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 
 		case SpuControlRegister::ReverbOutVolumeLeft:
 			GeneratePendingSamples();
-			m_reverbOutVolumeRegisters[ 0 ].value = static_cast<int16_t>( value );
+			m_reverbOutVolume[ 0 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::ReverbOutVolumeRight:
 			GeneratePendingSamples();
-			m_reverbOutVolumeRegisters[ 1 ].value = static_cast<int16_t>( value );
+			m_reverbOutVolume[ 1 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::VoiceKeyOnLow:
@@ -626,9 +632,15 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, HighMask, value << 16 );
 			break;
 
+		case SpuControlRegister::VoiceStatusLow:
+		case SpuControlRegister::VoiceStatusHigh:
+			// read only
+			break;
+
 		case SpuControlRegister::ReverbWorkAreaStartAddress:
 			GeneratePendingSamples();
-			m_reverbWorkAreaStartAddress = value;
+			m_reverbBaseAddressRegister = value;
+			m_reverbCurrentAddress = m_reverbBaseAddress = ( value * 4 ) & 0x3ffff;
 			break;
 
 		case SpuControlRegister::IrqAddress:
@@ -645,7 +657,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			m_transferEvent->UpdateEarly();
 			m_transferAddressRegister = value;
 			m_transferAddress = ( value * 8 ) & SpuRamAddressMask;
-			TryTriggerInterrupt();
+			TryTriggerInterrupt( m_transferAddress );
 			break;
 		}
 
@@ -672,6 +684,10 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			m_dataTransferControl.value = value;
 			break;
 
+		case SpuControlRegister::SpuStatus:
+			// read only
+			break;
+
 		case SpuControlRegister::CdVolumeLeft:
 			GeneratePendingSamples();
 			m_cdAudioInputVolume[ 0 ] = static_cast<int16_t>( value );
@@ -683,12 +699,12 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			break;
 
 		case SpuControlRegister::ExternVolumeLeft:
-			GeneratePendingSamples();
+			// external volume isn't used. Don't need to sync
 			m_externalAudioInputVolume[ 0 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::ExternVolumeRight:
-			GeneratePendingSamples();
+			// external volume isn't used. Don't need to sync
 			m_externalAudioInputVolume[ 1 ] = static_cast<int16_t>( value );
 			break;
 
@@ -696,14 +712,10 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 		{
 			if ( Within( offset, 0, VoiceCount * VoiceRegisterCount ) )
 			{
-				// voices
-
 				WriteVoiceRegister( offset, value );
 			}
 			else if ( Within( offset, ReverbRegisterOffset, ReverbRegisterCount ) )
 			{
-				// reverb
-
 				GeneratePendingSamples();
 				m_reverb.registers[ offset - ReverbRegisterOffset ] = value;
 			}
@@ -795,8 +807,9 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 			//  - Valkyrie Profile
 
 			const bool ignoreLoopAddress = voice.IsOn() && !voice.firstBlock;
-			voice.registers.adpcmRepeatAddress = value;
 			voice.ignoreLoopAddress |= ignoreLoopAddress;
+
+			voice.registers.adpcmRepeatAddress = value;
 			break;
 		}
 	}
@@ -857,9 +870,7 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 	}
 
 	m_control.value = value;
-
-	// SPUSTAT bits 0-5 are the same as SPUCNT, but applied with a delay (delay not required)
-	m_status.value = value & Status::ControlMask;
+	m_status.value = value & Status::ControlMask; // SPUSTAT bits 0-5 are the same as SPUCNT, but applied with a delay (delay not required)
 
 	if ( !newControl.irqEnable )
 		m_status.irq = false;
@@ -868,6 +879,7 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 
 	UpdateDmaRequest();
 	ScheduleTransferEvent();
+	ScheduleGenerateSamplesEvent();
 }
 
 inline void Spu::TriggerInterrupt() noexcept
@@ -879,29 +891,33 @@ inline void Spu::TriggerInterrupt() noexcept
 
 void Spu::CheckForLateInterrupt() noexcept
 {
-	if ( CanTriggerInterrupt() )
+	if ( !CanTriggerInterrupt() )
+		return;
+
+
+	if ( CheckIrqAddress( m_transferAddress ) )
 	{
-		if ( CheckIrqAddress( m_transferAddress ) )
+		TriggerInterrupt();
+		return;
+	}
+
+	for ( uint32_t i = 0; i < VoiceCount; ++i )
+	{
+		const auto& voice = m_voices[ i ];
+
+		// from Duckstation:
+		// we skip voices which haven't started this block yet - because they'll check
+		// the next time they're sampled, and the delay might be important.
+		if ( !voice.hasSamples )
+			continue;
+
+		const uint32_t address = voice.currentAddress * 8;
+		if ( CheckIrqAddress( address ) || CheckIrqAddress( ( address + 8 ) & SpuRamAddressMask ) )
 		{
 			TriggerInterrupt();
 			return;
 		}
-
-		for ( uint32_t i = 0; i < VoiceCount; ++i )
-		{
-			const auto& voice = m_voices[ i ];
-			if ( voice.hasSamples )
-			{
-				const uint32_t address = voice.currentAddress * 8;
-				if ( CheckIrqAddress( address ) || CheckIrqAddress( ( address + 8 ) & SpuRamAddressMask ) )
-				{
-					TriggerInterrupt();
-					return;
-				}
-			}
-		}
 	}
-
 }
 
 void Spu::UpdateDmaRequest() noexcept
@@ -973,7 +989,7 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 			m_transferBuffer.Push( m_ram.Read<uint16_t>( m_transferAddress ) );
 			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
 			cycles -= TransferCyclesPerHalfword;
-			TryTriggerInterrupt();
+			TryTriggerInterrupt( m_transferAddress );
 		}
 	}
 	else
@@ -983,7 +999,7 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 			m_ram.Write( m_transferAddress, m_transferBuffer.Pop() );
 			m_transferAddress = ( m_transferAddress + 2 ) & SpuRamAddressMask;
 			cycles -= TransferCyclesPerHalfword;
-			TryTriggerInterrupt();
+			TryTriggerInterrupt( m_transferAddress );
 		}
 	}
 
@@ -1019,7 +1035,6 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 	{
 		auto writer = m_audioQueue.GetBatchWriter();
 		const size_t batchFrames = std::min( remainingFrames, writer.GetBatchSize() / 2 );
-		remainingFrames -= batchFrames;
 
 		for ( uint32_t i = 0; i < batchFrames; ++i )
 		{
@@ -1029,6 +1044,7 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 			int32_t reverbInLeft = 0;
 			int32_t reverbInRight = 0;
 
+			// mix in voices
 			for ( uint32_t voiceIndex = 0; voiceIndex < VoiceCount; ++voiceIndex )
 			{
 				const auto [left, right] = SampleVoice( voiceIndex );
@@ -1074,6 +1090,8 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 
 			const int16_t outputLeft = static_cast<int16_t>( ApplyVolume( SaturateSample( leftSum ), m_mainVolume[ 0 ].currentLevel ) );
 			const int16_t outputRight = static_cast<int16_t>( ApplyVolume( SaturateSample( rightSum ), m_mainVolume[ 1 ].currentLevel ) );
+			m_mainVolume[ 0 ].Tick();
+			m_mainVolume[ 1 ].Tick();
 
 			writer.PushSample( outputLeft );
 			writer.PushSample( outputRight );
@@ -1082,6 +1100,7 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 			WriteToCaptureBuffer( 1, cdSampleRight );
 			WriteToCaptureBuffer( 2, SaturateSample( m_voices[ 1 ].lastVolume ) );
 			WriteToCaptureBuffer( 3, SaturateSample( m_voices[ 3 ].lastVolume ) );
+
 			m_captureBufferPosition = ( m_captureBufferPosition + 2 ) % CaptureBufferSize;
 			m_status.writingToCaptureBufferHalf = ( m_captureBufferPosition >= CaptureBufferSize / 2 );
 
@@ -1089,6 +1108,8 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 			if ( i == 0 && ( m_voiceFlags.keyOn != 0 || m_voiceFlags.keyOff != 0 ) )
 				KeyVoices();
 		}
+
+		remainingFrames -= batchFrames;
 	}
 
 	ScheduleGenerateSamplesEvent();
@@ -1156,12 +1177,15 @@ std::pair<int32_t, int32_t> Spu::SampleVoice( uint32_t voiceIndex ) noexcept
 	}
 	step = std::min<uint16_t>( step, 0x3fff );
 
+	// from Duckstation:
+	// Shouldn't ever overflow because if sample_index == 27, step == 0x4000 there won't be a carry out from the
+	// interpolation index. If there is a carry out, bit 12 will never be 1, so it'll never add more than 4 to
+	// sample_index, which should never be >27.
 	dbAssert( voice.counter.sampleIndex < SamplesPerADPCMBlock );
 	voice.counter.value += step;
 
 	if ( voice.counter.sampleIndex >= SamplesPerADPCMBlock )
 	{
-		// next block
 		voice.counter.sampleIndex -= SamplesPerADPCMBlock;
 		voice.hasSamples = false;
 		voice.firstBlock = false;

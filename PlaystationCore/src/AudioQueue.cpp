@@ -46,6 +46,7 @@ bool AudioQueue::Initialize( int frequency, SDL_AudioFormat format, uint8_t chan
 	m_deviceId = deviceId;
 	m_settings = obtained;
 
+	// create queue big enough for 1 second of audio
 	m_bufferSize = frequency * channels;
 	m_queue = std::make_unique<int16_t[]>( m_bufferSize );
 
