@@ -482,6 +482,8 @@ private:
 
 	cycles_t m_pendingCarryCycles = 0;
 
+	uint32_t m_generatedFrames = 0;
+
 	Memory<SpuRamSize> m_ram;
 };
 

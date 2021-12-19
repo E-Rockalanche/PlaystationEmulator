@@ -473,6 +473,10 @@ void Spu::Reset()
 void Spu::EndFrame() noexcept
 {
 	GeneratePendingSamples();
+
+	dbLog( "Spu::EndFrame -- Generated frames: %u, total in queue: %u", m_generatedFrames, static_cast<uint32_t>( m_audioQueue.Size() / 2 ) );
+	
+	m_generatedFrames = 0;
 }
 
 uint16_t Spu::Read( uint32_t offset ) noexcept
@@ -1027,9 +1031,9 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 
 void Spu::ScheduleGenerateSamplesEvent() noexcept
 {
-	const uint32_t queueCapacity = m_audioQueue.Capacity() / 2; // two samples per frame
-	const uint32_t frames = ( m_control.enable && m_control.irqEnable ) ? 1 : queueCapacity;
-	const cycles_t cycles = frames * CyclesPerAudioFrame - m_pendingCarryCycles;
+	const uint32_t framesForQueue = std::min<uint32_t>( m_audioQueue.Capacity() / 2, m_audioQueue.GetDeviceBufferSize() ); // two samples per frame
+	const uint32_t batchFrames = ( m_control.enable && m_control.irqEnable ) ? 1 : std::max<uint32_t>( framesForQueue, 1 );
+	const cycles_t cycles = batchFrames * CyclesPerAudioFrame - m_pendingCarryCycles;
 	m_generateSamplesEvent->Schedule( cycles );
 }
 
@@ -1048,6 +1052,8 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 {
 	uint32_t remainingFrames = ( cycles + m_pendingCarryCycles ) / CyclesPerAudioFrame;
 	m_pendingCarryCycles = ( cycles + m_pendingCarryCycles ) % CyclesPerAudioFrame;
+
+	m_generatedFrames += remainingFrames;
 
 	while ( remainingFrames > 0 )
 	{
