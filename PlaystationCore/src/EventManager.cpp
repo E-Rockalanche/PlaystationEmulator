@@ -186,4 +186,10 @@ void EventManager::RemoveEvent( Event* event )
 	m_events.erase( it );
 }
 
+void EventManager::EndFrame()
+{
+	dbLogDebug( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / 60 );
+	m_cyclesThisFrame = 0;
+}
+
 }

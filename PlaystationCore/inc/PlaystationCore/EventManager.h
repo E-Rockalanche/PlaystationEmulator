@@ -115,11 +115,7 @@ public:
 		return m_pendingCycles;
 	}
 
-	void EndFrame()
-	{
-		dbLog( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / 60 );
-		m_cyclesThisFrame = 0;
-	}
+	void EndFrame();
 
 private:
 	void ScheduleNextEvent();
