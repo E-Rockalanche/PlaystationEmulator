@@ -90,7 +90,7 @@ void AudioQueue::SetPaused( bool pause )
 }
 
 template <typename DestType>
-inline void AudioQueue::FillSamples( DestType* samples, size_t count )
+inline void AudioQueue::ReadSamples( DestType* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
 
@@ -126,7 +126,7 @@ void AudioQueue::FillAudioDeviceBuffer( uint8_t* buffer, int bufferLength )
 	{
 		case AUDIO_S16:
 		{
-			FillSamples( reinterpret_cast<int16_t*>( buffer ), static_cast<size_t>( bufferLength ) / sizeof( int16_t ) );
+			ReadSamples( reinterpret_cast<int16_t*>( buffer ), static_cast<size_t>( bufferLength ) / sizeof( int16_t ) );
 			break;
 		}
 
@@ -181,7 +181,7 @@ void AudioQueue::ClearInternal()
 
 void AudioQueue::CheckFullBuffer()
 {
-	if ( m_waitForFullBuffer && m_size >= static_cast<size_t>( m_settings.samples * 2 ) )
+	if ( m_waitForFullBuffer && m_size >= static_cast<size_t>( m_settings.samples * m_settings.channels ) )
 	{
 		m_waitForFullBuffer = false;
 

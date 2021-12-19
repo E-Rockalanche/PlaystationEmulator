@@ -88,14 +88,15 @@ public:
 		return m_size;
 	}
 
-	size_t GetFrameBufferSize() const
+	// returns buffer size in frames (total samples / channels)
+	size_t GetDeviceBufferSize() const
 	{
 		return m_settings.samples;
 	}
 
 private:
 	template <typename DestType>
-	void FillSamples( DestType* samples, size_t count );
+	void ReadSamples( DestType* samples, size_t count );
 
 	static void StaticFillAudioDeviceBuffer( void* userData, uint8_t* buffer, int lengthBytes );
 
