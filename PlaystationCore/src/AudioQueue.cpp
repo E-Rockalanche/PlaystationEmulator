@@ -100,19 +100,18 @@ inline void AudioQueue::ReadSamples( DestType* samples, size_t count )
 		return;
 	}
 
-	if ( m_size < count )
+	const size_t available = std::min( count, m_size );
+	PopSamples<DestType>( samples, available );
+
+	const size_t remaining = count - available;
+	if ( remaining > 0 )
+	{
 		dbLogWarning( "AudioQueue::FillSamples -- Starving audio device" );
 
-	const size_t available = std::min( m_size, count );
-	const size_t seg1Size = std::min( available, m_bufferSize - m_first );
-	const size_t seg2Size = available - seg1Size;
-
-	std::copy_n( m_queue.get() + m_first, seg1Size, samples );
-	std::copy_n( m_queue.get(), seg2Size, samples + seg1Size );
-	std::fill_n( samples + available, count - available, DestType( 0 ) );
-
-	m_size -= available;
-	m_first = ( m_first + available ) % m_bufferSize;
+		// repeat old samples to fill audio gap. Hopefully this sounds better than filling with 0s
+		UnpopSamples( remaining );
+		PopSamples( samples + available, remaining );
+	}
 }
 
 void AudioQueue::StaticFillAudioDeviceBuffer( void* userData, uint8_t* buffer, int length )
@@ -188,6 +187,36 @@ void AudioQueue::CheckFullBuffer()
 		if ( !m_paused )
 			SDL_PauseAudioDevice( m_deviceId, false );
 	}
+}
+
+template <typename T>
+void AudioQueue::PopSamples( T* dest, size_t count )
+{
+	dbExpects( m_size >= count );
+
+	const size_t seg1Size = std::min( count, m_bufferSize - m_first );
+	const size_t seg2Size = count - seg1Size;
+
+	if constexpr ( std::is_same_v<T, int16_t> )
+	{
+		std::copy_n( m_queue.get() + m_first, seg1Size, dest );
+		std::copy_n( m_queue.get(), seg2Size, dest + seg1Size );
+	}
+	else
+	{
+		dbBreak(); // TODO
+	}
+
+	m_size -= count;
+	m_first = ( m_first + count ) % m_bufferSize;
+}
+
+void AudioQueue::UnpopSamples( size_t count )
+{
+	dbExpects( m_size + count <= m_bufferSize );
+
+	m_size += count;
+	m_first = ( m_first + m_bufferSize - count ) % m_bufferSize;
 }
 
 }

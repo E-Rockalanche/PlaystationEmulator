@@ -106,6 +106,13 @@ private:
 
 	void ClearInternal();
 
+	// pop samples from queue to output iterator
+	template <typename T>
+	void PopSamples( T* dest, size_t count );
+
+	// put popped samples back into the queue
+	void UnpopSamples( size_t count );
+
 private:
 	SDL_AudioDeviceID m_deviceId = 0;
 	SDL_AudioSpec m_settings = {};
