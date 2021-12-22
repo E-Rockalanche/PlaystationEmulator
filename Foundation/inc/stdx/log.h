@@ -1,11 +1,6 @@
 #include <cstdlib>
 #include <cstdio>
 
-#define EMPTY_BLOCK do{}while(false)
-
-#define MULTI_LINE_MACRO_BEGIN do{
-#define MULTI_LINE_MACRO_END } while( false )
-
 template <typename... Args>
 inline void Log( const Args&... args )
 {

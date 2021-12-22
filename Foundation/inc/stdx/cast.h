@@ -13,6 +13,7 @@ template <typename To, typename From, STDX_requires(
 	( sizeof( To ) == sizeof( From ) ) &&
 	std::is_trivially_copyable_v<To> &&
 	std::is_trivially_copyable_v<From> )
+// requires compiler magic to be constexpr
 inline To bit_cast( From value ) noexcept
 {
 	static_assert( std::is_trivially_constructible_v<To> ); // This implementation also requires type To to be trivially constructable

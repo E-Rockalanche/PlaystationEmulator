@@ -6,7 +6,7 @@
 
 namespace compiler_detail
 {
-	// define our own enable_if so we don't need to include type_traits
+// define our own enable_if so we don't need to include type_traits
 
 template <bool Condition, typename T>
 struct enable_if {};
