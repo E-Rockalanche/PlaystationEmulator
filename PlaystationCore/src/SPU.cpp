@@ -76,17 +76,17 @@ enum class VoiceRegister
 	ADPCMRepeatAddress
 };
 
-constexpr bool Within( uint32_t offset, uint32_t base, uint32_t size ) noexcept
+inline constexpr bool Within( uint32_t offset, uint32_t base, uint32_t size ) noexcept
 {
 	return ( base <= offset && offset < ( base + size ) );
 }
 
- constexpr int32_t ApplyVolume( int32_t sample, int16_t volume ) noexcept
+inline constexpr int32_t ApplyVolume( int32_t sample, int16_t volume ) noexcept
 {
 	return static_cast<int32_t>( ( sample * volume ) >> 15 );
 }
 
-constexpr int16_t SaturateSample( int32_t sample ) noexcept
+inline constexpr int16_t SaturateSample( int32_t sample ) noexcept
 {
 	constexpr int32_t Min = std::numeric_limits<int16_t>::min();
 	constexpr int32_t Max = std::numeric_limits<int16_t>::max();
@@ -175,7 +175,7 @@ static constexpr uint32_t ADSRDirectionCount = 2;
 
 using ADSRTableEntries = std::array<std::array<ADSRTableEntry, ADSRTableEntryCount>, ADSRDirectionCount>;
 
-static constexpr ADSRTableEntries ComputeADSRTableEntries()
+constexpr ADSRTableEntries ComputeADSRTableEntries() noexcept
 {
 	ADSRTableEntries entries = {};
 	for ( uint32_t direction = 0; direction < ADSRDirectionCount; direction++ )
@@ -206,6 +206,75 @@ static constexpr ADSRTableEntries ComputeADSRTableEntries()
 }
 
 constexpr ADSRTableEntries ADSRTable = ComputeADSRTableEntries();
+
+///////////////////////////////////////////////////////////////////////
+// Reverb algorithm taken from Duckstation (taken from Mednafen-PSX) //
+///////////////////////////////////////////////////////////////////////
+
+// Zeroes optimized out; middle removed too(it's 16384)
+constexpr std::array<int16_t, 20> ReverbResampleCoefficients
+{
+  -1, 2, -10, 35, -103, 266, -616, 1332, -2960, 10246, 10246, -2960, 1332, -616, 266, -103, 35, -10, 2, -1,
+};
+
+STDX_forceinline int32_t Reverb4422( const int16_t* src ) noexcept
+{
+	int32_t output = 0; // 32-bits is adequate(it won't overflow)
+
+	for ( uint32_t i = 0; i < 20; i++ )
+		output += ReverbResampleCoefficients[ i ] * src[ i * 2 ];
+
+	// Middle non-zero
+	output += 0x4000 * src[ 19 ];
+	output >>= 15;
+	return std::clamp<int32_t>( output, -32768, 32767 );
+}
+
+template <bool Phase>
+STDX_forceinline int32_t Reverb2244( const int16_t* src ) noexcept
+{
+	if constexpr ( Phase )
+	{
+		return src[ 9 ]; // Middle non-zero
+	}
+	else
+	{
+		int32_t output = 0; // 32-bits is adequate(it won't overflow)
+
+		for ( uint32_t i = 0; i < 20; i++ )
+			output += ReverbResampleCoefficients[ i ] * src[ i ];
+
+		output >>= 14;
+		output = std::clamp<int32_t>( output, -32768, 32767 );
+
+		return output;
+	}
+}
+
+STDX_forceinline int16_t ReverbSat( int32_t value ) noexcept
+{
+	return static_cast<int16_t>( std::clamp<int32_t>( value, -0x8000, 0x7FFF ) );
+}
+
+STDX_forceinline int16_t ReverbNeg( int16_t sample ) noexcept
+{
+	return ( sample == -32768 ) ? 0x7FFF : -sample;
+}
+
+STDX_forceinline int32_t IIASM( const int16_t reflectionVolume1, const int16_t inSample ) noexcept
+{
+	if ( reflectionVolume1 == -32768 )
+	{
+		if ( inSample == -32768 )
+			return 0;
+		else
+			return inSample * -65536;
+	}
+	else
+	{
+		return inSample * ( 32768 - reflectionVolume1 );
+	}
+}
 
 } // namespace
 
@@ -432,14 +501,9 @@ void Spu::Reset()
 
 	m_mainVolumeRegisters = {};
 	m_mainVolume = {};
-
 	m_reverbOutVolume = {};
 
 	m_voiceFlags = {};
-
-	m_reverbBaseAddressRegister = 0;
-	m_reverbBaseAddress = 0;
-	m_reverbCurrentAddress = 0;
 
 	m_irqAddress = 0;
 
@@ -454,7 +518,13 @@ void Spu::Reset()
 	m_externalAudioInputVolume = {};
 	m_currentMainVolume = {};
 
-	m_reverb.registers.fill( 0 );
+	m_reverbBaseAddressRegister = 0;
+	m_reverbBaseAddress = 0;
+	m_reverbCurrentAddress = 0;
+	m_reverbResampleBufferPosition = 0;
+	m_reverb.registers = {};
+	m_reverbDownsampleBuffer = {};
+	m_reverbUpsampleBuffer = {};
 
 	m_transferBuffer.Reset();
 
@@ -464,6 +534,8 @@ void Spu::Reset()
 	m_noiseLevel = 1;
 
 	m_pendingCarryCycles = 0;
+
+	m_generatedFrames = 0;
 
 	m_ram.Fill( 0 );
 
@@ -1107,7 +1179,7 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 			}
 
 			// process and mix in reverb
-			const auto [reverbOutLeft, reverbOutRight] = ProcessReverb( reverbInLeft, reverbInRight );
+			const auto [reverbOutLeft, reverbOutRight] = ProcessReverb( SaturateSample( reverbInLeft ), SaturateSample( reverbInRight ) );
 			leftSum += reverbOutLeft;
 			rightSum += reverbOutRight;
 
@@ -1305,6 +1377,118 @@ void Spu::WriteToCaptureBuffer( uint32_t index, int16_t sample ) noexcept
 
 	if ( CheckIrqAddress( address ) && CanTriggerInterrupt() )
 		TriggerInterrupt();
+}
+
+///////////////////////////////////////////////////////////////////////
+// Reverb algorithm taken from Duckstation (taken from Mednafen-PSX) //
+///////////////////////////////////////////////////////////////////////
+
+uint32_t Spu::ReverbMemoryAddress( uint32_t address ) const noexcept
+{
+	// Ensures address does not leave the reverb work area.
+	static constexpr uint32_t MASK = ( SpuRamSize - 1 ) / 2;
+	uint32_t offset = m_reverbCurrentAddress + ( address & MASK );
+	offset += m_reverbBaseAddress & ( (int32_t)( offset << 13 ) >> 31 );
+
+	// We address RAM in bytes. TODO: Change this to words.
+	return ( offset & MASK ) * 2u;
+}
+
+int16_t Spu::ReverbRead( uint32_t address, int32_t offset ) noexcept
+{
+	// TODO: This should check interrupts.
+	const uint32_t real_address = ReverbMemoryAddress( ( address << 2 ) + offset );
+	return m_ram.Read<int16_t>( real_address );
+}
+
+void Spu::ReverbWrite( uint32_t address, int16_t data ) noexcept
+{
+	// TODO: This should check interrupts.
+	const uint32_t real_address = ReverbMemoryAddress( address << 2 );
+	m_ram.Write<int16_t>( real_address, data );
+}
+
+std::pair<int32_t, int32_t> Spu::ProcessReverb( int16_t inLeft, int16_t inRight ) noexcept
+{
+	m_reverbDownsampleBuffer[ 0 ][ m_reverbResampleBufferPosition | 0x00 ] = inLeft;
+	m_reverbDownsampleBuffer[ 0 ][ m_reverbResampleBufferPosition | 0x40 ] = inLeft;
+	m_reverbDownsampleBuffer[ 1 ][ m_reverbResampleBufferPosition | 0x00 ] = inRight;
+	m_reverbDownsampleBuffer[ 1 ][ m_reverbResampleBufferPosition | 0x40 ] = inRight;
+
+	int32_t out[ 2 ];
+	if ( m_reverbResampleBufferPosition & 1u )
+	{
+		std::array<int32_t, 2> downsampled;
+		for ( unsigned lr = 0; lr < 2; lr++ )
+			downsampled[ lr ] = Reverb4422( &m_reverbDownsampleBuffer[ lr ][ ( m_reverbResampleBufferPosition - 38 ) & 0x3F ] );
+
+		for ( unsigned lr = 0; lr < 2; lr++ )
+		{
+			if ( m_control.reverbMasterEnable )
+			{
+				const int16_t IIR_INPUT_A =
+					ReverbSat( ( ( ( ReverbRead( m_reverb.sameSideReflectionAddress2[ lr ^ 0 ] ) * m_reverb.reflectionVolume2 ) >> 14 ) +
+						( ( downsampled[ lr ] * m_reverb.inputVolume[ lr ] ) >> 14 ) ) >>
+						1 );
+				const int16_t IIR_INPUT_B =
+					ReverbSat( ( ( ( ReverbRead( m_reverb.differentSideReflectionAddress2[ lr ^ 1 ] ) * m_reverb.reflectionVolume2 ) >> 14 ) +
+						( ( downsampled[ lr ] * m_reverb.inputVolume[ lr ] ) >> 14 ) ) >>
+						1 );
+				const int16_t IIR_A =
+					ReverbSat( ( ( ( IIR_INPUT_A * m_reverb.reflectionVolume1 ) >> 14 ) +
+						( IIASM( m_reverb.reflectionVolume1, ReverbRead( m_reverb.sameSideReflectionAddress1[ lr ], -1 ) ) >> 14 ) ) >>
+						1 );
+				const int16_t IIR_B =
+					ReverbSat( ( ( ( IIR_INPUT_B * m_reverb.reflectionVolume1 ) >> 14 ) +
+						( IIASM( m_reverb.reflectionVolume1, ReverbRead( m_reverb.differentSideReflectionAddress1[ lr ], -1 ) ) >> 14 ) ) >>
+						1 );
+
+				ReverbWrite( m_reverb.sameSideReflectionAddress1[ lr ], IIR_A );
+				ReverbWrite( m_reverb.differentSideReflectionAddress1[ lr ], IIR_B );
+			}
+
+			const int32_t ACC = ( ( ReverbRead( m_reverb.combAddress1[ lr ] ) * m_reverb.combVolume1 ) >> 14 ) +
+				( ( ReverbRead( m_reverb.combAddress2[ lr ] ) * m_reverb.combVolume2 ) >> 14 ) +
+				( ( ReverbRead( m_reverb.combAddress3[ lr ] ) * m_reverb.combVolume3 ) >> 14 ) +
+				( ( ReverbRead( m_reverb.combAddress4[ lr ] ) * m_reverb.combVolume4 ) >> 14 );
+
+			const int16_t FB_A = ReverbRead( m_reverb.apfAddress1[ lr ] - m_reverb.apfOffset1 );
+			const int16_t FB_B = ReverbRead( m_reverb.apfAddress2[ lr ] - m_reverb.apfOffset2 );
+			const int16_t MDA = ReverbSat( ( ACC + ( ( FB_A * ReverbNeg( m_reverb.apfVolume1 ) ) >> 14 ) ) >> 1 );
+			const int16_t MDB = ReverbSat(
+				FB_A +
+				( ( ( ( MDA * m_reverb.apfVolume1 ) >> 14 ) + ( ( FB_B * ReverbNeg( m_reverb.apfVolume2 ) ) >> 14 ) ) >> 1 ) );
+			const int16_t IVB = ReverbSat( FB_B + ( ( MDB * m_reverb.apfVolume2 ) >> 15 ) );
+
+			if ( m_control.reverbMasterEnable )
+			{
+				ReverbWrite( m_reverb.apfAddress1[ lr ], MDA );
+				ReverbWrite( m_reverb.apfAddress2[ lr ], MDB );
+			}
+
+			m_reverbUpsampleBuffer[ lr ][ ( m_reverbResampleBufferPosition >> 1 ) | 0x20 ] =
+				m_reverbUpsampleBuffer[ lr ][ m_reverbResampleBufferPosition >> 1 ] = IVB;
+		}
+
+		m_reverbCurrentAddress = ( m_reverbCurrentAddress + 1 ) & 0x3FFFFu;
+		if ( m_reverbCurrentAddress == 0 )
+			m_reverbCurrentAddress = m_reverbBaseAddress;
+
+		for ( unsigned lr = 0; lr < 2; lr++ )
+			out[ lr ] =
+			Reverb2244<false>( &m_reverbUpsampleBuffer[ lr ][ ( ( m_reverbResampleBufferPosition >> 1 ) - 19 ) & 0x1F ] );
+	}
+	else
+	{
+		for ( unsigned lr = 0; lr < 2; lr++ )
+			out[ lr ] = Reverb2244<true>( &m_reverbUpsampleBuffer[ lr ][ ( ( m_reverbResampleBufferPosition >> 1 ) - 19 ) & 0x1F ] );
+	}
+
+	m_reverbResampleBufferPosition = ( m_reverbResampleBufferPosition + 1 ) & 0x3F;
+
+	const int32_t outLeft = ApplyVolume( out[ 0 ], m_reverbOutVolume[ 0 ] );
+	const int32_t outRight = ApplyVolume( out[ 1 ], m_reverbOutVolume[ 1 ] );
+	return { outLeft, outRight };
 }
 
 } // namespace PSX

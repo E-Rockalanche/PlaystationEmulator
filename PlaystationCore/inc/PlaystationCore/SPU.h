@@ -270,28 +270,17 @@ private:
 			int16_t reflectionVolume2;
 			int16_t apfVolume1;
 			int16_t apfVolume2;
-			uint16_t sameSideReflectionAddress1Left;
-			uint16_t sameSideReflectionAddress1Right;
-			uint16_t combAddress1Left;
-			uint16_t combAddress1Right;
-			uint16_t combAddress2Left;
-			uint16_t combAddress2Right;
-			uint16_t sameSideReflectionAddress2Left;
-			uint16_t sameSideReflectionAddress2Right;
-			uint16_t differentSideReflectionAddress1Left;
-			uint16_t differentSideReflectionAddress1Right;
-			uint16_t combAddress3Left;
-			uint16_t combAddress3Right;
-			uint16_t combAddress4Left;
-			uint16_t combAddress4Right;
-			uint16_t differentSideReflectionAddress2Left;
-			uint16_t differentSideReflectionAddress2Right;
-			uint16_t apfAddress1Left;
-			uint16_t apfAddress1Right;
-			uint16_t apfAddress2Left;
-			uint16_t apfAddress2Right;
-			int16_t inputVolumeLeft;
-			int16_t inputVolumeRight;
+			uint16_t sameSideReflectionAddress1[ 2 ];
+			uint16_t combAddress1[ 2 ];
+			uint16_t combAddress2[ 2 ];
+			uint16_t sameSideReflectionAddress2[ 2 ];
+			uint16_t differentSideReflectionAddress1[ 2 ];
+			uint16_t combAddress3[ 2 ];
+			uint16_t combAddress4[ 2 ];
+			uint16_t differentSideReflectionAddress2[ 2 ];
+			uint16_t apfAddress1[ 2 ];
+			uint16_t apfAddress2[ 2 ];
+			int16_t inputVolume[ 2 ];
 		};
 		std::array<uint16_t, ReverbRegisterCount> registers{};
 	};
@@ -423,18 +412,19 @@ private:
 
 	void UpdateNoise() noexcept;
 
-	std::pair<int32_t, int32_t> ProcessReverb( int32_t inLeft, int32_t inRight ) noexcept
-	{
-		// STUB
-		(void)inLeft, inRight;
-		return { 0, 0 };
-	}
-
 	void WriteToCaptureBuffer( uint32_t index, int16_t sample ) noexcept;
 
 	void KeyVoices() noexcept;
 
 	int16_t GetCurrentNoiseLevel() const noexcept { return static_cast<int16_t>( m_noiseLevel ); }
+
+	uint32_t ReverbMemoryAddress( uint32_t address ) const noexcept;
+
+	int16_t ReverbRead( uint32_t address, int32_t offset = 0 ) noexcept;
+
+	void ReverbWrite( uint32_t address, int16_t data ) noexcept;
+
+	std::pair<int32_t, int32_t> ProcessReverb( int16_t inLeft, int16_t inRight ) noexcept;
 
 private:
 	CDRomDrive& m_cdromDrive;
@@ -449,14 +439,9 @@ private:
 
 	std::array<VolumeRegister, 2> m_mainVolumeRegisters;
 	std::array<VolumeSweep, 2> m_mainVolume;
-
 	std::array<int16_t, 2> m_reverbOutVolume;
 
 	VoiceFlags m_voiceFlags;
-
-	uint16_t m_reverbBaseAddressRegister = 0;
-	uint16_t m_reverbBaseAddress = 0;
-	uint16_t m_reverbCurrentAddress = 0;
 
 	uint16_t m_irqAddress = 0;
 
@@ -471,7 +456,13 @@ private:
 	std::array<int16_t, 2> m_externalAudioInputVolume;
 	std::array<int16_t, 2> m_currentMainVolume;
 
+	uint16_t m_reverbBaseAddressRegister = 0;
+	uint16_t m_reverbBaseAddress = 0;
+	uint16_t m_reverbCurrentAddress = 0;
+	int32_t m_reverbResampleBufferPosition = 0;
 	ReverbRegisters m_reverb;
+	std::array<std::array<int16_t, 128>, 2> m_reverbDownsampleBuffer;
+	std::array<std::array<int16_t, 64>, 2> m_reverbUpsampleBuffer;
 	
 	FifoBuffer<uint16_t, SpuFifoSize> m_transferBuffer;
 
