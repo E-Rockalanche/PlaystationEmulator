@@ -124,6 +124,7 @@ private:
 			uint16_t releaseMode : 1;
 
 			uint16_t sustainRate : 7; // step and shift
+			uint16_t : 1;
 			uint16_t sustainDirection : 1;
 			uint16_t sustainMode : 1;
 		};
