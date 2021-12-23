@@ -462,8 +462,8 @@ private:
 	std::array<int16_t, 2> m_currentMainVolume = {};
 
 	uint16_t m_reverbBaseAddressRegister = 0;
-	uint16_t m_reverbBaseAddress = 0;
-	uint16_t m_reverbCurrentAddress = 0;
+	uint32_t m_reverbBaseAddress = 0;
+	uint32_t m_reverbCurrentAddress = 0;
 	int32_t m_reverbResampleBufferPosition = 0;
 	ReverbRegisters m_reverb;
 	std::array<std::array<int16_t, 128>, 2> m_reverbDownsampleBuffer = {};
