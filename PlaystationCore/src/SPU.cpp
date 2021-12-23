@@ -300,7 +300,7 @@ int16_t Spu::VolumeEnvelope::Tick( int16_t currentLevel ) noexcept
 	{
 		if ( decreasing )
 		{
-			curStep = ( curStep * currentLevel ) >> 5;
+			curStep = ( curStep * currentLevel ) >> 15;
 		}
 		else
 		{
@@ -670,7 +670,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 
 		case SpuControlRegister::VoiceKeyOnLow:
 			GeneratePendingSamples();
-			stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, LowMask, value );		
+			stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, LowMask, value );
 			break;
 
 		case SpuControlRegister::VoiceKeyOnHigh:
@@ -806,7 +806,8 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			else if ( Within( offset, ReverbRegisterOffset, ReverbRegisterCount ) )
 			{
 				GeneratePendingSamples();
-				m_reverb.registers[ offset - ReverbRegisterOffset ] = value;
+				const uint32_t index = offset - ReverbRegisterOffset;
+				m_reverb.registers[ index ] = value;
 			}
 			else
 			{
@@ -1180,9 +1181,12 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 			}
 
 			// process and mix in reverb
+			/*
 			const auto [reverbOutLeft, reverbOutRight] = ProcessReverb( SaturateSample( reverbInLeft ), SaturateSample( reverbInRight ) );
 			leftSum += reverbOutLeft;
 			rightSum += reverbOutRight;
+			*/
+			(void)reverbInLeft, reverbInRight; // TEMP
 
 			const int16_t outputLeft = static_cast<int16_t>( ApplyVolume( SaturateSample( leftSum ), m_mainVolume[ 0 ].currentLevel ) );
 			const int16_t outputRight = static_cast<int16_t>( ApplyVolume( SaturateSample( rightSum ), m_mainVolume[ 1 ].currentLevel ) );
