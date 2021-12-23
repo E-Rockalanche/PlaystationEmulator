@@ -1283,14 +1283,12 @@ void Gpu::ScheduleNextEvent()
 		if ( dotTimer.GetSyncEnable() ) // dot timer synchronizes with hblanks
 		{
 			const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / dotsPerCycle;
-
 			gpuTicks = std::min( gpuTicks, ticksUntilHblankChange );
 		}
 
 		if ( !dotTimer.IsUsingSystemClock() && !dotTimer.IsPaused() )
 		{
 			const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / dotsPerCycle;
-
 			gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 		}
 	}
@@ -1298,10 +1296,12 @@ void Gpu::ScheduleNextEvent()
 	const uint32_t linesUntilVblankChange = ( m_currentScanline < m_verDisplayRangeStart )
 		? ( m_verDisplayRangeStart - m_currentScanline )
 		: ( m_currentScanline < m_verDisplayRangeEnd )
-		? ( m_verDisplayRangeEnd - m_currentScanline )
-		: ( GetScanlines() - m_currentScanline + m_verDisplayRangeStart );
+			? ( m_verDisplayRangeEnd - m_currentScanline )
+			: ( GetScanlines() - m_currentScanline + m_verDisplayRangeStart );
 
-	const float ticksUntilVblankChange = linesUntilVblankChange * GetVideoCyclesPerScanline() - m_currentDot / dotsPerCycle;
+	const float gpuCyclesPerScanline = GetVideoCyclesPerScanline();
+
+	const float ticksUntilVblankChange = linesUntilVblankChange * gpuCyclesPerScanline - m_currentDot / dotsPerCycle;
 	gpuTicks = std::min( gpuTicks, ticksUntilVblankChange );
 
 	// timer1
@@ -1310,16 +1310,13 @@ void Gpu::ScheduleNextEvent()
 		if ( !scanlineTimer.IsUsingSystemClock() && !scanlineTimer.IsPaused() )
 		{
 			const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / dotsPerCycle;
-			const float ticksUntilIrq = scanlineTimer.GetTicksUntilIrq() * GetVideoCyclesPerScanline() - ticksUntilHblank;
-
+			const float ticksUntilIrq = scanlineTimer.GetTicksUntilIrq() * gpuCyclesPerScanline - ticksUntilHblank;
 			gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 		}
 	}
 
 	const auto cpuCycles = static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
-
 	m_cachedCyclesUntilNextEvent = cpuCycles;
-
 	m_clockEvent->Schedule( cpuCycles );
 }
 
