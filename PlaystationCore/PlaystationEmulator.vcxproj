@@ -211,6 +211,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\AudioQueue.cpp" />
     <ClCompile Include="src\BIOS.cpp" />
     <ClCompile Include="src\CDRomDrive.cpp" />
     <ClCompile Include="src\CDXA.cpp" />
@@ -246,6 +247,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="inc\PlaystationCore\AudioQueue.h" />
     <ClInclude Include="inc\PlaystationCore\BIOS.h" />
     <ClInclude Include="inc\PlaystationCore\CDRom.h" />
     <ClInclude Include="inc\PlaystationCore\CDRomDrive.h" />

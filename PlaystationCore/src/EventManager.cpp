@@ -15,15 +15,15 @@ void Event::UpdateEarly()
 	if ( !m_active )
 		return;
 
-	const cycles_t updateCycles = m_pendingCycles + m_manager.GetPendingCycles();
-
-	dbAssert( updateCycles < m_cyclesUntilEvent ); // event should not be ready if it is updating early
-
-	if ( updateCycles > 0 )
+	cycles_t pendingCycles = m_pendingCycles + m_manager.GetPendingCycles();
+	while ( pendingCycles > 0 && m_active )
 	{
+		const cycles_t updateCycles = std::min( pendingCycles, m_cyclesUntilEvent );
+		pendingCycles -= updateCycles;
 		m_manager.UpdateEvent( this, updateCycles );
-		m_manager.ScheduleNextEvent();
 	}
+
+	m_manager.ScheduleNextEvent();
 }
 
 void Event::Schedule( cycles_t cyclesFromNow )
@@ -184,6 +184,12 @@ void EventManager::RemoveEvent( Event* event )
 	auto it = std::find( m_events.begin(), m_events.end(), event );
 	dbAssert( it != m_events.end() );
 	m_events.erase( it );
+}
+
+void EventManager::EndFrame()
+{
+	dbLogDebug( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / 60 );
+	m_cyclesThisFrame = 0;
 }
 
 }

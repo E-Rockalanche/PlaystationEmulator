@@ -1,5 +1,6 @@
 #include "Playstation.h"
 
+#include "AudioQueue.h"
 #include "BIOS.h"
 #include "CDRom.h"
 #include "CDRomDrive.h"
@@ -33,6 +34,13 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 		return false;
 	}
 
+	m_audioQueue = std::make_unique<AudioQueue>();
+	if ( !m_audioQueue->Initialize() )
+	{
+		LogError( "Failed to initialize audio queue" );
+		return false;
+	}
+
 	m_bios = std::make_unique<Bios>();
 	if ( !LoadBios( biosFilename, *m_bios ) )
 	{
@@ -45,7 +53,6 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 	m_memoryControl = std::make_unique<MemoryControl>();
 	m_interruptControl = std::make_unique<InterruptControl>();
 	m_eventManager = std::make_unique<EventManager>();
-	m_spu = std::make_unique<Spu>();
 	m_mdec = std::make_unique<MacroblockDecoder>( *m_eventManager );
 
 	m_timers = std::make_unique<Timers>( *m_interruptControl, *m_eventManager );
@@ -54,7 +61,9 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 	m_cdromDrive = std::make_unique<CDRomDrive>( *m_interruptControl, *m_eventManager );
 
-	m_dma = std::make_unique<Dma>( *m_ram, *m_gpu, *m_cdromDrive, *m_mdec, *m_interruptControl, *m_eventManager );
+	m_spu = std::make_unique<Spu>( *m_cdromDrive, *m_interruptControl, *m_eventManager, *m_audioQueue );
+
+	m_dma = std::make_unique<Dma>( *m_ram, *m_gpu, *m_cdromDrive, *m_mdec, *m_spu, *m_interruptControl, *m_eventManager );
 
 	m_controllerPorts = std::make_unique<ControllerPorts>( *m_interruptControl, *m_eventManager );
 
@@ -86,6 +95,9 @@ void Playstation::Reset()
 	m_spu->Reset();
 	m_timers->Reset();
 	m_gpu->Reset(); // must go after timers reset so it can schedule event
+
+	m_audioQueue->Clear();
+	m_audioQueue->SetPaused( false );
 }
 
 void Playstation::SetController( size_t slot, Controller* controller )
@@ -103,6 +115,8 @@ void Playstation::RunFrame()
 	while ( !m_gpu->GetDisplayFrame() )
 		m_cpu->RunUntilEvent();
 
+	m_eventManager->EndFrame();
+	m_spu->EndFrame();
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
 }

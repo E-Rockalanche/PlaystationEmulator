@@ -1539,9 +1539,6 @@ void CDRomDrive::ResampleXaAdpcm( const int16_t* samples, uint32_t count )
 	}
 
 	m_resampleP = p;
-
-	m_pushSamplesFunc( reinterpret_cast<const int16_t*>( m_audioBuffer.Data() ), m_audioBuffer.Size() * 2 );
-	m_audioBuffer.Clear();
 }
 
 // CDROM control commands

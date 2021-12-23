@@ -149,6 +149,8 @@ private:
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
 private:
+	void SoftReset() noexcept;
+
 	void WriteGP0( uint32_t value ) noexcept;
 	void WriteGP1( uint32_t value ) noexcept;
 
@@ -269,10 +271,9 @@ private:
 	bool m_hblank = false;
 	bool m_vblank = false;
 	bool m_drawingEvenOddLine = false;
+	bool m_displayFrame = false;
 
 	mutable cycles_t m_cachedCyclesUntilNextEvent = 0;
-
-	bool m_displayFrame = false;
 
 	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512, used for VRAM to CPU transfers
 

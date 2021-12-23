@@ -38,6 +38,7 @@ class Playstation;
 class Renderer;
 class Spu;
 class Timers;
+class AudioQueue;
 
 template <size_t> class Memory;
 using Bios = Memory<512 * 1024>;

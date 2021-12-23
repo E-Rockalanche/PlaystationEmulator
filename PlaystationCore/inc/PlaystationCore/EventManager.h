@@ -99,6 +99,7 @@ public:
 	{
 		dbExpects( cycles > 0 );
 		m_pendingCycles += cycles;
+		m_cyclesThisFrame += cycles;
 	}
 
 	// driving device must check when cycles are ready and update event manually
@@ -114,6 +115,8 @@ public:
 		return m_pendingCycles;
 	}
 
+	void EndFrame();
+
 private:
 	void ScheduleNextEvent();
 
@@ -122,9 +125,11 @@ private:
 	void RemoveEvent( Event* event );
 
 private:
-	// cached cycles for nest event
+	// cached cycles for next event
 	cycles_t m_cyclesUntilNextEvent = 0;
 	cycles_t m_pendingCycles = 0;
+
+	cycles_t m_cyclesThisFrame = 0;
 
 	std::vector<Event*> m_events;
 	Event* m_nextEvent = nullptr;

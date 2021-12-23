@@ -6,7 +6,7 @@
 
 namespace compiler_detail
 {
-	// define our own enable_if so we don't need to include type_traits
+// define our own enable_if so we don't need to include type_traits
 
 template <bool Condition, typename T>
 struct enable_if {};
@@ -45,6 +45,7 @@ using enable_if_t = typename enable_if<Condition, T>::type;
 #define STDX_likely( expression ) ( expression )
 #define STDX_unlikely( expression ) ( expression )
 #define STDX_unreachable() __assume( 0 )
+#define STDX_forceinline __forceinline
 
 #pragma warning( disable:4201 ) // nonstandard extension: nameless struct/union
 
@@ -54,6 +55,7 @@ using enable_if_t = typename enable_if<Condition, T>::type;
 #define STDX_likely( expression ) __builtin_expect( !!( expression ), 1 )
 #define STDX_unlikely( expression ) __builtin_expect( !!( expression ), 0 )
 #define STDX_unreachable() __builtin_unreachable()
+#define STDX_forceinline always_inline
 
 #elif defined __clang__
 
@@ -61,6 +63,7 @@ using enable_if_t = typename enable_if<Condition, T>::type;
 #define STDX_likely( expression ) __builtin_expect( !!( expression ), 1 )
 #define STDX_unlikely( expression ) __builtin_expect( !!( expression ), 0 )
 #define STDX_unreachable() __builtin_unreachable()
+#define STDX_forceinline always_inline
 
 #else
 
@@ -68,5 +71,6 @@ using enable_if_t = typename enable_if<Condition, T>::type;
 #define STDX_likely( expression ) ( expression )
 #define STDX_unlikely( expression ) ( expression )
 #define STDX_unreachable() EMPTY_BLOCK
+#define STDX_forceinline inline
 
 #endif

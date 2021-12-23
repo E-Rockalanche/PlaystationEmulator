@@ -5,6 +5,7 @@
 #include "GPU.h"
 #include "InterruptControl.h"
 #include "MacroblockDecoder.h"
+#include "SPU.h"
 
 #include <stdx/bit.h>
 
@@ -31,12 +32,14 @@ Dma::Dma( Ram& ram,
 	Gpu& gpu,
 	CDRomDrive& cdromDRive,
 	MacroblockDecoder& mdec,
+	Spu& spu,
 	InterruptControl& interruptControl,
 	EventManager& eventManager )
 	: m_ram{ ram }
 	, m_gpu{ gpu }
 	, m_cdromDrive{ cdromDRive }
 	, m_mdec{ mdec }
+	, m_spu{ spu }
 	, m_interruptControl{ interruptControl }
 	, m_eventManager{ eventManager }
 {
@@ -294,6 +297,8 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 				return DmaResult::Finished;
 			}
 
+			dbAssert( channel == Channel::Gpu ); // does linked list only work on the GP0?
+
 			// cycles taken from duckstation
 			static constexpr cycles_t ProcessHeaderCycles = 10;
 			static constexpr cycles_t ProcessBlockCycles = 5;
@@ -413,8 +418,7 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 			break;
 
 		case Channel::Spu:
-			// TODO
-			dbLogDebug( "ignoring SPU to RAM DMA transfer" );
+			m_spu.DmaRead( dest, wordCount );
 			break;
 
 		default:
@@ -471,8 +475,7 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 			break;
 
 		case Channel::Spu:
-			// TODO
-			dbLogDebug( "ignoring RAM to SPU DMA transfer" );
+			m_spu.DmaWrite( src, wordCount );
 			break;
 
 		default:

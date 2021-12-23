@@ -123,69 +123,81 @@ void Gpu::Reset()
 	m_clockEvent->Cancel();
 	m_commandEvent->Cancel();
 
-	m_state = State::Idle;
-	m_commandBuffer.Reset();
-	m_remainingParamaters = 0;
-	m_commandFunction = nullptr;
 	m_pendingCommandCycles = 0;
 	m_processingCommandBuffer = false;
 
 	m_gpuRead = 0;
 
-	m_status.value = 0;
-	m_status.displayDisable = true;
-
-	m_texturedRectFlipX = false;
-	m_texturedRectFlipY = false;
-
-	m_textureWindowMaskX = 0;
-	m_textureWindowMaskY = 0;
-	m_textureWindowOffsetX = 0;
-	m_textureWindowOffsetY = 0;
-
-	m_drawAreaLeft = 0;
-	m_drawAreaTop = 0;
-	m_drawAreaRight = 0;
-	m_drawAreaBottom = 0;
-
-	m_drawOffsetX = 0;
-	m_drawOffsetY = 0;
-
-	m_displayAreaStartX = 0;
-	m_displayAreaStartY = 0;
-
-	m_horDisplayRangeStart = 0;
-	m_horDisplayRangeEnd = 0;
-
-	m_verDisplayRangeStart = 0;
-	m_verDisplayRangeEnd = 0;
-
+	// reset CRT state
 	m_currentScanline = 0;
 	m_currentDot = 0.0f;
 	m_dotTimerFraction = 0.0f;
 	m_hblank = false;
 	m_vblank = false;
 	m_drawingEvenOddLine = false;
-
 	m_displayFrame = false;
 
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
+	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
+	// clear buffers
+	m_commandBuffer.Reset();
 	m_transferBuffer.clear();
 	m_vramTransferState.reset();
 
-	m_renderer.SetDisplayStart( 0, 0 );
-	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
-	m_renderer.SetTextureWindow( 0, 0, 0, 0 );
-	m_renderer.SetDrawArea( 0, 0, 0, 0 );
+	m_vramTransferState.reset();
+
+	SoftReset();
+}
+
+void Gpu::SoftReset() noexcept
+{
+	ClearCommandBuffer();
+
+	// reset GPUSTAT
+	m_status.value = 0x14802000;
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
-	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
 	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
+	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
+	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
 	m_renderer.SetDisplayEnable( !m_status.displayDisable );
-	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
+	// reset display address
+	m_displayAreaStartX = 0;
+	m_displayAreaStartY = 0;
+	m_renderer.SetDisplayStart( 0, 0 );
+
+	// reset display range
+	m_horDisplayRangeStart = 0x200;
+	m_horDisplayRangeEnd = 0x200 + 256 * 10;
+	m_verDisplayRangeStart = 0x10;
+	m_verDisplayRangeEnd = 0x10 + 240;
+
+	// reset texture rect flip
+	m_texturedRectFlipX = false;
+	m_texturedRectFlipY = false;
+
+	// reset texture window
+	m_textureWindowMaskX = 0;
+	m_textureWindowMaskY = 0;
+	m_textureWindowOffsetX = 0;
+	m_textureWindowOffsetY = 0;
+	m_renderer.SetTextureWindow( 0, 0, 0, 0 );
+
+	// reset draw area
+	m_drawAreaLeft = 0;
+	m_drawAreaTop = 0;
+	m_drawAreaRight = 0;
+	m_drawAreaBottom = 0;
+	m_renderer.SetDrawArea( 0, 0, 0, 0 );
+
+	// reset draw offset
+	m_drawOffsetX = 0;
+	m_drawOffsetY = 0;
+
+	// schedule timing events before requesting DMA
 	ScheduleNextEvent();
 
 	UpdateDmaRequest();
@@ -694,67 +706,15 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 	{
 		case 0x00: // soft reset GPU
 		{
-			dbLogDebug( "Gpu::WriteGP1() -- soft reset" );
-
-			ClearCommandBuffer();
-
-			m_status.value = 0x14802000;
-			m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
-			m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
-			m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
-			m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
-			m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
-			m_renderer.SetDisplayEnable( !m_status.displayDisable );
-
-			m_horDisplayRangeStart = 0x200;
-			m_horDisplayRangeEnd = 0x200 + 256 * 10;
-			m_verDisplayRangeStart = 0x10;
-			m_verDisplayRangeEnd = 0x10 + 240;
-
-			m_texturedRectFlipX = false;
-			m_texturedRectFlipY = false;
-
-			m_textureWindowMaskX = 0;
-			m_textureWindowMaskY = 0;
-			m_textureWindowOffsetX = 0;
-			m_textureWindowOffsetY = 0;
-			m_renderer.SetTextureWindow( 0, 0, 0, 0 );
-
-			// TODO: does this affect hblanking?
-			m_drawAreaLeft = 0;
-			m_drawAreaTop = 0;
-			m_drawAreaRight = 0;
-			m_drawAreaBottom = 0;
-			m_renderer.SetDrawArea( 0, 0, 0, 0 );
-
-			m_drawOffsetX = 0;
-			m_drawOffsetY = 0;
-
-			m_currentScanline = 0;
-			m_currentDot = 0;
-			m_dotTimerFraction = 0;
-			m_hblank = false;
-			m_vblank = false;
-			m_drawingEvenOddLine = false;
-
-			auto& dotTimer = m_timers->GetTimer( 0 );
-			dotTimer.UpdateBlank( false );
-
-			auto& hblankTimer = m_timers->GetTimer( 1 );
-			hblankTimer.UpdateBlank( false );
-
-			// schedule timing events before DMA can run
-			ScheduleNextEvent();
-
-			UpdateDmaRequest();
-
-			// TODO: clear texture cache?
-
+			dbLog( "Gpu::WriteGP1() -- soft reset" );
+			m_clockEvent->UpdateEarly();
+			SoftReset();
 			break;
 		}
 
 		case 0x01: // reset command buffer
 			dbLogDebug( "Gpu::WriteGP1() -- clear command buffer" );
+			m_clockEvent->UpdateEarly();
 			ClearCommandBuffer();
 			UpdateDmaRequest();
 			break;
@@ -766,6 +726,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x03: // display enable
 		{
+			m_clockEvent->UpdateEarly();
 			const bool disableDisplay = value & 0x1;
 			dbLogDebug( "Gpu::WriteGP1() -- enable display: %s", disableDisplay ? "false" : "true" );
 			m_status.displayDisable = disableDisplay;
@@ -797,17 +758,31 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x06: // horizontal display range
 		{
-			m_horDisplayRangeStart = value & 0xfff;
-			m_horDisplayRangeEnd = ( value >> 12 ) & 0xfff;
-			dbLogDebug( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", m_horDisplayRangeStart, m_horDisplayRangeEnd );
+			const uint16_t horStart = value & 0xfff;
+			const uint16_t horEnd = ( value >> 12 ) & 0xfff;
+
+			if ( horStart != m_horDisplayRangeStart || horEnd != m_horDisplayRangeEnd )
+			{
+				m_clockEvent->UpdateEarly();
+				dbLogDebug( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", horStart, horEnd );
+				m_horDisplayRangeStart = horStart;
+				m_horDisplayRangeEnd = horEnd;
+			}
 			break;
 		}
 
 		case 0x07: // vertical display range
 		{
-			m_verDisplayRangeStart = value & 0x3ff;
-			m_verDisplayRangeEnd = ( value >> 10 ) & 0x3ff;
-			dbLogDebug( "Gpu::WriteGP1() -- set vertical display range [%u]", m_verDisplayRangeEnd - m_verDisplayRangeStart );
+			const uint16_t verStart = value & 0x3ff;
+			const uint16_t verEnd = ( value >> 10 ) & 0x3ff;
+
+			if ( verStart != m_verDisplayRangeStart || verEnd != m_verDisplayRangeEnd )
+			{
+				m_clockEvent->UpdateEarly();
+				dbLogDebug( "Gpu::WriteGP1() -- set vertical display range [%u, %u]", verStart, verEnd );
+				m_verDisplayRangeStart = verStart;
+				m_verDisplayRangeEnd = verEnd;
+			}
 			break;
 		}
 
@@ -1308,14 +1283,12 @@ void Gpu::ScheduleNextEvent()
 		if ( dotTimer.GetSyncEnable() ) // dot timer synchronizes with hblanks
 		{
 			const float ticksUntilHblankChange = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() ) - m_currentDot ) / dotsPerCycle;
-
 			gpuTicks = std::min( gpuTicks, ticksUntilHblankChange );
 		}
 
 		if ( !dotTimer.IsUsingSystemClock() && !dotTimer.IsPaused() )
 		{
 			const float ticksUntilIrq = dotTimer.GetTicksUntilIrq() / dotsPerCycle;
-
 			gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 		}
 	}
@@ -1323,10 +1296,12 @@ void Gpu::ScheduleNextEvent()
 	const uint32_t linesUntilVblankChange = ( m_currentScanline < m_verDisplayRangeStart )
 		? ( m_verDisplayRangeStart - m_currentScanline )
 		: ( m_currentScanline < m_verDisplayRangeEnd )
-		? ( m_verDisplayRangeEnd - m_currentScanline )
-		: ( GetScanlines() - m_currentScanline + m_verDisplayRangeStart );
+			? ( m_verDisplayRangeEnd - m_currentScanline )
+			: ( GetScanlines() - m_currentScanline + m_verDisplayRangeStart );
 
-	const float ticksUntilVblankChange = linesUntilVblankChange * GetVideoCyclesPerScanline() - m_currentDot / dotsPerCycle;
+	const float gpuCyclesPerScanline = GetVideoCyclesPerScanline();
+
+	const float ticksUntilVblankChange = linesUntilVblankChange * gpuCyclesPerScanline - m_currentDot / dotsPerCycle;
 	gpuTicks = std::min( gpuTicks, ticksUntilVblankChange );
 
 	// timer1
@@ -1335,16 +1310,13 @@ void Gpu::ScheduleNextEvent()
 		if ( !scanlineTimer.IsUsingSystemClock() && !scanlineTimer.IsPaused() )
 		{
 			const float ticksUntilHblank = ( ( m_currentDot < horRez ? horRez : GetDotsPerScanline() + horRez ) - m_currentDot ) / dotsPerCycle;
-			const float ticksUntilIrq = scanlineTimer.GetTicksUntilIrq() * GetVideoCyclesPerScanline() - ticksUntilHblank;
-
+			const float ticksUntilIrq = scanlineTimer.GetTicksUntilIrq() * gpuCyclesPerScanline - ticksUntilHblank;
 			gpuTicks = std::min( gpuTicks, ticksUntilIrq );
 		}
 	}
 
 	const auto cpuCycles = static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( gpuTicks ) ) );
-
 	m_cachedCyclesUntilNextEvent = cpuCycles;
-
 	m_clockEvent->Schedule( cpuCycles );
 }
 

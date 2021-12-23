@@ -81,6 +81,9 @@
     <ClCompile Include="src\CDXA.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\AudioQueue.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -189,6 +192,9 @@
       <Filter>inc\shaders</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\CDXA.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\AudioQueue.h">
       <Filter>inc</Filter>
     </ClInclude>
   </ItemGroup>
