@@ -5,6 +5,7 @@
 #include <PlaystationCore/MemoryCard.h>
 #include <PlaystationCore/Renderer.h>
 
+#include <PlaystationCore/AudioQueue.h>
 #include <PlaystationCore/CDRomDrive.h>
 
 #include <Render/Error.h>
@@ -218,6 +219,7 @@ int main( int argc, char** argv )
 					{
 						case SDLK_F1:
 							paused = !paused;
+							playstationCore->GetAudioQueue().SetPaused( paused );
 							break;
 
 						case SDLK_F2:
@@ -251,6 +253,18 @@ int main( int argc, char** argv )
 						{
 							fullscreen = !fullscreen;
 							SDL_SetWindowFullscreen( window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0 );
+							break;
+						}
+
+						case SDLK_AUDIOMUTE:
+						{
+							playstationCore->GetAudioQueue().SetPaused( true || paused );
+							break;
+						}
+
+						case SDLK_AUDIOPLAY:
+						{
+							playstationCore->GetAudioQueue().SetPaused( paused );
 							break;
 						}
 					}

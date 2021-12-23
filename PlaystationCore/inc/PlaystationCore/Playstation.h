@@ -30,6 +30,7 @@ public:
 	float GetRefreshRate() const;
 
 public:
+	AudioQueue&			GetAudioQueue()			{ dbAssert( m_audioQueue); return *m_audioQueue; }
 	Bios&				GetBios()				{ dbAssert( m_bios ); return *m_bios; }
 	CDRomDrive&			GetCDRomDrive()			{ dbAssert( m_cdromDrive ); return *m_cdromDrive; }
 	ControllerPorts&	GetControllerPorts()	{ dbAssert( m_controllerPorts ); return *m_controllerPorts; }
@@ -49,6 +50,7 @@ public:
 
 private:
 	std::unique_ptr<EventManager> m_eventManager; // must be destroyed last
+	std::unique_ptr<AudioQueue> m_audioQueue;
 	std::unique_ptr<Bios> m_bios;
 	std::unique_ptr<CDRomDrive> m_cdromDrive;
 	std::unique_ptr<ControllerPorts> m_controllerPorts;
@@ -65,8 +67,6 @@ private:
 	std::unique_ptr<Scratchpad> m_scratchpad;
 	std::unique_ptr<Spu> m_spu;
 	std::unique_ptr<Timers> m_timers;
-
-	std::unique_ptr<AudioQueue> m_audioQueue;
 };
 
 }
