@@ -14,7 +14,9 @@ AudioQueue::BatchWriter::~BatchWriter()
 	if ( !m_queue.m_paused )
 	{
 		const size_t count = GetCount();
+
 		dbAssert( count <= m_batchSize );
+		dbAssert( m_queue.m_size + count <= m_queue.m_bufferSize );
 
 		m_queue.m_last = ( m_queue.m_last + count ) % m_queue.m_bufferSize;
 		m_queue.m_size += count;
@@ -138,15 +140,20 @@ void AudioQueue::PushSamples( const int16_t* samples, size_t count )
 {
 	std::unique_lock lock{ m_queueMutex };
 
+	if ( m_paused )
+		return;
+
 	const size_t capacity = m_bufferSize - m_size;
 	if ( capacity < count )
 	{
-		const size_t dropCount = count - capacity;
-		dbLogWarning( "AudioQueue::PushSamples -- Exceeding queue capacity. Dropping %u samples", (uint32_t)dropCount );
+		dbLogWarning( "AudioQueue::PushSamples -- Exceeding queue capacity" );
+		if ( capacity == 0 )
+			return;
 
-		m_size -= dropCount;
-		m_first = ( m_first + dropCount ) % m_bufferSize;
+		count = capacity;
 	}
+
+	dbAssert( m_size + count <= m_bufferSize );
 
 	const size_t seg1Count = std::min( count, m_bufferSize - m_last );
 	const size_t seg2Count = count - seg1Count;
