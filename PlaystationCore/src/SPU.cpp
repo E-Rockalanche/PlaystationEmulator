@@ -261,18 +261,18 @@ STDX_forceinline int16_t ReverbNeg( int16_t sample ) noexcept
 	return ( sample == -32768 ) ? 0x7FFF : -sample;
 }
 
-STDX_forceinline int32_t IIASM( const int16_t reflectionVolume1, const int16_t inSample ) noexcept
+STDX_forceinline int32_t IIASM( const int16_t iirAlpha, const int16_t sample ) noexcept
 {
-	if ( reflectionVolume1 == -32768 )
+	if ( iirAlpha == -32768 )
 	{
-		if ( inSample == -32768 )
+		if ( sample == -32768 )
 			return 0;
 		else
-			return inSample * -65536;
+			return sample * -65536;
 	}
 	else
 	{
-		return inSample * ( 32768 - reflectionVolume1 );
+		return sample * ( 32768 - iirAlpha );
 	}
 }
 
@@ -581,7 +581,7 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 		case SpuControlRegister::ReverbWorkAreaStartAddress:	return m_reverbBaseAddressRegister;
 		case SpuControlRegister::IrqAddress:					return m_irqAddress;
 		case SpuControlRegister::DataTransferAddress:			return m_transferAddressRegister;
-		case SpuControlRegister::DataTransferFifo:				return 0xffff;
+		case SpuControlRegister::DataTransferFifo:				return 0xffff; // can't read from fifo
 		case SpuControlRegister::SpuControl:					return m_control.value;
 		case SpuControlRegister::DataTransferControl:			return m_dataTransferControl.value;
 
@@ -628,11 +628,11 @@ uint16_t Spu::Read( uint32_t offset ) noexcept
 				GeneratePendingSamples();
 				const uint32_t volumeIndex = ( offset - VolumeRegisterOffset ) / 2;
 				const uint32_t volumeRegister = ( offset - VolumeRegisterOffset ) % 2;
-				return m_voices[ volumeIndex ].volume[ volumeRegister ].currentLevel;
+				return static_cast<uint16_t>( m_voices[ volumeIndex ].volume[ volumeRegister ].currentLevel );
 			}
 			else
 			{
-				dbLogWarning( "Spu::Read -- unknown register [%u]", offset );
+				dbBreakMessage( "Spu::Read -- unknown register [%u]", offset );
 				return 0xffff;
 			}
 		}
@@ -721,6 +721,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 		case SpuControlRegister::VoiceStatusLow:
 		case SpuControlRegister::VoiceStatusHigh:
 			// read only
+			dbLogWarning( "Spu::Write -- writing to voice status [%X]", value );
 			break;
 
 		case SpuControlRegister::ReverbWorkAreaStartAddress:
@@ -773,6 +774,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 
 		case SpuControlRegister::SpuStatus:
 			// read only
+			dbLogWarning( "Spu::Write -- writing to SPUSTAT" );
 			break;
 
 		case SpuControlRegister::CdVolumeLeft:
@@ -808,7 +810,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			}
 			else
 			{
-				dbLogWarning( "Spu::Write -- unknown register [%X -> %u]", value, offset );
+				dbBreakMessage( "Spu::Write -- unknown register [%X -> %u]", value, offset );
 			}
 			break;
 		}
@@ -822,8 +824,8 @@ uint16_t Spu::ReadVoiceRegister( uint32_t offset ) noexcept
 
 	const auto& voice = m_voices[ voiceIndex ];
 
-	// update if reading volume and voice is on or pending key on
-	if ( ( static_cast<VoiceRegister>( registerIndex ) == VoiceRegister::CurrentADSRVolume ) &&
+	// generate samples if reading volume or repeat address
+	if ( ( registerIndex >= (uint32_t)VoiceRegister::CurrentADSRVolume ) &&
 		( voice.IsOn() || ( m_voiceFlags.keyOn & ( 1 << voiceIndex ) ) ) )
 	{
 		GeneratePendingSamples();
@@ -839,7 +841,7 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 
 	auto& voice = m_voices[ voiceIndex ];
 
-	// update if voice is on or pending on
+	// generate samples before updating register
 	if ( voice.IsOn() || ( m_voiceFlags.keyOn & ( 1 << voiceIndex ) ) )
 		GeneratePendingSamples();
 
@@ -882,7 +884,7 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 		}
 
 		case VoiceRegister::CurrentADSRVolume:
-			voice.registers.currentADSRVolume = value;
+			voice.registers.currentADSRVolume = static_cast<int16_t>( value );
 			break;
 
 		case VoiceRegister::ADPCMRepeatAddress:
@@ -893,9 +895,7 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 			//  - Re-Loaded - The Hardcore Sequel
 			//  - Valkyrie Profile
 
-			const bool ignoreLoopAddress = voice.IsOn() && !voice.firstBlock;
-			voice.ignoreLoopAddress |= ignoreLoopAddress;
-
+			voice.ignoreLoopAddress |= ( voice.IsOn() && !voice.firstBlock );
 			voice.registers.adpcmRepeatAddress = value;
 			break;
 		}
@@ -962,6 +962,7 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 
 	if ( !newControl.irqEnable )
 	{
+		// acknowledge IRQ
 		m_status.irq = false;
 	}
 	else
@@ -970,9 +971,9 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 		CheckForLateInterrupt();
 	}
 
+	ScheduleGenerateSamplesEvent();
 	UpdateDmaRequest();
 	ScheduleTransferEvent();
-	ScheduleGenerateSamplesEvent();
 }
 
 inline void Spu::TriggerInterrupt() noexcept
@@ -1197,7 +1198,7 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 			WriteToCaptureBuffer( 3, SaturateSample( m_voices[ 3 ].lastVolume ) );
 
 			m_captureBufferPosition = ( m_captureBufferPosition + 2 ) % CaptureBufferSize;
-			m_status.writingToCaptureBufferHalf = ( m_captureBufferPosition >= CaptureBufferSize / 2 );
+			m_status.writingToCaptureBufferHalf = ( m_captureBufferPosition >= ( CaptureBufferSize / 2 ) );
 
 			// duckstation keys voices AFTER the first processed frame
 			if ( i == 0 && ( m_voiceFlags.keyOn != 0 || m_voiceFlags.keyOff != 0 ) )
@@ -1268,7 +1269,7 @@ std::pair<int32_t, int32_t> Spu::SampleVoice( uint32_t voiceIndex ) noexcept
 	if ( ( voiceIndex > 0 ) && ( m_voiceFlags.pitchModulationEnable & voiceFlag ) )
 	{
 		const int32_t factor = std::clamp<int32_t>( m_voices[ voiceIndex - 1 ].lastVolume, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max() ) + 0x8000;
-		step = static_cast<uint16_t>( static_cast<uint32_t>( static_cast<int16_t>( step ) * factor ) >> 15 );
+		step = static_cast<uint16_t>( ( static_cast<int16_t>( step ) * factor ) >> 15 );
 	}
 	step = std::min<uint16_t>( step, 0x3fff );
 
@@ -1277,7 +1278,7 @@ std::pair<int32_t, int32_t> Spu::SampleVoice( uint32_t voiceIndex ) noexcept
 	// interpolation index. If there is a carry out, bit 12 will never be 1, so it'll never add more than 4 to
 	// sample_index, which should never be >27.
 	dbAssert( voice.counter.sampleIndex < SamplesPerADPCMBlock );
-	voice.counter.value += step;
+	voice.counter.value += static_cast<uint32_t>( step );
 
 	if ( voice.counter.sampleIndex >= SamplesPerADPCMBlock )
 	{
@@ -1323,16 +1324,18 @@ Spu::ADPCMBlock Spu::ReadADPCMBlock( uint16_t address ) noexcept
 	{
 		// wrapping
 
+		auto incrementAddress = [&curAddress] { curAddress = ( curAddress + 1 ) & SpuRamAddressMask; };
+
 		block.header.value = m_ram[ curAddress ];
-		curAddress = ( curAddress + 1 ) & SpuRamAddressMask;
+		incrementAddress();
 
 		block.flags.value = m_ram[ curAddress ];
-		curAddress = ( curAddress + 1 ) & SpuRamAddressMask;
+		incrementAddress();
 
 		for ( uint32_t i = 0; i < block.data.size(); ++i )
 		{
 			block.data[ i ] = m_ram[ curAddress ];
-			curAddress = ( curAddress + 1 ) & SpuRamAddressMask;
+			incrementAddress();
 		}
 	}
 
@@ -1341,7 +1344,7 @@ Spu::ADPCMBlock Spu::ReadADPCMBlock( uint16_t address ) noexcept
 
 void Spu::UpdateNoise() noexcept
 {
-	// Dr Hell's noise waveform, implementation borrowed from Duckstation
+	// Dr Hell's noise waveform, implementation taken from Duckstation
 
 	static constexpr std::array<uint8_t, 64> NoiseWaveAdd
 	{
@@ -1372,11 +1375,8 @@ void Spu::UpdateNoise() noexcept
 void Spu::WriteToCaptureBuffer( uint32_t index, int16_t sample ) noexcept
 {
 	const uint32_t address = ( index * CaptureBufferSize ) | m_captureBufferPosition;
-
 	m_ram.Write<uint16_t>( address, sample );
-
-	if ( CheckIrqAddress( address ) && CanTriggerInterrupt() )
-		TriggerInterrupt();
+	TryTriggerInterrupt( address );
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -1388,24 +1388,24 @@ uint32_t Spu::ReverbMemoryAddress( uint32_t address ) const noexcept
 	// Ensures address does not leave the reverb work area.
 	static constexpr uint32_t MASK = ( SpuRamSize - 1 ) / 2;
 	uint32_t offset = m_reverbCurrentAddress + ( address & MASK );
-	offset += m_reverbBaseAddress & ( (int32_t)( offset << 13 ) >> 31 );
+	offset += m_reverbBaseAddress & ( static_cast<int32_t>( offset << 13 ) >> 31 );
 
-	// We address RAM in bytes. TODO: Change this to words.
+	// We address RAM in bytes
 	return ( offset & MASK ) * 2u;
 }
 
 int16_t Spu::ReverbRead( uint32_t address, int32_t offset ) noexcept
 {
 	// TODO: This should check interrupts.
-	const uint32_t real_address = ReverbMemoryAddress( ( address << 2 ) + offset );
-	return m_ram.Read<int16_t>( real_address );
+	const uint32_t realAddress = ReverbMemoryAddress( ( address << 2 ) + offset );
+	return m_ram.Read<int16_t>( realAddress );
 }
 
 void Spu::ReverbWrite( uint32_t address, int16_t data ) noexcept
 {
 	// TODO: This should check interrupts.
-	const uint32_t real_address = ReverbMemoryAddress( address << 2 );
-	m_ram.Write<int16_t>( real_address, data );
+	const uint32_t realAddress = ReverbMemoryAddress( address << 2 );
+	m_ram.Write<int16_t>( realAddress, data );
 }
 
 std::pair<int32_t, int32_t> Spu::ProcessReverb( int16_t inLeft, int16_t inRight ) noexcept
@@ -1415,7 +1415,7 @@ std::pair<int32_t, int32_t> Spu::ProcessReverb( int16_t inLeft, int16_t inRight 
 	m_reverbDownsampleBuffer[ 1 ][ m_reverbResampleBufferPosition | 0x00 ] = inRight;
 	m_reverbDownsampleBuffer[ 1 ][ m_reverbResampleBufferPosition | 0x40 ] = inRight;
 
-	int32_t out[ 2 ];
+	std::array<int32_t, 2> out;
 	if ( m_reverbResampleBufferPosition & 1u )
 	{
 		std::array<int32_t, 2> downsampled;

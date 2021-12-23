@@ -63,7 +63,7 @@ private:
 		uint8_t GetShift() const noexcept
 		{
 			const uint8_t s = shift;
-			return ( s < 13 ) ? s : 9;
+			return ( s <= 12 ) ? s : 9;
 		}
 
 		uint8_t GetFilter() const noexcept
@@ -150,6 +150,7 @@ private:
 			uint16_t sweepPhase : 1;
 			uint16_t sweepDirection : 1;
 			uint16_t sweepMode : 1;
+
 			uint16_t sweepVolume : 1; // 0=fixed volume, 1=sweep volume
 		};
 		uint16_t value = 0;
@@ -167,7 +168,7 @@ private:
 			uint16_t adpcmSampleRate; // (VxPitch)
 			uint16_t adpcmStartAddress; // x8
 			VoiceADSR adsr;
-			uint16_t currentADSRVolume;
+			int16_t currentADSRVolume;
 			uint16_t adpcmRepeatAddress; // x8
 		};
 		std::array<uint16_t, VoiceRegisterCount> values;
@@ -244,6 +245,7 @@ private:
 			uint16_t irq : 1;
 			uint16_t dmaRequest : 1;
 
+			// duckstation has the read and write request bits backwards?? Maybe games don't care
 			uint16_t dmaWriteRequest : 1;
 			uint16_t dmaReadRequest : 1;
 			uint16_t transferBusy : 1;
@@ -307,6 +309,7 @@ private:
 		bool exponential = false;
 
 		void Reset( uint8_t rate_, bool decreasing_, bool exponential_ ) noexcept;
+
 		int16_t Tick( int16_t currentLevel ) noexcept;
 	};
 
@@ -317,6 +320,7 @@ private:
 		int16_t currentLevel = 0;
 
 		void Reset( VolumeRegister reg ) noexcept;
+
 		void Tick() noexcept;
 	};
 
@@ -346,7 +350,7 @@ private:
 	{
 		VoiceRegisters registers;
 
-		int16_t currentAddress = 0;
+		uint16_t currentAddress = 0;
 		VoiceCounter counter;
 		ADPCMFlags currentBlockFlags;
 		bool firstBlock = false;
@@ -439,7 +443,7 @@ private:
 
 	std::array<VolumeRegister, 2> m_mainVolumeRegisters;
 	std::array<VolumeSweep, 2> m_mainVolume;
-	std::array<int16_t, 2> m_reverbOutVolume;
+	std::array<int16_t, 2> m_reverbOutVolume = {};
 
 	VoiceFlags m_voiceFlags;
 
@@ -452,17 +456,17 @@ private:
 	DataTransferControl m_dataTransferControl;
 	Status m_status;
 
-	std::array<int16_t, 2> m_cdAudioInputVolume; // for normal CD-DA and compressed XA-ADPCM
-	std::array<int16_t, 2> m_externalAudioInputVolume;
-	std::array<int16_t, 2> m_currentMainVolume;
+	std::array<int16_t, 2> m_cdAudioInputVolume = {}; // for normal CD-DA and compressed XA-ADPCM
+	std::array<int16_t, 2> m_externalAudioInputVolume = {};
+	std::array<int16_t, 2> m_currentMainVolume = {};
 
 	uint16_t m_reverbBaseAddressRegister = 0;
 	uint16_t m_reverbBaseAddress = 0;
 	uint16_t m_reverbCurrentAddress = 0;
 	int32_t m_reverbResampleBufferPosition = 0;
 	ReverbRegisters m_reverb;
-	std::array<std::array<int16_t, 128>, 2> m_reverbDownsampleBuffer;
-	std::array<std::array<int16_t, 64>, 2> m_reverbUpsampleBuffer;
+	std::array<std::array<int16_t, 128>, 2> m_reverbDownsampleBuffer = {};
+	std::array<std::array<int16_t, 64>, 2> m_reverbUpsampleBuffer = {};
 	
 	FifoBuffer<uint16_t, SpuFifoSize> m_transferBuffer;
 
