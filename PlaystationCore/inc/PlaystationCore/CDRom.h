@@ -190,18 +190,29 @@ public:
 public:
 	bool Open( const fs::path& filename )
 	{
-		m_file.open( filename, std::ios::binary );
-		if ( !m_file.is_open() )
+		std::ifstream newFile( filename, std::ios::binary );
+		if ( !newFile.is_open() )
 			return false;
+
+		m_file = std::move( newFile );
+		m_filename = filename;
+
+		// reset
+		m_tracks.clear();
+		m_indices.clear();
+		m_position = 0;
+		m_positionInTrack = 0;
+		m_positionInIndex = 0;
 
 		// create TOC
 		m_file.seekg( 0, std::ios::end );
 		const auto fileSize = static_cast<uint32_t>( m_file.tellg() );
 		m_file.seekg( 0, std::ios::beg );
 		const uint32_t totalSectors = fileSize / BytesPerSector;
-
 		m_tracks.push_back( Track{ 1, 0, totalSectors, 1, Track::Type::Mode2_2352 } );
-		m_indices.push_back( Index{ 1, 1, 0, 0, totalSectors,Track::Type::Mode2_2352, false } );
+		m_indices.push_back( Index{ 1, 1, 0, 0, totalSectors, Track::Type::Mode2_2352, false } );
+
+		m_currentIndex = &m_indices.front();
 
 		return true;
 	}
