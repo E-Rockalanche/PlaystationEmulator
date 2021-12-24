@@ -24,10 +24,10 @@ constexpr bool IsValidBCD( uint8_t bcd )
 	return IsValidBCDDigit( bcd & 0x0f ) && IsValidBCDDigit( bcd >> 4 );
 }
 
-constexpr bool IsValidBCDAndLess( uint8_t bcd, uint8_t maximum )
+constexpr bool IsValidBCDAndLess( uint8_t bcd, uint8_t maximumBCD )
 {
-	dbExpects( IsValidBCD( maximum ) );
-	return IsValidBCDDigit( bcd & 0x0f ) && bcd < maximum;
+	dbExpects( IsValidBCD( maximumBCD ) );
+	return IsValidBCDDigit( bcd & 0x0f ) && bcd < maximumBCD;
 }
 
 constexpr uint8_t BCDToBinary( uint8_t bcd )
@@ -55,21 +55,25 @@ public:
 	static constexpr uint32_t SecondsPerMinuteBCD = 0x60;
 	static constexpr uint32_t SectorsPerSecondBCD = 0x75;
 
-	static constexpr uint32_t BytesPerSector = 0x930;
-	static constexpr uint32_t RawDataBytesPerSector = 0x924; // includes headers
-	static constexpr uint32_t DataBytesPerSector = 0x800; // excludes headers
+	static constexpr uint32_t BytesPerSector = 0x930; // (2352)
+	static constexpr uint32_t RawDataBytesPerSector = 0x924; // (2340) includes headers
+	static constexpr uint32_t DataBytesPerSector = 0x800; // (2048) excludes headers
+	static constexpr uint32_t Mode2Form1DataBytesPerSector = 0x914; // (2324)
+	static constexpr uint32_t ErrorCorrectionCodesSize = 0x114;
 
 	static constexpr uint32_t SyncSize = 0x0c;
 	static constexpr uint32_t HeaderSize = 4;
 	static constexpr uint32_t SubHeaderSize = 4;
 
+	using LogicalSector = uint32_t;
+
 	using Sync = std::array<uint8_t, SyncSize>;
 
 	struct Header
 	{
-		uint8_t minute;		// BCD
-		uint8_t second;		// BCD
-		uint8_t sector;		// BCD
+		uint8_t minuteBCD;
+		uint8_t secondBCD;
+		uint8_t sectorBCD;
 		uint8_t mode;
 	};
 
@@ -89,7 +93,7 @@ public:
 					std::array<uint8_t, DataBytesPerSector> data;
 					uint32_t checksum;
 					std::array<uint8_t, 8> zeroFilled;
-					std::array<uint8_t, 0x114> errorCorrectionCodes;
+					std::array<uint8_t, ErrorCorrectionCodesSize> errorCorrectionCodes;
 				} mode1;
 
 				struct
@@ -103,12 +107,12 @@ public:
 						{
 							std::array<uint8_t, DataBytesPerSector> data;
 							uint32_t checksum;
-							std::array<uint8_t, 0x114> errorCorrectionCodes;
+							std::array<uint8_t, ErrorCorrectionCodesSize> errorCorrectionCodes;
 						} form1;
 
 						struct
 						{
-							std::array<uint8_t, 0x914> data;
+							std::array<uint8_t, Mode2Form1DataBytesPerSector> data;
 							uint32_t checksum;
 						} form2;
 					};
@@ -126,22 +130,22 @@ public:
 			return Location{ BCDToBinary( mm ), BCDToBinary( ss ), BCDToBinary( sect ) };
 		}
 
-		static constexpr Location FromLogicalSector( uint32_t logicalSector ) noexcept
+		static constexpr Location FromLogicalSector( LogicalSector pos ) noexcept
 		{
-			const uint8_t sector = logicalSector % SectorsPerSecond;
-			logicalSector /= SectorsPerSecond;
+			const uint8_t sector = pos % SectorsPerSecond;
+			pos /= SectorsPerSecond;
 
-			const uint8_t second = logicalSector % SecondsPerMinute;
-			logicalSector /= SecondsPerMinute;
+			const uint8_t second = pos % SecondsPerMinute;
+			pos /= SecondsPerMinute;
 
-			const uint8_t minute = static_cast<uint8_t>( logicalSector );
+			const uint8_t minute = static_cast<uint8_t>( pos );
 
 			return Location{ minute, second, sector };
 		}
 
-		uint32_t ToLogicalSector() const noexcept
+		LogicalSector ToLogicalSector() const noexcept
 		{
-			return minute * SectorsPerMinute + second * SectorsPerSecond + sector;
+			return static_cast<LogicalSector>( minute * SectorsPerMinute + second * SectorsPerSecond + sector );
 		}
 
 		uint8_t minute = 0;
@@ -149,11 +153,57 @@ public:
 		uint8_t sector = 0;
 	};
 
+	struct Track
+	{
+		enum class Type
+		{
+			Audio,
+
+			Mode1_2048,
+			Mode1_2352,
+
+			Mode2_2336,
+			Mode2_2048,
+			Mode2_2324,
+			Mode2_2332,
+			Mode2_2352,
+		};
+
+		uint32_t trackNumber;
+		LogicalSector position;
+		uint32_t length; // in sectors
+		uint32_t firstIndex;
+		Type type;
+	};
+
+	struct Index
+	{
+		uint32_t indexNumber;
+		uint32_t trackNumber;
+		LogicalSector position;
+		LogicalSector positionInTrack;
+		uint32_t length; // in sectors
+		Track::Type trackType;
+		bool pregap;
+	};
+
 public:
 	bool Open( const fs::path& filename )
 	{
 		m_file.open( filename, std::ios::binary );
-		return m_file.is_open();
+		if ( !m_file.is_open() )
+			return false;
+
+		// create TOC
+		m_file.seekg( 0, std::ios::end );
+		const auto fileSize = static_cast<uint32_t>( m_file.tellg() );
+		m_file.seekg( 0, std::ios::beg );
+		const uint32_t totalSectors = fileSize / BytesPerSector;
+
+		m_tracks.push_back( Track{ 1, 0, totalSectors, 1, Track::Type::Mode2_2352 } );
+		m_indices.push_back( Index{ 1, 1, 0, 0, totalSectors,Track::Type::Mode2_2352, false } );
+
+		return true;
 	}
 
 	bool IsOpen() const
@@ -166,9 +216,10 @@ public:
 		m_file.close();
 	}
 
-	void Seek( uint32_t logicalSector )
+	void Seek( LogicalSector position )
 	{
-		uint32_t physicalSector = ( logicalSector <= SectorsPerSecond * 2 ) ? 0 : logicalSector - SectorsPerSecond * 2;
+		m_position = position;
+		const uint32_t physicalSector = ( position <= SectorsPerSecond * 2 ) ? 0 : position - SectorsPerSecond * 2;
 		m_file.seekg( static_cast<std::streampos>( physicalSector ) * BytesPerSector );
 	}
 
@@ -181,6 +232,32 @@ public:
 		return true;
 	}
 
+	uint32_t GetTrackCount() const noexcept
+	{
+		return static_cast<uint32_t>( m_tracks.size() );
+	}
+
+	uint32_t GetFirstTrackNumber() const noexcept
+	{
+		return m_tracks.front().trackNumber;
+	}
+
+	uint32_t GetLastTrackNumber() const noexcept
+	{
+		return m_tracks.back().trackNumber;
+	}
+
+	uint32_t GetLogicalSectorCount() const noexcept
+	{
+		auto& lastTrack = m_tracks.back();
+		return lastTrack.position + lastTrack.length;
+	}
+
+	uint32_t GetTrackStartPosition( uint32_t trackNumber ) const noexcept
+	{
+		return m_tracks[ trackNumber - 1 ].position;
+	}
+
 private:
 	template <typename T>
 	T Read()
@@ -191,8 +268,20 @@ private:
 		return obj;
 	}
 
+protected:
+	fs::path m_filename;
+
+	std::vector<Track> m_tracks;
+	std::vector<Index> m_indices;
+
 private:
 	std::ifstream m_file;
+
+	LogicalSector m_position = 0;
+
+	const Index* m_currentIndex = nullptr;
+	LogicalSector m_positionInTrack = 0;
+	LogicalSector m_positionInIndex = 0;
 };
 
 }

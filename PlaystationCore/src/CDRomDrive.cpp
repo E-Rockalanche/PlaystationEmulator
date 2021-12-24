@@ -172,9 +172,6 @@ void CDRomDrive::Reset()
 	m_trackLocation = {};
 	m_seekLocation = {};
 
-	m_firstTrack = 0;
-	m_lastTrack = 0;
-
 	m_muted = false;
 	m_muteADPCM = false;
 
@@ -820,9 +817,9 @@ void CDRomDrive::ExecuteCommand() noexcept
 
 		case Command::SetLoc:
 		{
-			const auto mm = m_parameterBuffer.Pop();
-			const auto ss = m_parameterBuffer.Pop();
-			const auto sect = m_parameterBuffer.Pop();
+			const uint8_t mm = m_parameterBuffer.Pop();
+			const uint8_t ss = m_parameterBuffer.Pop();
+			const uint8_t sect = m_parameterBuffer.Pop();
 			dbLogDebug( "CDRomDrive::SetLoc -- amm: %X, ass: %X, asect: %X", mm, ss, sect );
 
 			if ( IsValidBCDAndLess( mm, CDRom::MinutesPerDiskBCD ) &&
@@ -924,8 +921,16 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// The command itself returns only status information (to get the actual TOC info, use GetTD and GetTN commands).
 			// Note: The TOC contains information about the tracks on the disk( not file names or so, that kind of information is obtained via Read commands ).
 			// The TOC is read automatically on power - up, when opening / closing the drive door, and when changing sessions ( so, normally, it isn't required to use this command).
-			SendResponse();
-			dbBreak(); // TODO
+			if ( !CanReadDisk() )
+			{
+				SendError( ErrorCode::CannotRespondYet );
+			}
+			else
+			{
+				SendResponse();
+				// TODO: set hold position?
+				QueueSecondResponse( Command::ReadTOC, CpuCyclesPerSecond );
+			}
 			break;
 		}
 
@@ -974,9 +979,9 @@ void CDRomDrive::ExecuteCommand() noexcept
 			else
 			{
 				auto& header = m_currentSectorHeaders->header;
-				m_responseBuffer.Push( header.minute );
-				m_responseBuffer.Push( header.second );
-				m_responseBuffer.Push( header.sector );
+				m_responseBuffer.Push( header.minuteBCD );
+				m_responseBuffer.Push( header.secondBCD );
+				m_responseBuffer.Push( header.sectorBCD );
 				m_responseBuffer.Push( header.mode );
 
 				auto& subHeader = m_currentSectorHeaders->subHeader;
@@ -1028,8 +1033,8 @@ void CDRomDrive::ExecuteCommand() noexcept
 			if ( CanReadDisk() )
 			{
 				SendResponse();
-				m_responseBuffer.Push( m_firstTrack );
-				m_responseBuffer.Push( m_lastTrack );
+				m_responseBuffer.Push( BinaryToBCD( static_cast<uint8_t>( m_cdrom->GetFirstTrackNumber() ) ) );
+				m_responseBuffer.Push( BinaryToBCD( static_cast<uint8_t>( m_cdrom->GetLastTrackNumber() ) ) );
 			}
 			else
 			{
@@ -1043,24 +1048,31 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// For a disk with NN tracks, parameter values 01h..NNh return the start of the specified track,
 			// parameter value 00h returns the end of the last track, and parameter values bigger than NNh return error code 10h.
 			// The GetTD values are relative to Index = 1 and are rounded down to second boundaries
+
+			const uint8_t trackBCD = m_parameterBuffer.Pop();
+			dbLogDebug( "CDRomDrive::ExecuteCommand -- GetTD [%X]", trackBCD );
+
+			const uint8_t trackNumber = IsValidBCD( trackBCD ) ? BCDToBinary( trackBCD ) : 255;
+
 			if ( !CanReadDisk() )
 			{
 				SendError( ErrorCode::CannotRespondYet );
 			}
+			else if ( trackNumber > m_cdrom->GetTrackCount() )
+			{
+				SendError( ErrorCode::InvalidArgument );
+			}
 			else
 			{
-				const auto track = m_parameterBuffer.Pop();
-				dbLogDebug( "CDRomDrive::ExecuteCommand -- GetTD [%X]", (uint32_t)track );
+				const uint32_t position = ( trackNumber == 0 )
+					? m_cdrom->GetLogicalSectorCount()
+					: m_cdrom->GetTrackStartPosition( trackNumber );
 
-				// TODO: send error if track count is out of range
-
-				// TODO: get location of track from cue sheet
+				const CDRom::Location location = CDRom::Location::FromLogicalSector( position );
 
 				SendResponse();
-
-				// send bad track location for now
-				m_responseBuffer.Push( 0x99 ); // mm
-				m_responseBuffer.Push( 0x99 ); // ss
+				m_responseBuffer.Push( BinaryToBCD( location.minute ) );
+				m_responseBuffer.Push( BinaryToBCD( location.second ) );
 			}
 			break;
 		}
@@ -1252,6 +1264,7 @@ void CDRomDrive::ExecuteCommandSecondResponse() noexcept
 		case Command::MotorOn:
 		case Command::Stop:
 		case Command::Pause:
+		case Command::ReadTOC:
 			SendSecondResponse();
 			break;
 

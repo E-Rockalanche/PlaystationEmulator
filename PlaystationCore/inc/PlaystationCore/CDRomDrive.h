@@ -355,9 +355,6 @@ private:
 	CDRom::Location m_trackLocation;
 	CDRom::Location m_seekLocation;
 
-	uint8_t m_firstTrack = 0;
-	uint8_t m_lastTrack = 0;
-
 	bool m_muted = false;
 	bool m_muteADPCM = false;
 
