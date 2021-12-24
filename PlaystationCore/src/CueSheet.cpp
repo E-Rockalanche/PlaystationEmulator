@@ -186,7 +186,7 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 			if ( type == CueSheet::File::Type::Invalid )
 				return false;
 
-			currentFile = &files.emplace_back( filename, type );
+			currentFile = &files.emplace_back( std::string( filename ), type );
 			currentTrack = nullptr;
 		}
 		else if ( token == "TRACK"sv )
@@ -248,6 +248,9 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 				++pos;
 		}
 	}
+
+	sheet.files = std::move( files );
+	return true;
 }
 
 } // namespace PSX
