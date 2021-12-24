@@ -219,6 +219,7 @@
     <ClCompile Include="src\ControllerPorts.cpp" />
     <ClCompile Include="src\Cop0.cpp" />
     <ClCompile Include="src\CPU.cpp" />
+    <ClCompile Include="src\CueSheet.cpp" />
     <ClCompile Include="src\DMA.cpp" />
     <ClCompile Include="src\EventManager.cpp" />
     <ClCompile Include="src\File.cpp" />

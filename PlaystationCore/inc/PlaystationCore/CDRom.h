@@ -121,12 +121,25 @@ public:
 
 	struct Location
 	{
-		static Location FromBCD( uint8_t mm, uint8_t ss, uint8_t sect ) noexcept
+		static constexpr Location FromBCD( uint8_t mm, uint8_t ss, uint8_t sect ) noexcept
 		{
 			return Location{ BCDToBinary( mm ), BCDToBinary( ss ), BCDToBinary( sect ) };
 		}
 
-		uint32_t GetLogicalSector() const noexcept
+		static constexpr Location FromLogicalSector( uint32_t logicalSector ) noexcept
+		{
+			const uint8_t sector = logicalSector % SectorsPerSecond;
+			logicalSector /= SectorsPerSecond;
+
+			const uint8_t second = logicalSector % SecondsPerMinute;
+			logicalSector /= SecondsPerMinute;
+
+			const uint8_t minute = static_cast<uint8_t>( logicalSector );
+
+			return Location{ minute, second, sector };
+		}
+
+		uint32_t ToLogicalSector() const noexcept
 		{
 			return minute * SectorsPerMinute + second * SectorsPerSecond + sector;
 		}

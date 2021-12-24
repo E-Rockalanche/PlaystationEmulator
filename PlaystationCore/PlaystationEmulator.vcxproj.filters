@@ -84,6 +84,9 @@
     <ClCompile Include="src\AudioQueue.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\CueSheet.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

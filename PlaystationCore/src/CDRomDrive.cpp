@@ -548,7 +548,7 @@ void CDRomDrive::BeginSeeking() noexcept
 	ScheduleDriveEvent( DriveState::Seeking, seekCycles );
 
 	dbAssert( m_cdrom );
-	m_cdrom->Seek( m_seekLocation.GetLogicalSector() );
+	m_cdrom->Seek( m_seekLocation.ToLogicalSector() );
 }
 
 void CDRomDrive::BeginReading() noexcept
