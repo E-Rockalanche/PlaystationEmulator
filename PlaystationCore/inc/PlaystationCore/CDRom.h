@@ -7,7 +7,6 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -65,6 +64,8 @@ public:
 	static constexpr uint32_t HeaderSize = 4;
 	static constexpr uint32_t SubHeaderSize = 4;
 
+	static constexpr uint8_t LeadOutTrackNumber = 0xaa;
+
 	using LogicalSector = uint32_t;
 
 	using Sync = std::array<uint8_t, SyncSize>;
@@ -80,6 +81,7 @@ public:
 	union Sector
 	{
 		std::array<uint8_t, BytesPerSector> audio;
+		std::array<uint8_t, BytesPerSector> rawData;
 
 		struct
 		{
@@ -188,60 +190,25 @@ public:
 	};
 
 public:
-	bool Open( const fs::path& filename )
-	{
-		std::ifstream newFile( filename, std::ios::binary );
-		if ( !newFile.is_open() )
-			return false;
+	static std::unique_ptr<CDRom> Open( const fs::path& filename );
+	static std::unique_ptr<CDRom> OpenBin( const fs::path& filename );
 
-		m_file = std::move( newFile );
-		m_filename = filename;
+	CDRom() = default;
 
-		// reset
-		m_tracks.clear();
-		m_indices.clear();
-		m_position = 0;
-		m_positionInTrack = 0;
-		m_positionInIndex = 0;
+	CDRom( const CDRom& ) = delete;
+	CDRom( CDRom&& ) = delete;
+	CDRom& operator=( const CDRom& ) = delete;
+	CDRom& operator=( CDRom&& ) = delete;
 
-		// create TOC
-		m_file.seekg( 0, std::ios::end );
-		const auto fileSize = static_cast<uint32_t>( m_file.tellg() );
-		m_file.seekg( 0, std::ios::beg );
-		const uint32_t totalSectors = fileSize / BytesPerSector;
-		m_tracks.push_back( Track{ 1, 0, totalSectors, 1, Track::Type::Mode2_2352 } );
-		m_indices.push_back( Index{ 1, 1, 0, 0, totalSectors, Track::Type::Mode2_2352, false } );
+	virtual ~CDRom() = default;
 
-		m_currentIndex = &m_indices.front();
+	// seek position on disk
+	bool Seek( LogicalSector position );
+	bool Seek( uint32_t trackNumber, Location locationInTrack );
+	bool SeekTrack1() { return Seek( 1, Location{} ); }
 
-		return true;
-	}
-
-	bool IsOpen() const
-	{
-		return m_file.is_open();
-	}
-
-	void Close()
-	{
-		m_file.close();
-	}
-
-	void Seek( LogicalSector position )
-	{
-		m_position = position;
-		const uint32_t physicalSector = ( position <= SectorsPerSecond * 2 ) ? 0 : position - SectorsPerSecond * 2;
-		m_file.seekg( static_cast<std::streampos>( physicalSector ) * BytesPerSector );
-	}
-
-	bool ReadSector( Sector& sector )
-	{
-		if ( m_file.eof() )
-			return false;
-
-		m_file.read( (char*)&sector, sizeof( Sector ) );
-		return true;
-	}
+	// read sector from current seek position
+	bool ReadSector( Sector& sector );
 
 	uint32_t GetTrackCount() const noexcept
 	{
@@ -258,10 +225,10 @@ public:
 		return m_tracks.back().trackNumber;
 	}
 
-	uint32_t GetLogicalSectorCount() const noexcept
+	uint32_t GetLastTrackEndPosition() const noexcept
 	{
-		auto& lastTrack = m_tracks.back();
-		return lastTrack.position + lastTrack.length;
+		auto& track = m_tracks.back();
+		return track.position + track.length;
 	}
 
 	uint32_t GetTrackStartPosition( uint32_t trackNumber ) const noexcept
@@ -269,15 +236,11 @@ public:
 		return m_tracks[ trackNumber - 1 ].position;
 	}
 
-private:
-	template <typename T>
-	T Read()
-	{
-		dbExpects( !m_file.eof() );
-		T obj;
-		m_file.read( reinterpret_cast<char*>( &obj ), sizeof( obj ) );
-		return obj;
-	}
+protected:
+	// best API for single or multi file formats with pregaps
+	virtual bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) = 0;
+
+	const Index* FindIndex( LogicalSector position ) const;
 
 protected:
 	fs::path m_filename;
@@ -286,8 +249,6 @@ protected:
 	std::vector<Index> m_indices;
 
 private:
-	std::ifstream m_file;
-
 	LogicalSector m_position = 0;
 
 	const Index* m_currentIndex = nullptr;

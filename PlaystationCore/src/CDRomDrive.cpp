@@ -518,7 +518,7 @@ void CDRomDrive::StopMotor() noexcept
 	m_driveEvent->Cancel();
 
 	if ( m_cdrom )
-		m_cdrom->Seek( 0 ); // seek to beginning of track 1
+		m_cdrom->SeekTrack1();
 }
 
 void CDRomDrive::BeginSeeking() noexcept
@@ -545,7 +545,10 @@ void CDRomDrive::BeginSeeking() noexcept
 	ScheduleDriveEvent( DriveState::Seeking, seekCycles );
 
 	dbAssert( m_cdrom );
-	m_cdrom->Seek( m_seekLocation.ToLogicalSector() );
+	if ( !m_cdrom->Seek( m_seekLocation.ToLogicalSector() ) )
+	{
+		dbLogWarning( "CDRomDrive::BeginSeeking -- failed seek [%u:%u:%u]", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
+	}
 }
 
 void CDRomDrive::BeginReading() noexcept
@@ -754,7 +757,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			}
 
 			if ( m_cdrom )
-				m_cdrom->Seek( 0 );
+				m_cdrom->SeekTrack1();
 
 			QueueSecondResponse( Command::Reset, 400000 );
 
@@ -1065,7 +1068,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			else
 			{
 				const uint32_t position = ( trackNumber == 0 )
-					? m_cdrom->GetLogicalSectorCount()
+					? m_cdrom->GetLastTrackEndPosition()
 					: m_cdrom->GetTrackStartPosition( trackNumber );
 
 				const CDRom::Location location = CDRom::Location::FromLogicalSector( position );
@@ -1337,7 +1340,7 @@ void CDRomDrive::ExecuteDriveState() noexcept
 			CDRom::Sector sector;
 			if ( !m_cdrom->ReadSector( sector ) )
 			{
-				dbLogWarning( "CDRomDrive::ExecuteDriveState -- Reading from end of disk" );
+				dbBreakMessage( "CDRomDrive::ExecuteDriveState -- Reading from end of disk" );
 				// TODO: send end data response (also for read?)
 				break;
 			}

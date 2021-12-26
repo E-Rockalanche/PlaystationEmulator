@@ -13,6 +13,9 @@
     <Filter Include="inc\shaders">
       <UniqueIdentifier>{0ce944c1-2a0b-41cd-94a1-2f8d86cac2a1}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\CDRoms">
+      <UniqueIdentifier>{feda4c08-1ece-4652-8a98-0920490e9ae5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\CPU.cpp">
@@ -87,15 +90,18 @@
     <ClCompile Include="src\CueSheet.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\CDRom_Bin.cpp">
+      <Filter>src\CDRoms</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CDRom.cpp">
+      <Filter>src\CDRoms</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationCore\BIOS.h">
-      <Filter>inc</Filter>
-    </ClInclude>
-    <ClInclude Include="inc\PlaystationCore\CDRom.h">
       <Filter>inc</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\CDRomDrive.h">
@@ -198,6 +204,9 @@
       <Filter>inc</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\AudioQueue.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\CDRom.h">
       <Filter>inc</Filter>
     </ClInclude>
   </ItemGroup>
