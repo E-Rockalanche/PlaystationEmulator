@@ -293,6 +293,10 @@ private:
 	bool IsReading() const noexcept { return m_driveState == DriveState::Reading; }
 	bool IsPlaying() const noexcept { return m_driveState == DriveState::Playing; }
 
+	void SendDataEndResponse();
+
+	void ProcessDataSector( const CDRom::Sector& sector );
+	void ProcessCDDASector( const CDRom::Sector& sector );
 	void DecodeAdpcmSector( const CDRom::Sector& sector );
 
 	template <bool IsStereo, bool HalfSampleRate>
@@ -350,8 +354,8 @@ private:
 	};
 	XaFilter m_xaFilter;
 
-	uint8_t m_track = 0;
-	uint8_t m_trackIndex = 0; // or just m_index?
+	uint8_t m_trackNumber = 0;
+	uint8_t m_trackIndex = 0;
 	CDRom::Location m_trackLocation;
 	CDRom::Location m_seekLocation;
 

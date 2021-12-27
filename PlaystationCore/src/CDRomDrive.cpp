@@ -167,7 +167,7 @@ void CDRomDrive::Reset()
 
 	m_xaFilter = XaFilter{};
 
-	m_track = 0;
+	m_trackNumber = 0;
 	m_trackIndex = 0;
 	m_trackLocation = {};
 	m_seekLocation = {};
@@ -581,19 +581,22 @@ void CDRomDrive::BeginReading() noexcept
 	ScheduleDriveEvent( DriveState::Reading, GetReadCycles() );
 }
 
-void CDRomDrive::BeginPlaying( uint8_t track ) noexcept
+void CDRomDrive::BeginPlaying( uint8_t trackNumber ) noexcept
 {
 	m_pendingRead = false;
 
-	if ( track == 0 )
+	if ( trackNumber == 0 )
 	{
-		// TODO: play from setloc position or current position. Set current track from location
+		dbAssert( m_cdrom );
+		auto* trackIndex = m_cdrom->GetCurrentIndex();
+		dbAssert( trackIndex );
+		m_trackNumber = static_cast<uint8_t>( trackIndex->trackNumber );
 	}
 	else
 	{
 		// play chosen Track
 		m_pendingSeek = true;
-		m_track = track;
+		m_trackNumber = trackNumber;
 	}
 
 	if ( m_pendingSeek )
@@ -1012,7 +1015,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			{
 				// TODO: update position while seeking
 
-				m_responseBuffer.Push( m_track );
+				m_responseBuffer.Push( m_trackNumber );
 				m_responseBuffer.Push( m_trackIndex );
 				m_responseBuffer.Push( BinaryToBCD( m_trackLocation.minute ) );
 				m_responseBuffer.Push( BinaryToBCD( m_trackLocation.second ) );
@@ -1287,6 +1290,16 @@ void CDRomDrive::ExecuteCommandSecondResponse() noexcept
 	UpdateStatus();
 }
 
+
+void CDRomDrive::SendDataEndResponse()
+{
+	SendSecondResponse( InterruptResponse::DataEnd );
+	m_driveStatus.play = false;
+	m_driveStatus.read = false;
+	m_driveStatus.seek = false;
+	m_driveState = DriveState::Idle;
+}
+
 void CDRomDrive::ExecuteDriveState() noexcept
 {
 	const DriveState state = std::exchange( m_driveState, DriveState::Idle );
@@ -1321,7 +1334,7 @@ void CDRomDrive::ExecuteDriveState() noexcept
 			}
 			else if ( m_pendingPlay )
 			{
-				BeginPlaying( m_track );
+				BeginPlaying( m_trackNumber );
 			}
 			else
 			{
@@ -1337,85 +1350,50 @@ void CDRomDrive::ExecuteDriveState() noexcept
 		{
 			dbLogDebug( "CDRomDrive::ExecuteDriveState -- read complete" );
 
-			CDRom::Sector sector;
-			if ( !m_cdrom->ReadSector( sector ) )
+			auto* trackIndex = m_cdrom->GetCurrentIndex();
+			dbAssert( trackIndex );
+			if ( trackIndex->trackNumber == CDRom::LeadOutTrackNumber )
 			{
-				dbBreakMessage( "CDRomDrive::ExecuteDriveState -- Reading from end of disk" );
-				// TODO: send end data response (also for read?)
+				SendDataEndResponse();
+				StopMotor();
 				break;
 			}
 
-			ScheduleDriveEvent( state, GetReadCycles() );
-
-			// TODO: figure out what kind of sector it is first
-
-			if ( state == DriveState::Playing || ( state == DriveState::Reading && m_mode.cdda ) )
+			const bool isAudioSector = ( trackIndex->trackType == CDRom::Track::Type::Audio );
+			if ( isAudioSector )
 			{
-				// play CD-DA audio
-				dbLogDebug( "Ignoring CD-DA sector" );
-				if ( m_mode.report )
+				if ( m_trackNumber == 0 )
 				{
-					m_secondResponseBuffer.Push( m_driveStatus.value );
-					m_secondResponseBuffer.Push( m_track ); // track
-					m_secondResponseBuffer.Push( m_trackIndex ); // index
-					m_secondResponseBuffer.Push( 0 ); // mm/amm
-					m_secondResponseBuffer.Push( 2 ); // ss+0x80/ass
-					m_secondResponseBuffer.Push( 0 ); // sect/asect
-					m_secondResponseBuffer.Push( 0 ); // peaklo
-					m_secondResponseBuffer.Push( 0 ); // peakhi
-					m_queuedInterrupt = InterruptResponse::ReceivedData;
+					m_trackNumber = static_cast<uint8_t>( trackIndex->trackNumber );
 				}
-				break;
-			}
-
-			m_currentSectorHeaders = SectorHeaders{ sector.header, sector.mode2.subHeader };
-
-			if ( m_mode.xaadpcm && ( sector.header.mode == 2 ) )
-			{
-				if ( sector.mode2.subHeader.subMode.audio && sector.mode2.subHeader.subMode.realTime )
+				else if ( m_mode.autoPause && trackIndex->trackNumber != m_trackNumber )
 				{
-					// read XA-ADPCM
-					// dbLogDebug( "Ignoring XA-ADPCM sector" );
-					DecodeAdpcmSector( sector );
+					SendDataEndResponse();
 					break;
 				}
 			}
 
-			m_writeSectorBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
-			auto& buffer = m_sectorBuffers[ m_writeSectorBuffer ];
-
-			if ( buffer.size > 0 )
-				dbLogWarning( "CDRomDrive::ExecuteDriveState -- overwriting buffer [%u]", m_writeSectorBuffer );
-
-			if ( m_mode.sectorSize )
+			CDRom::Sector sector;
+			if ( !m_cdrom->ReadSector( sector ) )
 			{
-				std::copy_n( sector.audio.data() + CDRom::SyncSize, DataBufferSize, buffer.bytes.data() );
-				buffer.size = DataBufferSize;
+				dbBreakMessage( "CDRomDrive::ExecuteDriveState -- Failed to read sector" );
+				break;
+			}
+
+			if ( !isAudioSector && ( state == DriveState::Reading ) )
+			{
+				ProcessDataSector( sector );
+			}
+			else if ( isAudioSector && ( state == DriveState::Playing || ( state == DriveState::Reading && m_mode.cdda ) ) )
+			{
+				ProcessCDDASector( sector );
 			}
 			else
 			{
-				auto readSectorData = [&buffer]( const uint8_t* src )
-				{
-					std::copy_n( src, CDRom::DataBytesPerSector, buffer.bytes.data() );
-				};
-
-				switch ( sector.header.mode )
-				{
-					case 0:
-						std::fill_n( buffer.bytes.data(), CDRom::DataBytesPerSector, uint8_t( 0 ) );
-						break;
-
-					case 1:		readSectorData( sector.mode1.data.data() );			break;
-					case 2:		readSectorData( sector.mode2.form1.data.data() );	break;
-					case 3:		readSectorData( sector.mode2.form2.data.data() );	break;
-
-					default:	dbBreak();											break;
-				}
-				buffer.size = CDRom::DataBytesPerSector;
+				dbLogWarning( "CDRomDrive::ExecuteDriveState -- Niether reading data nor playing audio. Ignoring sector" );
 			}
 
-			// TODO: interrupt retry
-			SendSecondResponse( InterruptResponse::ReceivedData );
+			ScheduleDriveEvent( state, GetReadCycles() );
 			break;
 		}
 
@@ -1459,6 +1437,97 @@ void CDRomDrive::RequestData() noexcept
 		SendSecondResponse( InterruptResponse::ReceivedData );
 		if ( m_interruptFlags == 0 )
 			ShiftQueuedInterrupt();
+	}
+}
+
+void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
+{
+	m_currentSectorHeaders = SectorHeaders{ sector.header, sector.mode2.subHeader };
+
+	if ( m_mode.xaadpcm && ( sector.header.mode == 2 ) )
+	{
+		if ( sector.mode2.subHeader.subMode.audio && sector.mode2.subHeader.subMode.realTime )
+		{
+			// read XA-ADPCM
+			// dbLogDebug( "Ignoring XA-ADPCM sector" );
+			DecodeAdpcmSector( sector );
+			return;
+		}
+	}
+
+	m_writeSectorBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
+	auto& buffer = m_sectorBuffers[ m_writeSectorBuffer ];
+
+	if ( buffer.size > 0 )
+		dbLogWarning( "CDRomDrive::ExecuteDriveState -- overwriting buffer [%u]", m_writeSectorBuffer );
+
+	if ( m_mode.sectorSize )
+	{
+		std::copy_n( sector.audio.data() + CDRom::SyncSize, DataBufferSize, buffer.bytes.data() );
+		buffer.size = DataBufferSize;
+	}
+	else
+	{
+		auto readSectorData = [&buffer]( const uint8_t* src )
+		{
+			std::copy_n( src, CDRom::DataBytesPerSector, buffer.bytes.data() );
+		};
+
+		switch ( sector.header.mode )
+		{
+			case 0:
+				std::fill_n( buffer.bytes.data(), CDRom::DataBytesPerSector, uint8_t( 0 ) );
+				break;
+
+			case 1:		readSectorData( sector.mode1.data.data() );			break;
+			case 2:		readSectorData( sector.mode2.form1.data.data() );	break;
+			case 3:		readSectorData( sector.mode2.form2.data.data() );	break;
+
+			default:	dbBreak();											break;
+		}
+		buffer.size = CDRom::DataBytesPerSector;
+	}
+
+	// TODO: interrupt retry
+	SendSecondResponse( InterruptResponse::ReceivedData );
+}
+
+void CDRomDrive::ProcessCDDASector( const CDRom::Sector& sector )
+{
+	if ( m_driveState == DriveState::Playing && m_mode.report )
+	{
+		// TODO
+		m_secondResponseBuffer.Push( m_driveStatus.value );
+		m_secondResponseBuffer.Push( m_trackNumber ); // track
+		m_secondResponseBuffer.Push( m_trackIndex ); // index
+		m_secondResponseBuffer.Push( 0 ); // mm/amm
+		m_secondResponseBuffer.Push( 2 ); // ss+0x80/ass
+		m_secondResponseBuffer.Push( 0 ); // sect/asect
+		m_secondResponseBuffer.Push( 0 ); // peaklo
+		m_secondResponseBuffer.Push( 0 ); // peakhi
+		m_queuedInterrupt = InterruptResponse::ReceivedData;
+	}
+
+	if ( m_muted )
+		return;
+
+	// TODO generate pending SPU samples
+
+	static constexpr uint32_t NumFrames = CDRom::BytesPerSector / 4; // stereo 16bit frames
+
+	if ( m_audioBuffer.Capacity() < NumFrames )
+	{
+		const uint32_t toDrop = NumFrames - m_audioBuffer.Capacity();
+		dbLogWarning( "CDRomDrive::ProcessCDDASector -- dropping %u audio samples", toDrop );
+		m_audioBuffer.Ignore( toDrop );
+	}
+
+	const int16_t* samples = reinterpret_cast<const int16_t*>( sector.audio.data() );
+	for ( size_t i = 0; i < NumFrames; ++i )
+	{
+		const int16_t left = *( samples++ );
+		const int16_t right = *( samples++ );
+		AddAudioFrame( left, right );
 	}
 }
 
