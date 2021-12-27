@@ -8,15 +8,11 @@ namespace PSX
 class CDRom_Bin : public CDRom
 {
 public:
-	CDRom_Bin() = default;
-	~CDRom_Bin() override = default;
-
 	bool Open( const fs::path & filename );
 
 	bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) override;
 
 private:
-	static constexpr uint32_t PregapLength = 2 * SectorsPerSecond;
 	static constexpr Track::Type TrackType = Track::Type::Mode2_2352;
 
 private:
@@ -25,23 +21,28 @@ private:
 
 bool CDRom_Bin::Open( const fs::path& filename )
 {
-	m_binFile.open( filename, std::ios::binary );
-	if ( !m_binFile.is_open() )
+	std::ifstream fin( filename, std::ios::binary );
+	if ( !fin.is_open() )
 		return false;
 
 	// get file size
-	m_binFile.seekg( 0, std::ios::end );
-	const auto totalSectors = static_cast<uint32_t>( m_binFile.tellg() / BytesPerSector );
-	m_binFile.seekg( 0, std::ios::beg );
-	if ( totalSectors == 0 )
+	fin.seekg( 0, std::ios::end );
+	const auto fileSectorCount = static_cast<uint32_t>( fin.tellg() / BytesPerSector );
+	fin.seekg( 0, std::ios::beg );
+	if ( fileSectorCount == 0 )
 		return false;
+
+	m_binFile = std::move( fin );
+	m_filename = filename;
+
+	// build TOC
 
 	// two seconds of implicit pregap
 	Index pregapIndex{};
 	pregapIndex.indexNumber = 0;
 	pregapIndex.trackNumber = 1;
 	pregapIndex.position = 0;
-	pregapIndex.positionInTrack = static_cast<LogicalSector>( -static_cast<int32_t>( PregapLength ) );
+	pregapIndex.positionInTrack = (uint32_t)-(int32_t)PregapLength;
 	pregapIndex.length = PregapLength;
 	pregapIndex.trackType = TrackType;
 	pregapIndex.pregap = true;
@@ -53,33 +54,31 @@ bool CDRom_Bin::Open( const fs::path& filename )
 	dataIndex.trackNumber = 1;
 	dataIndex.position = PregapLength;
 	dataIndex.positionInTrack = 0;
-	dataIndex.length = totalSectors;
+	dataIndex.length = fileSectorCount;
 	dataIndex.trackType = TrackType;
 	dataIndex.pregap = false;
+	dataIndex.filePosition = 0;
 	m_indices.push_back( dataIndex );
 
 	// single track
 	Track track{};
 	track.trackNumber = 1;
 	track.position = PregapLength;
-	track.length = totalSectors;
+	track.length = fileSectorCount;
 	track.firstIndex = 0;
 	track.type = TrackType;
 	m_tracks.push_back( track );
 
-	SeekTrack1();
+	AddLeadOutIndex();
 
-	return true;
+	return SeekTrack1();
 }
 
 bool CDRom_Bin::ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector )
 {
-	const uint32_t diskPosition = index.position + position;
-	if ( diskPosition < PregapLength )
-		return false;
+	const auto filePos = ( std::streampos( index.filePosition ) + std::streampos( position ) ) * BytesPerSector;
 
-	const uint32_t physicalPos = diskPosition - PregapLength;
-	m_binFile.seekg( physicalPos * BytesPerSector );
+	m_binFile.seekg( filePos );
 	if ( m_binFile.fail() )
 		return false;
 
