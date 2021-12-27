@@ -27,7 +27,10 @@ bool CDRom::Seek( LogicalSector position )
 	{
 		newIndex = FindIndex( position );
 		if ( !newIndex )
+		{
+			dbLogWarning( "CDRom::Seek -- failed seek to sector %u", position );
 			return false;
+		}
 	}
 
 	m_position = position;
@@ -40,12 +43,18 @@ bool CDRom::Seek( LogicalSector position )
 bool CDRom::Seek( uint32_t trackNumber, Location locationInTrack )
 {
 	if ( trackNumber == 0 || trackNumber > m_tracks.size() )
+	{
+		dbLogWarning( "CDRom::Seek -- track number out of bounds [%u]", trackNumber );
 		return false;
+	}
 
 	auto& track = m_tracks[ trackNumber - 1 ];
 	const uint32_t positionInTrack = locationInTrack.ToLogicalSector();
 	if ( positionInTrack >= track.length )
+	{
+		dbLogWarning( "CDRom::Seek -- failed seek to track %u, location %u:%u:%u", trackNumber, locationInTrack.minute, locationInTrack.second, locationInTrack.sector );
 		return false;
+	}
 
 	return Seek( track.position + positionInTrack );
 }
@@ -57,7 +66,22 @@ const CDRom::Index* CDRom::FindIndex( LogicalSector position ) const
 		if ( Within( position, index.position, index.length ) )
 			return &index;
 	}
+
+	dbLogWarning( "CDRom::FindIndex -- cannot find index for disk position %u", position );
 	return nullptr;
+}
+
+void CDRom::AddLeadOutIndex()
+{
+	dbAssert( !m_indices.empty() );
+	auto& lastIndex = m_indices.back();
+
+	Index leadOut{};
+	leadOut.indexNumber = 0;
+	leadOut.trackNumber = LeadOutTrackNumber;
+	leadOut.position = lastIndex.position + lastIndex.length;
+	leadOut.length = LeadOutLength;
+	m_indices.push_back( leadOut );
 }
 
 bool CDRom::ReadSector( Sector& sector )
@@ -75,6 +99,10 @@ bool CDRom::ReadSector( Sector& sector )
 	{
 		sector.rawData.fill( LeadOutTrackNumber );
 	}
+	else if ( m_currentIndex->pregap )
+	{
+		sector.rawData.fill( 0 );
+	}
 	else if ( !ReadSectorFromIndex( *m_currentIndex, m_positionInIndex, sector ) )
 	{
 		return false;
@@ -91,14 +119,24 @@ bool CDRom::ReadSector( Sector& sector )
 std::unique_ptr<CDRom> CDRom::Open( const fs::path& filename )
 {
 	const auto ext = filename.extension();
+
+	std::unique_ptr<CDRom> cdrom;
+
 	if ( stdx::iequals( ext.native(), ".bin" ) )
 	{
-		return OpenBin( filename );
+		cdrom =  OpenBin( filename );
 	}
-	else
+	else if ( stdx::iequals( ext.native(), ".cue" ) )
 	{
-		return nullptr;
+		cdrom =  OpenCue( filename );
 	}
+
+	if ( cdrom == nullptr )
+	{
+		LogError( "Failed to open %s", filename.u8string().c_str() );
+	}
+
+	return cdrom;
 }
 
 }

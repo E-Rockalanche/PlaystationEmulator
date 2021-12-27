@@ -50,9 +50,13 @@ public:
 	static constexpr uint32_t SectorsPerSecond = 75;
 	static constexpr uint32_t SectorsPerMinute = SecondsPerMinute * SectorsPerSecond;
 
-	static constexpr uint32_t MinutesPerDiskBCD = 0x74;
-	static constexpr uint32_t SecondsPerMinuteBCD = 0x60;
-	static constexpr uint32_t SectorsPerSecondBCD = 0x75;
+	static constexpr uint8_t MinutesPerDiskBCD = 0x74;
+	static constexpr uint8_t SecondsPerMinuteBCD = 0x60;
+	static constexpr uint8_t SectorsPerSecondBCD = 0x75;
+
+	static constexpr uint32_t PregapLength = 2 * SectorsPerSecond;
+	static constexpr uint32_t LeadOutLength = 6750;
+	static constexpr uint8_t LeadOutTrackNumber = 0xaa;
 
 	static constexpr uint32_t BytesPerSector = 0x930; // (2352)
 	static constexpr uint32_t RawDataBytesPerSector = 0x924; // (2340) includes headers
@@ -63,8 +67,6 @@ public:
 	static constexpr uint32_t SyncSize = 0x0c;
 	static constexpr uint32_t HeaderSize = 4;
 	static constexpr uint32_t SubHeaderSize = 4;
-
-	static constexpr uint8_t LeadOutTrackNumber = 0xaa;
 
 	using LogicalSector = uint32_t;
 
@@ -171,27 +173,32 @@ public:
 			Mode2_2352,
 		};
 
-		uint32_t trackNumber;
-		LogicalSector position;
-		uint32_t length; // in sectors
-		uint32_t firstIndex;
-		Type type;
+		uint32_t trackNumber = 0;
+		LogicalSector position = 0;
+		uint32_t length = 0; // in sectors
+		uint32_t firstIndex = 0;
+		Type type{};
 	};
 
 	struct Index
 	{
-		uint32_t indexNumber;
-		uint32_t trackNumber;
-		LogicalSector position;
-		LogicalSector positionInTrack;
-		uint32_t length; // in sectors
-		Track::Type trackType;
-		bool pregap;
+		uint32_t indexNumber = 0;
+		uint32_t trackNumber = 0;
+		LogicalSector position = 0;
+		LogicalSector positionInTrack = 0;
+		uint32_t length = 0; // in sectors
+		Track::Type trackType{};
+		bool pregap = false;
+
+		// info for multi-file formats
+		uint32_t fileIndex = 0;
+		uint32_t filePosition = 0;
 	};
 
 public:
 	static std::unique_ptr<CDRom> Open( const fs::path& filename );
 	static std::unique_ptr<CDRom> OpenBin( const fs::path& filename );
+	static std::unique_ptr<CDRom> OpenCue( const fs::path& filename );
 
 	CDRom() = default;
 
@@ -236,11 +243,18 @@ public:
 		return m_tracks[ trackNumber - 1 ].position;
 	}
 
+	const Index* GetCurrentIndex() const noexcept
+	{
+		return m_currentIndex;
+	}
+
 protected:
 	// best API for single or multi file formats with pregaps
 	virtual bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) = 0;
 
 	const Index* FindIndex( LogicalSector position ) const;
+
+	void AddLeadOutIndex();
 
 protected:
 	fs::path m_filename;
