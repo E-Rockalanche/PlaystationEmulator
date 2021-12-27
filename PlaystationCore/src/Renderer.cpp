@@ -536,10 +536,7 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 		DrawBatch();
 
 	if ( m_drawAreaLeft >= m_drawAreaRight || m_drawAreaTop >= m_drawAreaBottom )
-	{
-		dbLogWarning( "Renderer::PushTriangle() -- draw area is invalid" );
 		return;
-	}
 
 	EnableSemiTransparency( semiTransparent );
 
