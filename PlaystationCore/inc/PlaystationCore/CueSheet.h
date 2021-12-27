@@ -1,6 +1,9 @@
 #pragma once
 
+#include "CDRom.h"
+
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -12,24 +15,20 @@ namespace PSX
 
 struct CueSheet
 {
+	static constexpr uint32_t MaxTracks = 99;
+	static constexpr uint32_t MaxIndices = 99;
+
 	struct TrackIndex
 	{
 		TrackIndex( uint8_t i, uint8_t m, uint8_t s, uint8_t f )
-			: index{ i }, mm{ m }, ss{ s }, ff{ f }
+			: indexNumber{ i }, location{ m, s, f }
 		{}
 
-		uint8_t index;
-		uint8_t mm;
-		uint8_t ss;
-		uint8_t ff;
+		uint8_t indexNumber;
+		CDRom::Location location;
 	};
 
-	struct Gap
-	{
-		uint8_t mm = 0;
-		uint8_t ss = 0;
-		uint8_t ff = 0;
-	};
+	using Gap = CDRom::Location;
 
 	struct Track
 	{
@@ -51,8 +50,17 @@ struct CueSheet
 		uint8_t trackNumber;
 		Type type;
 		std::vector<TrackIndex> indices;
-		Gap pregap;
-		Gap postgap;
+		std::optional<Gap> pregap;
+		std::optional<Gap> postgap;
+
+		const TrackIndex* FindIndex( uint32_t indexNumber ) const
+		{
+			for ( auto& index : indices )
+				if ( index.indexNumber == indexNumber )
+					return &index;
+
+			return nullptr;
+		}
 	};
 
 	struct File
@@ -75,9 +83,11 @@ struct CueSheet
 	};
 
 	std::vector<File> files;
-};
 
-bool LoadCueSheet( const fs::path& filename, CueSheet& sheet );
-bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet );
+	static bool Load( const fs::path& filename, CueSheet& sheet );
+	static bool Parse( std::string_view rawtext, CueSheet& sheet );
+
+	std::pair<const Track*, const File*> FindTrack( uint32_t trackNumber ) const;
+};
 
 } // namespace PSX

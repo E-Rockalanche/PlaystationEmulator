@@ -11,12 +11,12 @@ using namespace std::string_view_literals;
 namespace PSX
 {
 
-bool LoadCueSheet( const fs::path& filename, CueSheet& sheet )
+bool CueSheet::Load( const fs::path& filename, CueSheet& sheet )
 {
-	std::ifstream fin( filename );
+	std::ifstream fin( filename, std::ios::binary ); // open in binary so we don't have problems with the file size
 	if ( !fin.is_open() )
 	{
-		dbLogWarning( "LoadCueSheet -- failed to load cue sheet from %s", filename.u8string().c_str() );
+		LogError( "Failed to open cue sheet %s", filename.u8string().c_str() );
 		return false;
 	}
 
@@ -31,10 +31,10 @@ bool LoadCueSheet( const fs::path& filename, CueSheet& sheet )
 
 	fin.close();
 
-	return ParseCueSheet( std::string_view( rawtext.get(), size ), sheet );
+	return Parse( std::string_view( rawtext.get(), size ), sheet );
 }
 
-bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
+bool CueSheet::Parse( std::string_view rawtext, CueSheet& sheet )
 {
 	size_t pos = 0;
 
@@ -76,16 +76,14 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 		if ( !readDelimeter( '"' ) )
 			return std::string_view{};
 
-		++pos;
 		const size_t start = pos;
-		while ( pos < rawtext.size() && ( rawtext[ pos ] != '"' ) );
+		while ( pos < rawtext.size() && ( rawtext[ pos ] != '"' ) )
 			++pos;
+
+		const size_t size = pos - start;
 
 		if ( !readDelimeter( '"' ) )
 			return std::string_view{};
-
-		const size_t size = pos - start;
-		++pos;
 
 		return rawtext.substr( start, size );
 	};
@@ -107,8 +105,10 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 			return Type::WAVE;
 		else if ( token == "MP3"sv )
 			return Type::MP3;
-		else
-			return Type::Invalid;
+
+		LogError( "Invalid cue sheet file type: %s", std::string( token ).c_str() );
+		return Type::Invalid;
+
 	};
 
 	auto readBCD = [&]
@@ -170,6 +170,11 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 	CueSheet::File* currentFile = nullptr;
 	CueSheet::Track* currentTrack = nullptr;
 
+	auto completeTrack = [&]
+	{
+		return !currentTrack || currentTrack->FindIndex( 1 );
+	};
+
 	for(;;)
 	{
 		const auto token = readToken();
@@ -178,6 +183,9 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 
 		if ( token == "FILE"sv )
 		{
+			if ( !completeTrack() )
+				return false;
+
 			const auto filename = readString();
 			if ( filename.empty() )
 				return false;
@@ -191,6 +199,9 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 		}
 		else if ( token == "TRACK"sv )
 		{
+			if ( !completeTrack() )
+				return false;
+
 			if ( !currentFile )
 				return false;
 
@@ -228,7 +239,7 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 			if ( ff == InvalidBCD )
 				return false;
 
-			currentTrack->pregap = { mm, ss, ff };
+			currentTrack->pregap = Gap{ mm, ss, ff };
 		}
 		else if ( token == "POSTGAP"sv )
 		{
@@ -239,7 +250,7 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 			if ( ff == InvalidBCD )
 				return false;
 
-			currentTrack->postgap = { mm, ss, ff };
+			currentTrack->postgap = Gap{ mm, ss, ff };
 		}
 		else if ( token == "REM"sv )
 		{
@@ -251,6 +262,20 @@ bool ParseCueSheet( std::string_view rawtext, CueSheet& sheet )
 
 	sheet.files = std::move( files );
 	return true;
+}
+
+std::pair<const CueSheet::Track*, const CueSheet::File*> CueSheet::FindTrack( uint32_t trackNumber ) const
+{
+	for ( auto& file : files )
+	{
+		for ( auto& track : file.tracks )
+		{
+			if ( track.trackNumber == trackNumber )
+				return { &track, &file };
+		}
+	}
+
+	return { nullptr, nullptr };
 }
 
 } // namespace PSX
