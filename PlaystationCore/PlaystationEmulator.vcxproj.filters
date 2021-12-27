@@ -96,6 +96,9 @@
     <ClCompile Include="src\CDRom.cpp">
       <Filter>src\CDRoms</Filter>
     </ClCompile>
+    <ClCompile Include="src\CDRom_Cue.cpp">
+      <Filter>src\CDRoms</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
