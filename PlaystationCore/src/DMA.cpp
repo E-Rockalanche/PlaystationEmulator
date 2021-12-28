@@ -48,7 +48,7 @@ Dma::Dma( Ram& ram,
 
 void Dma::Reset()
 {
-	m_resumeDmaEvent->Cancel();
+	m_resumeDmaEvent->Reset();
 
 	for ( auto& channel : m_channels )
 		channel = {};
@@ -343,7 +343,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 	}
 
 	if ( totalCycles > 0 )
-		m_eventManager.AddCycles( totalCycles );
+		m_eventManager.AddCyclesAndUpdateEvents( totalCycles );
 
 	switch ( result )
 	{
