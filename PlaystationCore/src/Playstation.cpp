@@ -84,10 +84,12 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 void Playstation::Reset()
 {
+	// reset cycles before events are scheduled
+	m_eventManager->Reset();
+
 	m_cdromDrive->Reset();
 	m_controllerPorts->Reset();
 	m_cpu->Reset();
-	m_eventManager->Reset();
 	m_dma->Reset();
 	m_interruptControl->Reset();
 	m_memoryControl->Reset();
@@ -115,7 +117,7 @@ void Playstation::RunFrame()
 	while ( !m_gpu->GetDisplayFrame() )
 		m_cpu->RunUntilEvent();
 
-	m_eventManager->EndFrame();
+	m_eventManager->EndFrame( m_gpu->GetRefreshRate() );
 	m_spu->EndFrame();
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
@@ -144,7 +146,7 @@ void Playstation::HookExe( fs::path filename )
 
 float Playstation::GetRefreshRate() const
 {
-	return m_gpu->GetRefreshRate();
+	return static_cast<float>( m_gpu->GetRefreshRate() );
 }
 
 }
