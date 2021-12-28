@@ -212,59 +212,33 @@ private:
 
 private:
 	void UpdateStatus() noexcept;
+	void UpdateCommandEvent() noexcept;
 
-	// event callbacks
+	// events
 	void ExecuteCommand() noexcept;
 	void ExecuteCommandSecondResponse() noexcept;
 	void ExecuteDriveState() noexcept;
-
 	void SendCommand( Command command ) noexcept;
 	void QueueSecondResponse( Command command, cycles_t cycles ) noexcept;
 	void ScheduleDriveEvent( DriveState driveState, cycles_t cycles ) noexcept;
 
-	void CheckPendingCommand() noexcept;
+	// interrupts
+	void SendStatusAndInterrupt( uint8_t response = InterruptResponse::First ) noexcept;
+	void SetAsyncInterrupt( uint8_t response = InterruptResponse::Second ) noexcept;
+	void SendAsyncStatusAndInterrupt( uint8_t response = InterruptResponse::Second ) noexcept;
+	void ClearAsyncInterrupt() noexcept;
+	void SendError( ErrorCode errorCode, uint8_t statusErrorBits = DriveStatusError::Error ) noexcept;
+	void SendAsyncError( ErrorCode errorCode, uint8_t statusErrorBits = DriveStatusError::Error ) noexcept;
 	void CheckInterrupt() noexcept;
 	void ShiftQueuedInterrupt() noexcept;
 
+	// drive
 	void StartMotor() noexcept;
 	void StopMotor() noexcept;
 	void BeginSeeking() noexcept;
 	void BeginReading() noexcept;
 	void BeginPlaying( uint8_t track ) noexcept;
 	void RequestData() noexcept;
-
-	// send status and interrupt
-	void SendResponse( uint8_t response = InterruptResponse::First ) noexcept
-	{
-		dbAssert( m_interruptFlags == InterruptResponse::None );
-		m_responseBuffer.Push( m_driveStatus.value );
-		m_interruptFlags = response;
-	}
-
-	// queue status and second interrupt
-	void SendSecondResponse( uint8_t response = InterruptResponse::Second ) noexcept
-	{
-		m_secondResponseBuffer.Push( m_driveStatus.value );
-		m_queuedInterrupt = response;
-	}
-
-	// send status, error code, and interrupt
-	void SendError( ErrorCode errorCode, uint8_t statusErrorBits = DriveStatusError::Error ) noexcept
-	{
-		dbLog( "CDRomDrive::SendError -- [%u]", uint32_t( errorCode ) );
-		m_responseBuffer.Push( m_driveStatus.value | statusErrorBits ); // error status bit isn't permanently set
-		m_responseBuffer.Push( static_cast<uint8_t>( errorCode ) );
-		m_interruptFlags = InterruptResponse::Error;
-	}
-
-	// send status, error code, and interrupt
-	void SendSecondError( ErrorCode errorCode, uint8_t statusErrorBits = DriveStatusError::Error ) noexcept
-	{
-		dbLog( "CDRomDrive::SendError -- [%u]", uint32_t( errorCode ) );
-		m_secondResponseBuffer.Push( m_driveStatus.value | statusErrorBits ); // error status bit isn't permanently set
-		m_secondResponseBuffer.Push( static_cast<uint8_t>( errorCode ) );
-		m_queuedInterrupt = InterruptResponse::Error;
-	}
 
 	cycles_t GetReadCycles() const noexcept
 	{
@@ -282,11 +256,6 @@ private:
 	{
 		for ( auto& sector : m_sectorBuffers )
 			sector.size = 0;
-	}
-
-	bool CommandTransferBusy() const noexcept
-	{
-		return m_pendingCommand.has_value();
 	}
 
 	bool IsSeeking() const noexcept { return m_driveState == DriveState::Seeking; }
@@ -345,7 +314,6 @@ private:
 	DriveStatus m_driveStatus;
 	ControllerMode m_mode;
 
-	// XA-ADCPM
 	struct XaFilter
 	{
 		uint8_t file = 0;
@@ -354,10 +322,20 @@ private:
 	};
 	XaFilter m_xaFilter;
 
-	uint8_t m_trackNumber = 0;
-	uint8_t m_trackIndex = 0;
-	CDRom::Location m_trackLocation;
-	CDRom::Location m_seekLocation;
+	struct SubQ
+	{
+		uint8_t trackNumberBCD = 0;
+		uint8_t trackIndexBCD = 0;
+		uint8_t trackMinuteBCD = 0;
+		uint8_t trackSecondBCD = 0;
+		uint8_t trackSectorBCD = 0;
+		uint8_t absoluteMinuteBCD = 0;
+		uint8_t absoluteSecondBCD = 0;
+		uint8_t absoluteSectorBCD = 0;
+	};
+	SubQ m_lastSubQ;
+
+	uint8_t m_playingTrackNumberBCD = 0;
 
 	bool m_muted = false;
 	bool m_muteADPCM = false;
@@ -384,6 +362,8 @@ private:
 	};
 
 	std::optional<SectorHeaders> m_currentSectorHeaders;
+
+	CDRom::Location m_seekLocation;
 
 	// async flags
 	bool m_pendingSeek = false; // SetLoc was called, but we haven't called seek yet
