@@ -18,20 +18,23 @@ ControllerPorts::~ControllerPorts() = default;
 
 void ControllerPorts::Reset()
 {
+	m_communicateEvent->Reset();
+
 	m_status.value = 0;
-
 	m_mode.value = 0;
-
 	m_control.value = 0;
 	m_baudrateReloadValue = 0x0088;
 
 	m_state = State::Idle;
+	m_currentDevice = CurrentDevice::None;
 
 	m_txBuffer = 0;
 	m_txBufferFull = false;
 
 	m_rxBuffer = 0;
 	m_rxBufferFull = false;
+
+	m_tranferringValue = 0;
 
 	for ( size_t i = 0; i < 2; ++i )
 	{
