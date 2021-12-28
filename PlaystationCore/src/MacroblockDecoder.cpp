@@ -47,13 +47,14 @@ const std::array<cycles_t, 4> CyclesPerBlock // values from duckstation
 }
 
 MacroblockDecoder::MacroblockDecoder( EventManager& eventManager )
+	: m_eventManager{ eventManager }
 {
 	m_outputBlockEvent = eventManager.CreateEvent( "MDEC output block", [this]( cycles_t ) { OutputBlock(); } );
 }
 
 void MacroblockDecoder::Reset()
 {
-	m_outputBlockEvent->Cancel();
+	m_outputBlockEvent->Reset();
 
 	m_status.value = 0;
 
@@ -106,23 +107,28 @@ uint32_t MacroblockDecoder::ReadData()
 {
 	if ( m_dataOutBuffer.Empty() )
 	{
-		// TODO: stall the CPU if MDEC has pending block?
-
-		dbLogWarning( "MacroblockDecoder::ReadData -- output fifo is empty" );
-		return 0xffffffffu;
-	}
-	else
-	{
-		const uint32_t value = m_dataOutBuffer.Pop();
-
-		// process more data if we were waiting for output fifo to empty
-		if ( m_dataOutBuffer.Empty() )
-			ProcessInput();
+		// Duckstation stalls the CPU if a block is being processed
+		if ( m_outputBlockEvent->IsActive() )
+		{
+			dbLogWarning( "MacroblockDecoder::ReadData -- output fifo is empty, stalling CPU until data is processed" );
+			m_eventManager.AddCyclesAndUpdateEvents( m_outputBlockEvent->GetRemainingCycles() );
+		}
 		else
-			UpdateStatus();
-
-		return value;
+		{
+			dbLogWarning( "MacroblockDecoder::ReadData -- output fifo is empty" );
+			return 0xffffffffu;
+		}
 	}
+
+	const uint32_t value = m_dataOutBuffer.Pop();
+
+	// process more data if we were waiting for output fifo to empty
+	if ( m_dataOutBuffer.Empty() )
+		ProcessInput();
+	else
+		UpdateStatus();
+
+	return value;
 }
 
 void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
@@ -143,6 +149,9 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 		if ( value & ( 1u << 31 ) )
 		{
 			// soft reset
+			if ( m_state != State::Idle )
+				dbLogWarning( "MacroblockDecoder::Write -- soft reset during state %u", (uint32_t)m_state );
+
 			m_outputBlockEvent->Cancel();
 			m_status.value = 0;
 			m_remainingHalfWords = 0;
@@ -289,6 +298,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 	{
 		case Command::DecodeMacroblock:
 		{
+			dbLogDebug( "MacroblockDecoder::StartCommand -- DecodeMacroblock [%u]", commandWord.parameterWords );
 			m_state = State::DecodingMacroblock;
 			m_remainingHalfWords = commandWord.parameterWords * 2;
 			break;
@@ -321,6 +331,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 			// This command has no function. Command bits 25-28 are reflected to Status bits 23-26 as usually.
 			// Command bits 0-15 are reflected to Status bits 0-15 (similar as the "number of parameter words" for MDEC(1),
 			// but without the "minus 1" effect, and without actually expecting any parameters).
+			dbBreakMessage( "MacroblockDecoder::StartCommand -- NoFunction" );
 			m_status.remainingParameters = commandWord.parameterWords;
 			break;
 		}

@@ -129,8 +129,9 @@ private:
 	void y_to_mono( const Block& yBlk );
 
 private:
-	EventHandle m_outputBlockEvent;
+	EventManager& m_eventManager;
 	Dma* m_dma = nullptr;
+	EventHandle m_outputBlockEvent;
 
 	Status m_status;
 
