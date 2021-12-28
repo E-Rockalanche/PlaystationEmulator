@@ -147,9 +147,9 @@ CDRomDrive::~CDRomDrive() = default;
 
 void CDRomDrive::Reset()
 {
-	m_commandEvent->Cancel();
-	m_secondResponseEvent->Cancel();
-	m_driveEvent->Cancel();
+	m_commandEvent->Reset();
+	m_secondResponseEvent->Reset();
+	m_driveEvent->Reset();
 
 	m_driveState = DriveState::Idle;
 
@@ -1515,22 +1515,24 @@ void CDRomDrive::RequestData() noexcept
 
 	if ( sector.size > 0 )
 	{
-		dbLogDebug( "CDRomDrive::RequestData -- loaded %u bytes from buffer %u", sector.size, m_readSectorBuffer );
 		m_dataBuffer.Push( sector.bytes.data(), sector.size );
 		sector.size = 0;
 	}
 	else
 	{
-		dbLogWarning( "CDRomDrive::RequestData -- reading from empty sector buffer" );
+		// Duckstation reads old bytes
+		dbLogWarning( "CDRomDrive::RequestData -- sector buffer %u is empty", m_readSectorBuffer );
 		m_dataBuffer.Push( sector.bytes.data(), DataBufferSize );
 	}
+
+	dbLogDebug( "CDRomDrive::RequestData -- loaded %u bytes from buffer %u", m_dataBuffer.Size(), m_readSectorBuffer );
 
 	// the PSX skips all unprocessed sectors and jumps straight to the newest sector
 
 	auto& nextSector = m_sectorBuffers[ m_writeSectorBuffer ];
 	if ( nextSector.size > 0 )
 	{
-		dbLogDebug( "CDRomDrive::RequestData -- sending additional interrupt for missed sector" );
+		dbLogDebug( "CDRomDrive::RequestData -- sending interrupt for missed sector %u", m_writeSectorBuffer );
 		SendAsyncStatusAndInterrupt( InterruptResponse::ReceivedData );
 		if ( m_interruptFlags == 0 )
 			ShiftQueuedInterrupt();
