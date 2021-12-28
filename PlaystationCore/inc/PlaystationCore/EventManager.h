@@ -33,6 +33,12 @@ public:
 	// Cancel/disable event and reset pending cycles
 	void Cancel();
 
+	// deactivates event but keeps cycles in tact
+	void Pause();
+
+	// tries to activate event with current cycles
+	void Resume();
+
 	// Check if event is currently running
 	bool IsActive() const noexcept { return m_active; }
 

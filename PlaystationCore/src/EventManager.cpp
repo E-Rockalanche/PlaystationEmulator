@@ -30,7 +30,7 @@ void Event::Schedule( cycles_t cyclesFromNow )
 {
 	dbExpects( cyclesFromNow > 0 ); // cannot schedule event to happen immediately
 
-	dbLogDebug( "Event::Schedule -- [%s] [%i]", m_name.c_str(), cyclesFromNow );
+	// dbLogDebug( "Event::Schedule -- [%s] [%i]", m_name.c_str(), cyclesFromNow );
 
 	if ( !m_active )
 	{
@@ -47,13 +47,33 @@ void Event::Cancel()
 {
 	if ( m_active )
 	{
-		dbLogDebug( "Event::Cancel -- [%s]", m_name.c_str() );
+		// dbLogDebug( "Event::Cancel -- [%s]", m_name.c_str() );
 
 		m_pendingCycles = 0;
 		m_cyclesUntilEvent = 0;
 		m_active = false;
 		m_manager.ScheduleNextEvent();
 	}
+}
+
+void Event::Pause()
+{
+	if ( !m_active )
+		return;
+
+	m_pendingCycles += m_manager.GetPendingCycles();
+	m_active = false;
+	m_manager.ScheduleNextEvent();
+}
+
+void Event::Resume()
+{
+	if ( m_active || m_cyclesUntilEvent == 0 )
+		return;
+
+	m_pendingCycles -= m_manager.GetPendingCycles();
+	m_active = true;
+	m_manager.ScheduleNextEvent();
 }
 
 cycles_t Event::GetPendingCycles() const noexcept
@@ -68,7 +88,7 @@ void Event::Update( cycles_t cycles )
 	dbExpects( cycles > 0 );
 	dbExpects( cycles <= m_cyclesUntilEvent );
 
-	dbLogDebug( "Event::Update -- [%s] [%i]", m_name.c_str(), cycles );
+	// dbLogDebug( "Event::Update -- [%s] [%i]", m_name.c_str(), cycles );
 
 	m_cyclesUntilEvent -= cycles;
 	m_pendingCycles -= cycles;
