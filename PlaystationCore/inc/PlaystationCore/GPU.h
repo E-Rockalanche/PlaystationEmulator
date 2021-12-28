@@ -19,8 +19,8 @@ namespace PSX
 static constexpr float CpuClockSpeed = CpuCyclesPerSecond; // Hz
 static constexpr float VideoClockSpeed = CpuCyclesPerSecond * 11.0f / 7.0f; // Hz
 
-static constexpr float RefreshRatePAL = 50.0f;
-static constexpr float RefreshRateNTSC = 60.0f;
+static constexpr uint32_t RefreshRatePAL = 50;
+static constexpr uint32_t RefreshRateNTSC = 60;
 
 static constexpr uint32_t ScanlinesPAL = 314;
 static constexpr uint32_t ScanlinesNTSC = 263;
@@ -73,7 +73,7 @@ public:
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
 	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
-	float GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
+	uint32_t GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
 
 	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
 	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
@@ -193,7 +193,7 @@ private:
 
 	float GetVideoCyclesPerFrame() const noexcept
 	{
-		return VideoClockSpeed / GetRefreshRate();
+		return VideoClockSpeed / static_cast<float>( GetRefreshRate() );
 	}
 
 	float GetVideoCyclesPerScanline() const noexcept

@@ -120,8 +120,8 @@ Gpu::~Gpu() = default;
 
 void Gpu::Reset()
 {
-	m_clockEvent->Cancel();
-	m_commandEvent->Cancel();
+	m_clockEvent->Reset();
+	m_commandEvent->Reset();
 
 	m_pendingCommandCycles = 0;
 	m_processingCommandBuffer = false;
