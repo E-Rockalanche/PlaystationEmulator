@@ -238,14 +238,39 @@ public:
 		return track.position + track.length;
 	}
 
-	uint32_t GetTrackStartPosition( uint32_t trackNumber ) const noexcept
+	LogicalSector GetTrackStartPosition( uint32_t trackNumber ) const noexcept
 	{
 		return m_tracks[ trackNumber - 1 ].position;
+	}
+
+	Location GetTrackStartLocation( uint32_t trackNumber ) const noexcept
+	{
+		return Location::FromLogicalSector( GetTrackStartPosition( trackNumber ) );
 	}
 
 	const Index* GetCurrentIndex() const noexcept
 	{
 		return m_currentIndex;
+	}
+
+	LogicalSector GetCurrentSeekSector() const noexcept
+	{
+		return m_position;
+	}
+
+	Location GetCurrentSeekLocation() const noexcept
+	{
+		return Location::FromLogicalSector( m_position );
+	}
+
+	LogicalSector GetCurrentTrackSector() const noexcept
+	{
+		return m_position - m_currentIndex->position + m_currentIndex->positionInTrack;
+	}
+
+	Location GetCurrentTrackLocation() const noexcept
+	{
+		return Location::FromLogicalSector( GetCurrentTrackSector() );
 	}
 
 protected:
