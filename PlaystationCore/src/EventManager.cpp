@@ -10,6 +10,13 @@ Event::~Event()
 	m_manager.RemoveEvent( this );
 }
 
+void Event::Reset()
+{
+	m_cyclesUntilEvent = 0;
+	m_pendingCycles = 0;
+	m_active = false;
+}
+
 void Event::UpdateEarly()
 {
 	if ( !m_active )
@@ -30,8 +37,6 @@ void Event::Schedule( cycles_t cyclesFromNow )
 {
 	dbExpects( cyclesFromNow > 0 ); // cannot schedule event to happen immediately
 
-	// dbLogDebug( "Event::Schedule -- [%s] [%i]", m_name.c_str(), cyclesFromNow );
-
 	if ( !m_active )
 	{
 		// timer just started, so we must delay by the manager's current pending cycles
@@ -47,8 +52,6 @@ void Event::Cancel()
 {
 	if ( m_active )
 	{
-		// dbLogDebug( "Event::Cancel -- [%s]", m_name.c_str() );
-
 		m_pendingCycles = 0;
 		m_cyclesUntilEvent = 0;
 		m_active = false;
@@ -87,8 +90,6 @@ void Event::Update( cycles_t cycles )
 	dbExpects( m_active );
 	dbExpects( cycles > 0 );
 	dbExpects( cycles <= m_cyclesUntilEvent );
-
-	// dbLogDebug( "Event::Update -- [%s] [%i]", m_name.c_str(), cycles );
 
 	m_cyclesUntilEvent -= cycles;
 	m_pendingCycles -= cycles;
@@ -131,38 +132,48 @@ void EventManager::Reset()
 
 	m_pendingCycles = 0;
 	m_cyclesUntilNextEvent = 0;
+	m_cyclesThisFrame = 0;
 	m_nextEvent = nullptr;
 
 	for ( Event* event : m_events )
-		event->Cancel();
+		event->Reset();
 }
 
 void EventManager::UpdateNextEvent()
 {
-	dbAssert( m_nextEvent ); // an event should have been scheduled
+	dbAssert( ReadyForNextEvent() );
 
-	if ( m_pendingCycles > 0 )
+	if ( m_updating )
+		return; // prevent recursive updates
+
+	do
 	{
-		for ( Event* event : m_events )
-			event->AddPendingCycles( m_pendingCycles );
+		dbAssert( m_nextEvent );
 
-		m_pendingCycles = 0;
+		if ( m_pendingCycles > 0 )
+		{
+			for ( Event* event : m_events )
+				event->AddPendingCycles( m_pendingCycles );
+
+			m_cyclesThisFrame += m_pendingCycles;
+			m_pendingCycles = 0;
+		}
+
+		Event* event = std::exchange( m_nextEvent, nullptr );
+		dbAssert( event->IsActive() );
+		dbExpects( event->GetLocalRemainingCycles() <= 0 );
+
+		UpdateEvent( event, event->m_cyclesUntilEvent );
+
+		ScheduleNextEvent();
 	}
-
-	Event* event = std::exchange( m_nextEvent, nullptr );
-	dbAssert( event->IsActive() );
-	dbExpects( event->GetLocalRemainingCycles() <= 0 );
-
-	UpdateEvent( event, event->m_cyclesUntilEvent );
-
-	ScheduleNextEvent();
+	while ( ReadyForNextEvent() );
 }
 
 void EventManager::UpdateEvent( Event* event, cycles_t cycles )
 {
 	dbAssert( !m_updating );
 	m_updating = true;
-
 	event->Update( cycles );
 	m_updating = false;
 }
@@ -181,15 +192,11 @@ void EventManager::ScheduleNextEvent()
 			return lhs->GetLocalRemainingCycles() < rhs->GetLocalRemainingCycles();
 		} );
 
-	if ( it == m_events.end() )
-		return;
-
+	dbAssert( it != m_events.end() );
 	Event* event = *it;
-	if ( !event->IsActive() )
-		return;
 
+	dbAssert( event->IsActive() );
 	dbAssert( event->m_cyclesUntilEvent > 0 );
-
 	m_nextEvent = event;
 
 	// cache cycles until event
@@ -206,10 +213,11 @@ void EventManager::RemoveEvent( Event* event )
 	m_events.erase( it );
 }
 
-void EventManager::EndFrame()
+void EventManager::EndFrame( uint32_t frameRate )
 {
-	dbLogDebug( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / 60 );
-	m_cyclesThisFrame = 0;
+	m_cyclesThisFrame += m_pendingCycles;
+	dbLogDebug( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / frameRate );
+	m_cyclesThisFrame = -m_pendingCycles;
 }
 
 }

@@ -24,6 +24,9 @@ class Event
 public:
 	~Event();
 
+	// Reset state without rescheduling
+	void Reset();
+
 	// Call update callback early with current accumulated cycles
 	void UpdateEarly();
 
@@ -99,29 +102,33 @@ public:
 	EventHandle CreateEvent( std::string name, EventUpdateCallback onUpdate );
 
 	Event* FindEvent( std::string_view name );
-	
-	// drive cycles until we are ready to update event
-	inline void AddCycles( cycles_t cycles ) noexcept
-	{
-		dbExpects( cycles > 0 );
-		m_pendingCycles += cycles;
-		m_cyclesThisFrame += cycles;
-	}
 
-	// driving device must check when cycles are ready and update event manually
+	void UpdateNextEvent();
+
 	inline bool ReadyForNextEvent() const noexcept
 	{
 		return m_pendingCycles >= m_cyclesUntilNextEvent;
 	}
+	
+	inline void AddCycles( cycles_t cycles ) noexcept
+	{
+		dbExpects( cycles > 0 );
+		m_pendingCycles += cycles;
+	}
 
-	void UpdateNextEvent();
+	void AddCyclesAndUpdateEvents( cycles_t cycles ) noexcept
+	{
+		AddCycles( cycles );
+		if ( ReadyForNextEvent() )
+			UpdateNextEvent();
+	}
 
 	inline cycles_t GetPendingCycles() const noexcept
 	{
 		return m_pendingCycles;
 	}
 
-	void EndFrame();
+	void EndFrame( uint32_t frameRate );
 
 private:
 	void ScheduleNextEvent();
