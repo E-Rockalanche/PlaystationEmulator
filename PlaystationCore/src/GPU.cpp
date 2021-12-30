@@ -207,7 +207,7 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 {
 	if ( m_commandBuffer.Full() )
 	{
-		dbLogWarning( "Gpu::WriteGP0 -- command buffer is full" );
+		dbBreakMessage( "Gpu::WriteGP0 -- command buffer is full" );
 		return;
 	}
 
@@ -220,12 +220,11 @@ void Gpu::ProcessCommandBuffer() noexcept
 {
 	m_processingCommandBuffer = true;
 
+	const auto oldPendingCommandCycles = m_pendingCommandCycles;
+
 	for ( ;; )
 	{
-		static constexpr float MaxRunAheadCommandCycles = 128;
-
-		bool stop = false;
-		while ( !m_commandBuffer.Empty() && !stop && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
+		if ( !m_commandBuffer.Empty() && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
 		{
 			switch ( m_state )
 			{
@@ -234,17 +233,19 @@ void Gpu::ProcessCommandBuffer() noexcept
 					ExecuteCommand();
 
 					if ( m_state != State::Parameters )
-						break;
+						continue;
 				}
 
 				[[fallthrough]];
 				case State::Parameters:
 				{
 					if ( m_commandBuffer.Size() >= m_remainingParamaters + 1 ) // +1 for command
+					{
 						std::invoke( m_commandFunction, this );
-					else
-						stop = true; // we need more data, goto DMA request
+						continue;
+					}
 
+					// need more parameters, request DMA
 					break;
 				}
 
@@ -262,12 +263,15 @@ void Gpu::ProcessCommandBuffer() noexcept
 					{
 						dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
 						FinishVRamWrite();
+						continue;
 					}
+
+					// need more data, request DMA
 					break;
 				}
 
 				case State::ReadingVRam:
-					stop = true;
+					// nothing to do while reading VRAM
 					break;
 
 				case State::PolyLine:
@@ -290,10 +294,12 @@ void Gpu::ProcessCommandBuffer() noexcept
 						if ( ( paramIndex % paramsPerVertex == 0 ) && ( ( param & TerminationMask ) == TerminationCode ) )
 						{
 							Command_RenderPolyLine();
-							break;
+							continue;
 						}
 						m_transferBuffer.push_back( param );
 					}
+
+					// need more parameters, request DMA
 					break;
 				}
 			}
@@ -308,7 +314,8 @@ void Gpu::ProcessCommandBuffer() noexcept
 			break;
 	}
 
-	if ( m_pendingCommandCycles > 0 )
+	// schedule end of command execution
+	if ( m_pendingCommandCycles > oldPendingCommandCycles )
 		m_commandEvent->Schedule( static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( m_pendingCommandCycles ) ) ) );
 
 	m_processingCommandBuffer = false;
@@ -332,12 +339,12 @@ void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::CpuToGp0 )
 	{
-		dbLogError( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
+		dbLogWarning( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
 		return;
 	}
 
 	if ( count > m_commandBuffer.Capacity() )
-		dbLogError( "GPU::DmaIn -- command buffer overrun" );
+		dbBreakMessage( "GPU::DmaIn -- command buffer overrun" );
 
 	count = std::min( count, m_commandBuffer.Capacity() );
 	m_commandBuffer.Push( input, count );
@@ -353,7 +360,7 @@ void Gpu::DmaOut( uint32_t* output, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::GpuReadToCpu )
 	{
-		dbLogError( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
+		dbLogWarning( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
 		std::fill_n( output, count, uint32_t( 0xffffffff ) );
 		return;
 	}
@@ -883,20 +890,20 @@ uint32_t Gpu::GpuStatus() noexcept
 
 void Gpu::UpdateDmaRequest() noexcept
 {
+	// update GPUSTAT
 	switch ( m_state )
 	{
 		case State::Idle:
-		case State::Parameters:
-			m_status.readyToReceiveCommand = m_pendingCommandCycles <= 0;
+			m_status.readyToReceiveCommand = m_pendingCommandCycles <= 0 && m_commandBuffer.Empty();
 			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = m_commandBuffer.Size() < ( m_remainingParamaters + 1 );
+			m_status.readyToReceiveDmaBlock = m_commandBuffer.Size() < ( m_remainingParamaters + 1 ); // TODO: should be cleared when reading polygon and line parameters
 			break;
 
 		case State::WritingVRam:
 		case State::PolyLine:
 			m_status.readyToReceiveCommand = false;
 			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = true;
+			m_status.readyToReceiveDmaBlock = !m_commandBuffer.Full();
 			break;
 
 		case State::ReadingVRam:
@@ -906,6 +913,7 @@ void Gpu::UpdateDmaRequest() noexcept
 			break;
 	}
 
+	// set DMA request
 	bool dmaRequest = false;
 	switch ( static_cast<DmaDirection>( m_status.dmaDirection ) )
 	{
@@ -913,7 +921,9 @@ void Gpu::UpdateDmaRequest() noexcept
 			break;
 
 		case DmaDirection::Fifo:
-			dmaRequest = !m_commandBuffer.Empty();
+			// from no$ docs: FIFO State  (0=Full, 1=Not Full)
+			// Duckstation requests when the buffer is not empty, but this is probably an unused feature anyway
+			dmaRequest = !m_commandBuffer.Full();
 			break;
 
 		case DmaDirection::CpuToGp0:
@@ -924,8 +934,10 @@ void Gpu::UpdateDmaRequest() noexcept
 			dmaRequest = m_status.readyToSendVRamToCpu;
 			break;
 	}
-
 	m_dma->SetRequest( Dma::Channel::Gpu, dmaRequest );
+
+	// Normally, this bit gets cleared when the command execution is busy, but we do this after requesting DMA for to allow for some runahead
+	m_status.readyToReceiveDmaBlock &= m_status.readyToReceiveCommand;
 }
 
 void Gpu::Command_FillRectangle() noexcept
@@ -1015,7 +1027,7 @@ void Gpu::Command_RenderPolygon() noexcept
 			v.color = color;
 	}
 
-	vertices[ 0 ].position = PositionParameter{ m_commandBuffer.Pop() };
+	vertices[ 0 ].position = Position{ m_commandBuffer.Pop() };
 
 	TexPage texPage;
 	ClutAttribute clut;
@@ -1034,13 +1046,14 @@ void Gpu::Command_RenderPolygon() noexcept
 	if ( command.shading )
 		vertices[ 1 ].color = Color{ m_commandBuffer.Pop() };
 
-	vertices[ 1 ].position = PositionParameter{ m_commandBuffer.Pop() };
+	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
 
 	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
 		texPage = static_cast<uint16_t>( value >> 16 );
+		m_status.SetTexPage( texPage );
 	}
 	else
 	{
@@ -1059,7 +1072,7 @@ void Gpu::Command_RenderPolygon() noexcept
 		if ( command.shading )
 			vertices[ i ].color = Color{ m_commandBuffer.Pop() };
 
-		vertices[ i ].position = PositionParameter{ m_commandBuffer.Pop() };
+		vertices[ i ].position = Position{ m_commandBuffer.Pop() };
 
 		if ( command.textureMapping )
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
@@ -1120,7 +1133,7 @@ void Gpu::Command_RenderRectangle() noexcept
 		v.color = color;
 
 	// get position
-	const Position pos = Position( PositionParameter( m_commandBuffer.Pop() ) ) + Position( m_drawOffsetX, m_drawOffsetY );
+	const Position pos = Position{ m_commandBuffer.Pop() } + Position{ m_drawOffsetX, m_drawOffsetY };
 
 	// get tex coord/set clut
 	TexCoord topLeftTexCoord;

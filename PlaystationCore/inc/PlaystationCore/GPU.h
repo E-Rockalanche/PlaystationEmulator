@@ -82,6 +82,8 @@ public:
 	void ScheduleNextEvent();
 
 private:
+	static constexpr float MaxRunAheadCommandCycles = 128;
+
 	enum class State
 	{
 		Idle,
@@ -103,10 +105,12 @@ private:
 	{
 		struct
 		{
+			// draw mode:
 			uint32_t texturePageBaseX : 4; // N*64
 			uint32_t texturePageBaseY : 1; // N*256
 			uint32_t semiTransparencyMode : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
 			uint32_t texturePageColors : 2; // 0=4bit, 1=8bit, 2=15bit
+
 			uint32_t dither : 1; // 0=Off/strip LSBs, 1=Dither Enabled
 			uint32_t drawToDisplayArea : 1;
 			uint32_t setMaskOnDraw : 1;
@@ -133,8 +137,18 @@ private:
 		};
 		uint32_t value = 0;
 
-		void SetTexPage( TexPage texPage ) noexcept { stdx::masked_set<uint32_t>( value, 0x01ff, texPage.value ); }
-		TexPage GetTexPage() const noexcept { return value & 0x1ff; }
+		static constexpr uint32_t TexPageMask = 0x000001ff;
+
+		void SetTexPage( TexPage texPage ) noexcept
+		{
+			stdx::masked_set<uint32_t>( value, TexPageMask, texPage.value );
+			textureDisable = texPage.textureDisable;
+		}
+
+		TexPage GetTexPage() const noexcept
+		{
+			return static_cast<uint16_t>( ( value & TexPageMask ) | ( textureDisable << 11 ) );
+		}
 
 		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
 		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
