@@ -245,23 +245,32 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 
 	auto& timer = m_timers[ timerIndex ];
 
+	uint32_t value;
 	switch ( static_cast<TimerRegister>( offset % 4 ) )
 	{
 		case TimerRegister::Counter:
 			UpdateEventsEarly( timerIndex );
-			return timer.GetCounter();
+			value = timer.GetCounter();
+			dbLogDebug( "Timers::Read -- timer %u counter [%X]", timerIndex, value );
+			break;
 
 		case TimerRegister::Mode:
 			UpdateEventsEarly( timerIndex );
-			return timer.ReadMode();
+			value = timer.ReadMode();
+			dbLogDebug( "Timers::Read -- timer %u mode [%X]", timerIndex, value );
+			break;
 
 		case TimerRegister::Target:
-			return timer.GetTarget();
+			value = timer.GetTarget();
+			dbLogDebug( "Timers::Read -- timer %u target [%X]", timerIndex, value );
+			break;
 
 		default:
 			dbLogWarning( "Timers::Read -- invalid timer register" );
-			return 0xffffffffu;
+			value = 0xffffffff;
+			break;
 	}
+	return value;
 }
 
 void Timers::Write( uint32_t offset, uint32_t value ) noexcept
@@ -281,18 +290,21 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	{
 		case TimerRegister::Counter:
 		{
+			dbLogDebug( "Timers::Write -- timer %u counter [%X]", timerIndex, value );
 			timer.SetCounter( value );
 			break;
 		}
 
 		case TimerRegister::Mode:
 		{
+			dbLogDebug( "Timers::Write -- timer %u mode [%X]", timerIndex, value );
 			timer.SetMode( value );
 			break;
 		}
 
 		case TimerRegister::Target:
 		{
+			dbLogDebug( "Timers::Write -- timer %u target [%X]", timerIndex, value );
 			timer.SetTarget( value );
 			break;
 		}
