@@ -894,14 +894,19 @@ void Gpu::UpdateDmaRequest() noexcept
 	switch ( m_state )
 	{
 		case State::Idle:
-		case State::Parameters:
-			m_status.readyToReceiveCommand = m_pendingCommandCycles <= 0 && m_commandBuffer.Empty();
+			m_status.readyToReceiveCommand = m_pendingCommandCycles < MaxRunAheadCommandCycles && m_commandBuffer.Empty();
 			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = m_commandBuffer.Size() < ( m_remainingParamaters + 1 ); // TODO: should be cleared when reading polygon and line parameters
+			m_status.readyToReceiveDmaBlock = m_status.readyToReceiveCommand; // TODO: should be cleared when reading polygon and line parameters
+			break;
+
+		case State::Parameters:
+		case State::PolyLine:
+			m_status.readyToReceiveCommand = false;
+			m_status.readyToSendVRamToCpu = false;
+			m_status.readyToReceiveDmaBlock = false;
 			break;
 
 		case State::WritingVRam:
-		case State::PolyLine:
 			m_status.readyToReceiveCommand = false;
 			m_status.readyToSendVRamToCpu = false;
 			m_status.readyToReceiveDmaBlock = !m_commandBuffer.Full();
