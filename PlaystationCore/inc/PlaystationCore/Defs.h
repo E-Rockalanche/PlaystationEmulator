@@ -50,16 +50,17 @@ struct Instruction;
 using EventHandle = std::unique_ptr<Event>;
 
 template <size_t N, typename To, typename From>
-inline constexpr To SignExtend( From from ) noexcept
+inline constexpr To SignExtend( From value ) noexcept
 {
+	static_assert( N <= sizeof( To ) * 8 );
 	static_assert( N <= sizeof( From ) * 8 );
-	static_assert( N < sizeof( To ) * 8 );
 
-	constexpr To Extension = To( -1 ) << N;
-	constexpr From Mask = static_cast<From>( ~Extension );
-	constexpr From SignBit = 1 << ( N - 1 );
+	constexpr size_t Shift = sizeof( To ) * 8 - N;
+	using SignedTo = std::make_signed_t<To>;
 
-	return static_cast<To>( ( from & Mask ) | ( ( from & SignBit ) ? Extension : 0 ) );
+	SignedTo s = static_cast<SignedTo>( value ) << Shift;
+	s >>= Shift;
+	return static_cast<To>( s );
 }
 
 }
