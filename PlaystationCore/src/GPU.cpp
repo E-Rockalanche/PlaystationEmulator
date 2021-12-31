@@ -890,36 +890,18 @@ uint32_t Gpu::GpuStatus() noexcept
 
 void Gpu::UpdateDmaRequest() noexcept
 {
-	// update GPUSTAT
-	switch ( m_state )
-	{
-		case State::Idle:
-			m_status.readyToReceiveCommand = m_pendingCommandCycles < MaxRunAheadCommandCycles && m_commandBuffer.Empty();
-			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = m_status.readyToReceiveCommand; // TODO: should be cleared when reading polygon and line parameters
-			break;
+	// readyToReceiveDmaBlock can be set even when reading VRAM
+	// JaCzekanski's GPU bandwidth test relies on this behaviour
+	const bool canExecuteCommand = m_commandBuffer.Empty() && ( m_pendingCommandCycles < MaxRunAheadCommandCycles );
+	m_status.readyToReceiveDmaBlock = ( m_state != State::Parameters ) && ( m_state != State::PolyLine ) && canExecuteCommand;
+	m_status.readyToReceiveCommand = ( m_state == State::Idle ) && canExecuteCommand;
+	m_status.readyToSendVRamToCpu = ( m_state == State::ReadingVRam );
 
-		case State::Parameters:
-		case State::PolyLine:
-			m_status.readyToReceiveCommand = false;
-			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = false;
-			break;
-
-		case State::WritingVRam:
-			m_status.readyToReceiveCommand = false;
-			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = !m_commandBuffer.Full();
-			break;
-
-		case State::ReadingVRam:
-			m_status.readyToReceiveCommand = false;
-			m_status.readyToSendVRamToCpu = true;
-			m_status.readyToReceiveDmaBlock = false;
-			break;
-	}
-
-	// set DMA request
+	// DMA / Data Request, meaning depends on GP1(04h) DMA Direction:
+	//   When GP1( 04h ) = 0 --->Always zero( 0 )
+	//   When GP1( 04h ) = 1 --->FIFO State( 0 = Full, 1 = Not Full )
+	//   When GP1( 04h ) = 2 --->Same as GPUSTAT.28
+	//   When GP1( 04h ) = 3 --->Same as GPUSTAT.27
 	bool dmaRequest = false;
 	switch ( static_cast<DmaDirection>( m_status.dmaDirection ) )
 	{
@@ -927,9 +909,7 @@ void Gpu::UpdateDmaRequest() noexcept
 			break;
 
 		case DmaDirection::Fifo:
-			// from no$ docs: FIFO State  (0=Full, 1=Not Full)
-			// Duckstation requests when the buffer is not empty, but this is probably an unused feature anyway
-			dmaRequest = !m_commandBuffer.Full();
+			dmaRequest = !m_commandBuffer.Full(); // Duckstation requests when command buffer is not empty?? This feature probably isn't used anyway
 			break;
 
 		case DmaDirection::CpuToGp0:
@@ -940,10 +920,8 @@ void Gpu::UpdateDmaRequest() noexcept
 			dmaRequest = m_status.readyToSendVRamToCpu;
 			break;
 	}
+	m_status.dmaRequest = dmaRequest;
 	m_dma->SetRequest( Dma::Channel::Gpu, dmaRequest );
-
-	// Normally, this bit gets cleared when the command execution is busy, but we do this after requesting DMA for to allow for some runahead
-	m_status.readyToReceiveDmaBlock &= m_status.readyToReceiveCommand;
 }
 
 void Gpu::Command_FillRectangle() noexcept
