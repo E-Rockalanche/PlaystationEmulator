@@ -370,8 +370,24 @@ int main( int argc, char** argv )
 
 				case SDL_DROPFILE:
 				{
-					const fs::path filename = event.drop.file;
-					if ( playstationCore->LoadRom( filename ) )
+					fs::path filename = event.drop.file;
+
+					if ( filename.extension() == fs::path( ".exe" ) )
+					{
+						playstationCore->HookExe( std::move( filename ) );
+						playstationCore->Reset();
+						windowTitle = event.drop.file;
+					}
+					else if ( filename.extension() == fs::path( ".save" ) )
+					{
+						auto memCard = PSX::MemoryCard::Load( std::move( filename ) );
+						if ( memCard )
+						{
+							memCard1 = std::move( memCard );
+							playstationCore->SetMemoryCard( 0, memCard1.get() );
+						}
+					}
+					else if ( playstationCore->LoadRom( filename ) )
 					{
 						openMemoryCardForGame( filename );
 						playstationCore->Reset();
