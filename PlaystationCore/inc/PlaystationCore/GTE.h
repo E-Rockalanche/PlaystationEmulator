@@ -1,11 +1,12 @@
 #pragma once
 
+#include "Defs.h"
+
 #include <Math/Color.h>
 #include <Math/Matrix.h>
 #include <Math/Vector.h>
 
 #include <array>
-#include <cstdint>
 
 namespace PSX
 {
@@ -245,6 +246,7 @@ private:
 	static constexpr int64_t MAC0Min = std::numeric_limits<int32_t>::min();
 	static constexpr int64_t MAC0Max = std::numeric_limits<int32_t>::max();
 
+	// MAC 1, 2, & 3 are 44 bit registers
 	static constexpr int64_t MAC123Min = -( int64_t( 1 ) << 43 );
 	static constexpr int64_t MAC123Max = ( int64_t( 1 ) << 43 ) - 1;
 
@@ -269,7 +271,12 @@ private:
 private:
 
 	template <size_t Index>
-	void SetMAC( int64_t value, int shiftAmount = 0 ) noexcept;
+	int64_t CheckMacOverflowAndExtend( int64_t value );
+
+	template <size_t Index>
+	void SetMAC( int64_t value, int shiftAmount ) noexcept;
+
+	void SetMAC0( int64_t value ) noexcept;
 
 	template <size_t Index>
 	void SetIR( int32_t value, bool lm ) noexcept;
