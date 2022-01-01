@@ -139,6 +139,11 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 		else if ( m_dualSerialPort )
 			m_dualSerialPort->Write( address - Expansion2Start, static_cast<uint8_t>( value ) );
 	}
+	else if ( Within( address, Expansion3Start, Expansion3Size ) )
+	{
+		if constexpr ( Read )
+			value = T( -1 );
+	}
 	else
 	{
 		if constexpr ( Read )
