@@ -1120,7 +1120,7 @@ void Gpu::Command_RenderRectangle() noexcept
 	const Position pos = Position{ m_commandBuffer.Pop() } + Position{ m_drawOffsetX, m_drawOffsetY };
 
 	// get tex coord/set clut
-	TexCoord topLeftTexCoord;
+	TexCoord texcoord;
 
 	TexPage texPage = m_status.GetTexPage();
 	ClutAttribute clut;
@@ -1129,7 +1129,7 @@ void Gpu::Command_RenderRectangle() noexcept
 	{
 		const uint32_t value = m_commandBuffer.Pop();
 
-		topLeftTexCoord = TexCoord{ value };
+		texcoord = TexCoord{ value };
 
 		clut = static_cast<uint16_t>( value >> 16 );
 		for ( auto& v : vertices )
@@ -1184,10 +1184,10 @@ void Gpu::Command_RenderRectangle() noexcept
 
 	if ( command.textureMapping )
 	{
-		vertices[ 0 ].texCoord = topLeftTexCoord;
-		vertices[ 1 ].texCoord = TexCoord{ topLeftTexCoord.u,										static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ),	topLeftTexCoord.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ),	static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
+		vertices[ 0 ].texCoord = texcoord;
+		vertices[ 1 ].texCoord = TexCoord{ texcoord.u,										static_cast<uint16_t>( texcoord.v + height - 1 ) };
+		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	texcoord.v };
+		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	static_cast<uint16_t>( texcoord.v + height - 1 ) };
 	}
 
 	m_renderer.SetDrawMode( texPage, clut );
