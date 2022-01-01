@@ -437,13 +437,10 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 
 void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 {
-	if ( m_texPage.value == texPage.value && m_clut.value == clut.value && m_dither == dither )
-		return;
+	dither &= m_realColor;
 
-	DrawBatch();
-
-	m_texPage = texPage;
-	m_clut = clut;
+	if ( m_texPage.value != texPage.value || m_clut.value != clut.value || m_dither != dither )
+		DrawBatch();
 
 	if ( m_dither != dither )
 	{
@@ -451,32 +448,37 @@ void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 		glUniform1i( m_ditherLoc, dither );
 	}
 
-
-	// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
-	SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
-
-	if ( texPage.textureDisable )
-		return; // textures are disabled
-
-	const auto colorMode = texPage.texturePageColors;
-
-	const int texBaseX = texPage.texturePageBaseX * TexturePageBaseXMult;
-	const int texBaseY = texPage.texturePageBaseY * TexturePageBaseYMult;
-	const int texSize = 64 << colorMode;
-	const Rect texRect( texBaseX, texBaseY, texSize, texSize );
-
-	if ( m_dirtyArea.Intersects( texRect ) )
+	if ( m_texPage.value != texPage.value || m_clut.value != clut.value )
 	{
-		UpdateReadTexture();
-	}
-	else if ( colorMode < 2 )
-	{
-		const int clutBaseX = clut.x * ClutBaseXMult;
-		const int clutBaseY = clut.y * ClutBaseYMult;
-		const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+		m_texPage = texPage;
+		m_clut = clut;
 
-		if ( m_dirtyArea.Intersects( clutRect ) )
+		// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
+		SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
+
+		if ( texPage.textureDisable )
+			return; // textures are disabled
+
+		const auto colorMode = texPage.texturePageColors;
+
+		const int texBaseX = texPage.texturePageBaseX * TexturePageBaseXMult;
+		const int texBaseY = texPage.texturePageBaseY * TexturePageBaseYMult;
+		const int texSize = 64 << colorMode;
+		const Rect texRect( texBaseX, texBaseY, texSize, texSize );
+
+		if ( m_dirtyArea.Intersects( texRect ) )
+		{
 			UpdateReadTexture();
+		}
+		else if ( colorMode < 2 )
+		{
+			const int clutBaseX = clut.x * ClutBaseXMult;
+			const int clutBaseY = clut.y * ClutBaseYMult;
+			const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+
+			if ( m_dirtyArea.Intersects( clutRect ) )
+				UpdateReadTexture();
+		}
 	}
 }
 
