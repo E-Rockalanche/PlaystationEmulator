@@ -42,7 +42,7 @@ public:
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 	void SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMode );
 	void SetMaskBits( bool setMask, bool checkMask );
-	void SetDrawMode( TexPage texPage, ClutAttribute clut );
+	void SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither );
 
 	void SetColorDepth( DisplayAreaColorDepth colorDepth )
 	{
@@ -120,6 +120,7 @@ private:
 	GLint m_texWindowOffset = -1;
 	GLint m_drawOpaquePixelsLoc = -1;
 	GLint m_drawTransparentPixelsLoc = -1;
+	GLint m_ditherLoc = -1;
 	GLint m_realColorLoc = -1;
 
 	Render::Shader m_fullscreenShader;
@@ -150,6 +151,8 @@ private:
 
 	bool m_forceMaskBit = false;
 	bool m_checkMaskBit = false;
+
+	bool m_dither = false;
 
 	bool m_displayEnable = false;
 

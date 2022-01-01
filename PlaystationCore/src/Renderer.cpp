@@ -49,6 +49,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 	m_drawOpaquePixelsLoc = m_clutShader.GetUniformLocation( "u_drawOpaquePixels" );
 	m_drawTransparentPixelsLoc = m_clutShader.GetUniformLocation( "u_drawTransparentPixels" );
+	m_ditherLoc = m_clutShader.GetUniformLocation( "u_dither" );
 	m_realColorLoc = m_clutShader.GetUniformLocation( "u_realColor" );
 
 	// create output 24bpp shader
@@ -434,16 +435,22 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 	m_dirtyArea.Grow( Rect::FromExtents( destX, destY, width, height ) );
 }
 
-void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut )
+void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 {
-	if ( m_texPage.value == texPage.value && m_clut.value == clut.value )
+	if ( m_texPage.value == texPage.value && m_clut.value == clut.value && m_dither == dither )
 		return;
 
-	if ( m_texPage.textureDisable != texPage.textureDisable )
-		DrawBatch();
+	DrawBatch();
 
 	m_texPage = texPage;
 	m_clut = clut;
+
+	if ( m_dither != dither )
+	{
+		m_dither = dither;
+		glUniform1i( m_ditherLoc, dither );
+	}
+
 
 	// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
 	SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
@@ -648,6 +655,7 @@ void Renderer::RestoreRenderState()
 	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
 	glUniform1i( m_drawOpaquePixelsLoc, true );
 	glUniform1i( m_drawTransparentPixelsLoc, true );
+	glUniform1i( m_ditherLoc, m_dither );
 	glUniform1i( m_realColorLoc, m_realColor );
 
 	glViewport( 0, 0, VRamWidth, VRamHeight );

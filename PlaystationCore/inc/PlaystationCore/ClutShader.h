@@ -14,6 +14,7 @@ in int v_texPage;
 
 out vec3 BlendColor;
 out vec2 TexCoord;
+out vec2 Position;
 flat out ivec2 TexPageBase;
 flat out ivec2 ClutBase;
 flat out int TexPage;
@@ -23,6 +24,7 @@ void main()
 	// calculate normalized screen coordinate
 	float x = 2.0 * ( v_pos.x / 1024.0 ) - 1.0;
 	float y = 2.0 * ( v_pos.y / 512.0 ) - 1.0;
+	Position = v_pos;
 	gl_Position = vec4( x, y, 0.0, 1.0 );
 
 	// calculate texture page offset
@@ -44,6 +46,7 @@ const char* const ClutFragmentShader = R"glsl(
 
 in vec3 BlendColor;
 in vec2 TexCoord;
+in vec2 Position;
 flat in ivec2 TexPageBase;
 flat in ivec2 ClutBase;
 flat in int TexPage;
@@ -56,43 +59,83 @@ uniform float u_destBlend;
 uniform bool u_setMaskBit;
 uniform bool u_drawOpaquePixels;
 uniform bool u_drawTransparentPixels;
+uniform bool u_dither;
 uniform bool u_realColor;
 uniform ivec2 u_texWindowMask;
 uniform ivec2 u_texWindowOffset;
 
 uniform sampler2D u_vram;
 
-int FloatTo5bit( float value )
+vec3 FloorVec3( vec3 v )
 {
-	return int( round( value * 31.0 ) );
+	v.r = floor( v.r );
+	v.g = floor( v.g );
+	v.b = floor( v.b );
+	return v;
+}
+
+vec3 RoundVec3( vec3 v )
+{
+	return FloorVec3( v + vec3( 0.5, 0.5, 0.5 ) );
+}
+
+uint mod_uint( uint x, uint y )
+{
+	return x - y * ( x / y );
+}
+
+int DitherTable[16] = int[16]( 4, 0, -3, 1, 2, -2, 3, -1, -3, 1, -4, 0, 3, -1, 2, -2 );
+
+vec3 Dither24bitTo15Bit( ivec2 pos, vec3 color )
+{
+	// assumes we are not using real color
+	uint index = mod_uint( uint( pos.x ), 4u ) + mod_uint( uint( pos.y ), 4u ) * 4u;
+	float offset = float( DitherTable[ index ] );
+	color = FloorVec3( color ) + vec3( offset );
+	color.r = clamp( color.r, 0.0, 255.0 );
+	color.g = clamp( color.g, 0.0, 255.0 );
+	color.b = clamp( color.b, 0.0, 255.0 );
+	return FloorVec3( color / 8.0 );
+}
+
+vec3 ConvertColorTo15bit( vec3 color )
+{
+	color *= 31.0;
+	if ( u_realColor )
+		return color;
+	else
+		return RoundVec3( color );
+}
+
+vec3 ConvertColorTo24Bit( vec3 color )
+{
+	color *= 255.0;
+	if ( u_realColor )
+		return color;
+	else
+		return RoundVec3( color );
+}
+
+int FloatToInt5( float value )
+{
+	return int( floor( value * 31.0 + 0.5 ) );
 }
 
 int SampleVRam( ivec2 pos )
 {
 	vec4 c = texelFetch( u_vram, pos, 0 );
-	int red = FloatTo5bit( c.r );
-	int green = FloatTo5bit( c.g );
-	int blue = FloatTo5bit( c.b );
+	int red = FloatToInt5( c.r );
+	int green = FloatToInt5( c.g );
+	int blue = FloatToInt5( c.b );
 	int maskBit = int( ceil( c.a ) );
 	return ( maskBit << 15 ) | ( blue << 10 ) | ( green << 5 ) | red;
-}
-
-vec4 ConvertColorToRGB555( vec4 color )
-{
-	color.r = round( color.r * 31.0 ) / 31.0;
-	color.g = round( color.g * 31.0 ) / 31.0;
-	color.b = round( color.b * 31.0 ) / 31.0;
-	return color;
 }
 
 vec4 SampleColor( ivec2 pos )
 {
 	vec4 color = texelFetch( u_vram, pos, 0 );
+	color.rgb = ConvertColorTo15bit( color.rgb );
 	color.a = ceil( color.a );
-
-	if ( !u_realColor )
-		color = ConvertColorToRGB555( color );
-
 	return color;
 }
 
@@ -147,17 +190,15 @@ void main()
 {
 	vec4 color;
 
-	vec4 blendColor = vec4( BlendColor, 0.0 );
-	if ( !u_realColor )
-		blendColor = ConvertColorToRGB555( blendColor );
-
 	float srcBlend = u_srcBlend;
 	float destBlend = u_destBlend;
+
+	vec3 blendColor = ConvertColorTo24Bit( BlendColor );
 
 	if ( bool( TexPage & ( 1 << 11 ) ) )
 	{
 		// texture disabled
-		color = blendColor;
+		color = vec4( blendColor, 0.0 );
 	}
 	else
 	{
@@ -168,7 +209,8 @@ void main()
 		if ( color == vec4( 0.0 ) )
 			discard;
 
-		color.rgb *= blendColor.rgb * 2.0;
+		// blend color, result is 8bit
+		color.rgb = ( color.rgb * blendColor.rgb ) / 16.0;
 
 		if ( color.a == 0 )
 		{
@@ -184,6 +226,16 @@ void main()
 			discard;
 		}
 	}
+
+	if ( u_realColor )
+		color.rgb /= 255.0;
+	else if ( u_dither )
+	{
+		ivec2 pos = ivec2( int( floor( Position.x ) ), int( floor( Position.y ) ) );
+		color.rgb = Dither24bitTo15Bit( pos, color.rgb ) / 31.0;
+	}
+	else
+		color.rgb = FloorVec3( color.rgb / 8.0 ) / 31.0;
 
 	if ( u_setMaskBit )
 		color.a = 1.0;

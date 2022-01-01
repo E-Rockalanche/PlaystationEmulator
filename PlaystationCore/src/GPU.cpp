@@ -48,6 +48,21 @@ constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noex
 	return { w, h };
 }
 
+enum class RectangleSize
+{
+	Variable,
+	One,
+	Eight,
+	Sixteen,
+};
+
+enum class PrimitiveType
+{
+	Polygon = 1,
+	Line = 2,
+	Rectangle = 3,
+};
+
 union RenderCommand
 {
 	RenderCommand() = default;
@@ -82,22 +97,7 @@ union RenderCommand
 };
 static_assert( sizeof( RenderCommand ) == 4 );
 
-enum class RectangleSize
-{
-	Variable,
-	One,
-	Eight,
-	Sixteen,
-};
-
-enum class PrimitiveType
-{
-	Polygon = 1,
-	Line = 2,
-	Rectangle = 3,
-};
-
-}
+} // namespace
 
 Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
@@ -158,7 +158,7 @@ void Gpu::SoftReset() noexcept
 	// reset GPUSTAT
 	m_status.value = 0x14802000;
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
-	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
+	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 }, false );
 	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
@@ -304,6 +304,9 @@ void Gpu::ProcessCommandBuffer() noexcept
 				}
 			}
 		}
+
+		// TEMP DEBUG
+		m_pendingCommandCycles = 0;
 
 		// try to request more data
 		const auto sizeBefore = m_commandBuffer.Size();
@@ -998,7 +1001,6 @@ void Gpu::Command_RenderPolygon() noexcept
 	m_pendingCommandCycles += CommandCycles[ command.quadPolygon ][ command.shading ][ command.textureMapping ];
 
 	// vertex 1
-
 	if ( command.shading )
 	{
 		vertices[ 0 ].color = Color{ command.color };
@@ -1070,9 +1072,10 @@ void Gpu::Command_RenderPolygon() noexcept
 
 	// TODO: check for large polygons
 
-	m_renderer.SetDrawMode( texPage, clut );
 
 #if GPU_RENDER_POLYGONS
+	const bool dither = m_status.dither && ( command.shading || ( command.textureMapping && !command.textureMode ) );
+	m_renderer.SetDrawMode( texPage, clut, dither );
 	m_renderer.PushTriangle( vertices, command.semiTransparency );
 	if ( command.quadPolygon )
 		m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
@@ -1190,9 +1193,8 @@ void Gpu::Command_RenderRectangle() noexcept
 		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	static_cast<uint16_t>( texcoord.v + height - 1 ) };
 	}
 
-	m_renderer.SetDrawMode( texPage, clut );
-
 #if GPU_RENDER_RECTANGLES
+	m_renderer.SetDrawMode( texPage, clut, false );
 	m_renderer.PushQuad( vertices, command.semiTransparency );
 #endif
 
