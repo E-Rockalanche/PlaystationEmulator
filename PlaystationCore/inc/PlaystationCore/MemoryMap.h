@@ -60,6 +60,9 @@ public:
 		Expansion2Start = 0x1f802000,
 		Expansion2Size = 128,
 
+		Expansion3Start = 0x1fa00000,
+		Expansion3Size = 2 * 1024 * 1024, // default 1 byte, max 2 MBytes
+
 		BiosStart = 0x1fc00000,
 		BiosSize = 512 * 1024,
 

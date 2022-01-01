@@ -42,7 +42,7 @@ public:
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 	void SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMode );
 	void SetMaskBits( bool setMask, bool checkMask );
-	void SetDrawMode( TexPage texPage, ClutAttribute clut );
+	void SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither );
 
 	void SetColorDepth( DisplayAreaColorDepth colorDepth )
 	{
@@ -53,6 +53,9 @@ public:
 	{
 		m_displayEnable = enable;
 	}
+
+	bool UsingRealColor() const { return m_realColor; }
+	void SetRealColor( bool realColor );
 
 	// update vram with pixel buffer
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
@@ -117,6 +120,8 @@ private:
 	GLint m_texWindowOffset = -1;
 	GLint m_drawOpaquePixelsLoc = -1;
 	GLint m_drawTransparentPixelsLoc = -1;
+	GLint m_ditherLoc = -1;
+	GLint m_realColorLoc = -1;
 
 	Render::Shader m_fullscreenShader;
 
@@ -147,10 +152,13 @@ private:
 	bool m_forceMaskBit = false;
 	bool m_checkMaskBit = false;
 
+	bool m_dither = false;
+
 	bool m_displayEnable = false;
 
 	bool m_stretchToFit = true;
 	bool m_viewVRam = false;
+	bool m_realColor = false;
 
 	TexPage m_texPage;
 	ClutAttribute m_clut;

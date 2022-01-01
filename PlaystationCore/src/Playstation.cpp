@@ -84,10 +84,12 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 void Playstation::Reset()
 {
+	// reset cycles before events are scheduled
+	m_eventManager->Reset();
+
 	m_cdromDrive->Reset();
 	m_controllerPorts->Reset();
 	m_cpu->Reset();
-	m_eventManager->Reset();
 	m_dma->Reset();
 	m_interruptControl->Reset();
 	m_memoryControl->Reset();
@@ -115,7 +117,7 @@ void Playstation::RunFrame()
 	while ( !m_gpu->GetDisplayFrame() )
 		m_cpu->RunUntilEvent();
 
-	m_eventManager->EndFrame();
+	m_eventManager->EndFrame( m_gpu->GetRefreshRate() );
 	m_spu->EndFrame();
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
@@ -123,16 +125,16 @@ void Playstation::RunFrame()
 
 bool Playstation::LoadRom( const fs::path& filename )
 {
-	auto cdrom = std::make_unique<PSX::CDRom>();
-	if ( cdrom->Open( filename ) )
+	auto cdrom = CDRom::Open( filename );
+	if ( cdrom )
 	{
-		Log( "Playstation::LoadRom -- loaded %s", filename.c_str() );
+		Log( "Playstation::LoadRom -- loaded %s", filename.u8string().c_str() );
 		m_cdromDrive->SetCDRom( std::move( cdrom ) );
 		return true;
 	}
 	else
 	{
-		Log( "Playstation::LoadRom -- failed to load %s", filename.c_str() );
+		Log( "Playstation::LoadRom -- failed to load %s", filename.u8string().c_str() );
 		return false;
 	}
 }
@@ -144,7 +146,7 @@ void Playstation::HookExe( fs::path filename )
 
 float Playstation::GetRefreshRate() const
 {
-	return m_gpu->GetRefreshRate();
+	return static_cast<float>( m_gpu->GetRefreshRate() );
 }
 
 }

@@ -19,8 +19,8 @@ namespace PSX
 static constexpr float CpuClockSpeed = CpuCyclesPerSecond; // Hz
 static constexpr float VideoClockSpeed = CpuCyclesPerSecond * 11.0f / 7.0f; // Hz
 
-static constexpr float RefreshRatePAL = 50.0f;
-static constexpr float RefreshRateNTSC = 60.0f;
+static constexpr uint32_t RefreshRatePAL = 50;
+static constexpr uint32_t RefreshRateNTSC = 60;
 
 static constexpr uint32_t ScanlinesPAL = 314;
 static constexpr uint32_t ScanlinesNTSC = 263;
@@ -73,7 +73,7 @@ public:
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
 	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
-	float GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
+	uint32_t GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
 
 	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
 	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
@@ -82,6 +82,8 @@ public:
 	void ScheduleNextEvent();
 
 private:
+	static constexpr float MaxRunAheadCommandCycles = 128;
+
 	enum class State
 	{
 		Idle,
@@ -103,10 +105,12 @@ private:
 	{
 		struct
 		{
+			// draw mode:
 			uint32_t texturePageBaseX : 4; // N*64
 			uint32_t texturePageBaseY : 1; // N*256
 			uint32_t semiTransparencyMode : 2; // 0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4
 			uint32_t texturePageColors : 2; // 0=4bit, 1=8bit, 2=15bit
+
 			uint32_t dither : 1; // 0=Off/strip LSBs, 1=Dither Enabled
 			uint32_t drawToDisplayArea : 1;
 			uint32_t setMaskOnDraw : 1;
@@ -133,8 +137,18 @@ private:
 		};
 		uint32_t value = 0;
 
-		void SetTexPage( TexPage texPage ) noexcept { stdx::masked_set<uint32_t>( value, 0x01ff, texPage.value ); }
-		TexPage GetTexPage() const noexcept { return value & 0x1ff; }
+		static constexpr uint32_t TexPageMask = 0x000001ff;
+
+		void SetTexPage( TexPage texPage ) noexcept
+		{
+			stdx::masked_set<uint32_t>( value, TexPageMask, texPage.value );
+			textureDisable = texPage.textureDisable;
+		}
+
+		TexPage GetTexPage() const noexcept
+		{
+			return static_cast<uint16_t>( ( value & TexPageMask ) | ( textureDisable << 11 ) );
+		}
 
 		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
 		uint16_t GetSetMask() const noexcept { return static_cast<uint16_t>( setMaskOnDraw << 15 ); }
@@ -193,7 +207,7 @@ private:
 
 	float GetVideoCyclesPerFrame() const noexcept
 	{
-		return VideoClockSpeed / GetRefreshRate();
+		return VideoClockSpeed / static_cast<float>( GetRefreshRate() );
 	}
 
 	float GetVideoCyclesPerScanline() const noexcept

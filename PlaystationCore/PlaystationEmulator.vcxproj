@@ -213,12 +213,16 @@
   <ItemGroup>
     <ClCompile Include="src\AudioQueue.cpp" />
     <ClCompile Include="src\BIOS.cpp" />
+    <ClCompile Include="src\CDRom.cpp" />
     <ClCompile Include="src\CDRomDrive.cpp" />
+    <ClCompile Include="src\CDRom_Bin.cpp" />
+    <ClCompile Include="src\CDRom_Cue.cpp" />
     <ClCompile Include="src\CDXA.cpp" />
     <ClCompile Include="src\Controller.cpp" />
     <ClCompile Include="src\ControllerPorts.cpp" />
     <ClCompile Include="src\Cop0.cpp" />
     <ClCompile Include="src\CPU.cpp" />
+    <ClCompile Include="src\CueSheet.cpp" />
     <ClCompile Include="src\DMA.cpp" />
     <ClCompile Include="src\EventManager.cpp" />
     <ClCompile Include="src\File.cpp" />

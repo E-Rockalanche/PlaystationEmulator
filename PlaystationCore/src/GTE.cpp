@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-#define GTE_LOG_COMMANDS false
+#define GTE_LOG_COMMANDS true
 
 #define GTE_USE_UNR_DIVISION true
 
@@ -31,21 +31,7 @@ constexpr uint32_t SignExtend16( T value ) noexcept
 	return static_cast<uint32_t>( static_cast<int32_t>( static_cast<int16_t>( value ) ) );
 }
 
-template <typename T, typename U>
-constexpr int64_t DotProduct3( const T& lhs, const U& rhs )
-{
-	return	int64_t( lhs[ 0 ] ) * int64_t( rhs[ 0 ] ) +
-			int64_t( lhs[ 1 ] ) * int64_t( rhs[ 1 ] ) +
-			int64_t( lhs[ 2 ] ) * int64_t( rhs[ 2 ] );
-}
-
 } // namespace
-
-#if GTE_LOG_COMMANDS
-#define LogGTE( ... ) Log( __VA_ARGS__ )
-#else
-#define LogGTE( ... )
-#endif
 
 void GTE::Reset()
 {
@@ -382,19 +368,19 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 
 	m_errorFlags = 0;
 
-	const int sf = command.sf ? 12 : 0;
+	const shift_t sf = command.sf ? 12 : 0;
 	const bool lm = command.lm;
 
 	switch ( static_cast<Opcode>( command.opcode ) )
 	{
 		case Opcode::RotateTranslatePerspectiveSingle:
-			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf, lm, true );
 			break;
 
 		case Opcode::RotateTranslatePerspectiveTriple:
-			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf );
-			RotateTranslatePerspectiveTransformation( m_vectors[ 1 ], sf );
-			RotateTranslatePerspectiveTransformation( m_vectors[ 2 ], sf );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf, lm, false );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 1 ], sf, lm, false );
+			RotateTranslatePerspectiveTransformation( m_vectors[ 2 ], sf, lm, true );
 			break;
 
 		case Opcode::NormalClipping:
@@ -404,7 +390,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			auto& sxy1 = m_screenXYFifo[ 1 ];
 			auto& sxy2 = m_screenXYFifo[ 2 ];
 
-			SetMAC<0>(
+			SetMAC0(
 				int64_t( sxy0.x ) * int64_t( sxy1.y ) +
 				int64_t( sxy1.x ) * int64_t( sxy2.y ) +
 				int64_t( sxy2.x ) * int64_t( sxy0.y ) -
@@ -421,7 +407,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			const int64_t result = int64_t( m_zScaleFactor3 ) *
 				( int64_t( m_screenZFifo[ 1 ] ) + int64_t( m_screenZFifo[ 2 ] ) + int64_t( m_screenZFifo[ 3 ] ) );
 
-			SetMAC<0>( result );
+			SetMAC0( result );
 
 			// OTZ  =  MAC0/1000h
 			SetOrderTableZ( static_cast<int32_t>( result >> 12 ) );
@@ -434,7 +420,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			const int64_t result = int64_t( m_zScaleFactor4 ) *
 				( int64_t( m_screenZFifo[ 0 ] ) + int64_t( m_screenZFifo[ 1 ] ) + int64_t( m_screenZFifo[ 2 ] ) + int64_t( m_screenZFifo[ 3 ] ) );
 
-			SetMAC<0>( result );
+			SetMAC0( result );
 
 			// OTZ  =  MAC0/1000h
 			SetOrderTableZ( static_cast<int32_t>( result >> 12 ) );
@@ -442,19 +428,20 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 		}
 
 		case Opcode::MultiplyVectorMatrixVectorAdd:
-			MultiplyVectorMatrixVectorAdd( command );
+			MultiplyVectorMatrixVectorAdd( command, sf, lm );
 			break;
 
 		case Opcode::SquareIR:
 		{
 			// [MAC1, MAC2, MAC3] = [ IR1*IR1, IR2*IR2, IR3*IR3 ] SHR( sf * 12 )
+			// [ IR1, IR2, IR3 ] = [ MAC1, MAC2, MAC3 ]; IR1, IR2, IR3 saturated to max 7FFFh
+			// lm flag doesn't matter because result should always be positive
 			SetMAC<1>( int64_t( m_ir123.x ) * int64_t( m_ir123.x ), sf );
 			SetMAC<2>( int64_t( m_ir123.y ) * int64_t( m_ir123.y ), sf );
 			SetMAC<3>( int64_t( m_ir123.z ) * int64_t( m_ir123.z ), sf );
-
-			// [ IR1, IR2, IR3 ] = [ MAC1, MAC2, MAC3 ]; IR1, IR2, IR3 saturated to max 7FFFh
-			// lm flag doesn't matter because result should always be positive
-			CopyMACToIR( true );
+			SetIR<1>( m_mac123.x, true );
+			SetIR<2>( m_mac123.y, true );
+			SetIR<3>( m_mac123.z, true );
 			break;
 		}
 
@@ -467,7 +454,9 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			SetMAC<1>( ( m_ir123.z * D2 ) - ( m_ir123.y * D3 ), sf ); // IR3*D2-IR2*D3
 			SetMAC<2>( ( m_ir123.x * D3 ) - ( m_ir123.z * D1 ), sf ); // IR1*D3-IR3*D1
 			SetMAC<3>( ( m_ir123.y * D1 ) - ( m_ir123.x * D2 ), sf ); // IR2*D1-IR1*D2
-			CopyMACToIR( lm );
+			SetIR<1>( m_mac123.x, lm );
+			SetIR<2>( m_mac123.y, lm );
+			SetIR<3>( m_mac123.z, lm );
 			break;
 		}
 
@@ -526,9 +515,9 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 		case Opcode::InterpolateFarColor:
 		{
 			// [MAC1,MAC2,MAC3] = [IR1,IR2,IR3] SHL 12
-			SetMAC<1>( int64_t( m_ir123.x ) << 12 );
-			SetMAC<2>( int64_t( m_ir123.y ) << 12 );
-			SetMAC<3>( int64_t( m_ir123.z ) << 12 );
+			SetMAC<1>( int64_t( m_ir123.x ) << 12, 0 );
+			SetMAC<2>( int64_t( m_ir123.y ) << 12, 0 );
+			SetMAC<3>( int64_t( m_ir123.z ) << 12, 0 );
 
 			LerpFarColorWithMAC( sf );
 			ShiftMACRight( sf );
@@ -563,393 +552,391 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 		m_errorFlags |= ErrorFlag::Error;
 }
 
-template <size_t Index>
-void GTE::SetMAC( int64_t value, int shiftAmount ) noexcept
+
+template <size_t Bits>
+inline void GTE::CheckOverflow( int64_t value, uint32_t overflowFlag, uint32_t underflowFlag ) noexcept
 {
-	dbExpects( shiftAmount == 0 || Index != 0 );
+	static constexpr int64_t Min = -( int64_t( 1 ) << ( Bits - 1 ) );
+	static constexpr int64_t Max = ( int64_t( 1 ) << ( Bits - 1 ) ) - 1;
 
-	LogGTE( "SetMAC<%i>( %lli, %i )", (int)Index, value, shiftAmount );
-
-	static constexpr int64_t Min = ( Index == 0 ) ? MAC0Min : MAC123Min;
-	static constexpr int64_t Max = ( Index == 0 ) ? MAC0Max : MAC123Max;
 	if ( value < Min )
-	{
-		LogGTE( "\tClamping to %lli", Min );
+		m_errorFlags |= underflowFlag;
 
-		if constexpr ( Index == 0 )
-			m_errorFlags |= ErrorFlag::MAC0Underflow;
-		if constexpr ( Index == 1 )
-			m_errorFlags |= ErrorFlag::MAC1Underflow;
-		if constexpr ( Index == 2 )
-			m_errorFlags |= ErrorFlag::MAC2Underflow;
-		if constexpr ( Index == 3 )
-			m_errorFlags |= ErrorFlag::MAC3Underflow;
-	}
-	else if ( value > Max )
-	{
-		LogGTE( "\tClamping to %lli", Max );
+	if ( value > Max )
+		m_errorFlags |= overflowFlag;
+}
 
-		if constexpr ( Index == 0 )
-			m_errorFlags |= ErrorFlag::MAC0Overflow;
-		if constexpr ( Index == 1 )
-			m_errorFlags |= ErrorFlag::MAC1Overflow;
-		if constexpr ( Index == 2 )
-			m_errorFlags |= ErrorFlag::MAC2Overflow;
-		if constexpr ( Index == 3 )
-			m_errorFlags |= ErrorFlag::MAC3Overflow;
+inline int32_t GTE::Saturate( int32_t value, int32_t min, int32_t max, uint32_t errorFlag ) noexcept
+{
+	if ( value < min )
+	{
+		m_errorFlags |= errorFlag;
+		return min;
 	}
 
-	value >>= shiftAmount;
+	if ( value > max )
+	{
+		m_errorFlags |= errorFlag;
+		return max;
+	}
 
-	LogGTE( "\tMAC%i = %lli", (int)Index, value );
-
-	if constexpr ( Index == 0 )
-		m_mac0 = static_cast<int32_t>( value );
-	else
-		m_mac123[ Index - 1 ] = static_cast<int32_t>( value );
+	return value;
 }
 
 template <size_t Index>
-void GTE::SetIR( int32_t value, bool lm ) noexcept
+inline void GTE::CheckMacOverflow( int64_t value ) noexcept
 {
-	// duckstation lets ir0 be saturated
-
-	LogGTE( "SetIR<%i>( %i, %s )", (int)Index, value, lm ? "true" : "false" );
-
-	static constexpr auto Min = ( Index == 0 ) ? IR0Min : IR123Min;
-	static constexpr auto Max = ( Index == 0 ) ? IR0Max : IR123Max;
-
-	const auto minValue = lm ? 0 : Min;
-	if ( value < minValue || value > Max )
-	{
-		value = ( value < minValue ) ? minValue : Max;
-
-		LogGTE( "\tclamping to %i", value );
-
-		if constexpr ( Index == 0 )
-			m_errorFlags |= ErrorFlag::IR0Saturated;
-		if constexpr ( Index == 1 )
-			m_errorFlags |= ErrorFlag::IR1Saturated;
-		if constexpr ( Index == 2 )
-			m_errorFlags |= ErrorFlag::IR2Saturated;
-		if constexpr ( Index == 3 )
-			m_errorFlags |= ErrorFlag::IR3Saturated;
-	}
-
 	if constexpr ( Index == 0 )
-		m_ir0 = static_cast<int16_t>( value );
-	else
-		m_ir123[ Index - 1 ] = static_cast<int16_t>( value );
+		CheckOverflow<32>( value, ErrorFlag::MAC0Overflow, ErrorFlag::MAC0Underflow );
+	if constexpr ( Index == 1 )
+		CheckOverflow<44>( value, ErrorFlag::MAC1Overflow, ErrorFlag::MAC1Underflow );
+	if constexpr ( Index == 2 )
+		CheckOverflow<44>( value, ErrorFlag::MAC2Overflow, ErrorFlag::MAC2Underflow );
+	if constexpr ( Index == 3 )
+		CheckOverflow<44>( value, ErrorFlag::MAC3Overflow, ErrorFlag::MAC3Underflow );
 }
 
-inline void GTE::CopyMACToIR( bool lm ) noexcept
+template <size_t Index>
+inline int64_t GTE::CheckMacOverflowAndExtend( int64_t value ) noexcept
 {
-	SetIR<1>( m_mac123.x, lm );
-	SetIR<2>( m_mac123.y, lm );
-	SetIR<3>( m_mac123.z, lm );
+	static_assert( 1 <= Index && Index <= 3 );
+	CheckMacOverflow<Index>( value );
+	return SignExtend<44, int64_t>( value );
+}
+
+// returns shifted raw value
+template <size_t Index>
+inline int64_t GTE::SetMAC( int64_t value, shift_t sf ) noexcept
+{
+	static_assert( 1 <= Index && Index <= 3 );
+
+	CheckMacOverflow<Index>( value );
+	value >>= sf;
+	m_mac123[ Index - 1 ] = static_cast<int32_t>( value );
+	return value;
+}
+
+inline int64_t GTE::SetMAC0( int64_t value ) noexcept
+{
+	CheckMacOverflow<0>( value );
+	m_mac0 = static_cast<int32_t>( value );
+	return value;
+}
+
+template <size_t Index>
+inline void GTE::SetIR( int32_t value, bool lm ) noexcept
+{
+	static_assert( 1 <= Index && Index <= 3 );
+
+	const int32_t min = lm ? 0 : IR123Min;
+	if constexpr ( Index == 1 )
+		m_ir123.x = static_cast<int16_t>( Saturate( value, min, IR123Max, ErrorFlag::IR1Saturated ) );
+	if constexpr ( Index == 2 )
+		m_ir123.y = static_cast<int16_t>( Saturate( value, min, IR123Max, ErrorFlag::IR2Saturated ) );
+	if constexpr ( Index == 3 )
+		m_ir123.z = static_cast<int16_t>( Saturate( value, min, IR123Max, ErrorFlag::IR3Saturated ) );
+}
+
+inline void GTE::SetIR0( int32_t value ) noexcept
+{
+	m_ir0 = static_cast<int16_t>( Saturate( value, IR0Min, IR0Max, ErrorFlag::IR0Saturated ) );
+}
+
+template <size_t Index>
+inline void GTE::SetMACAndIR( int64_t value, shift_t sf, bool lm ) noexcept
+{
+	SetIR<Index>( static_cast<int32_t>( SetMAC<Index>( value, sf ) ), lm );
 }
 
 template <size_t Component>
-uint8_t GTE::TruncateRGB( int32_t value ) noexcept
+inline uint8_t GTE::TruncateRGB( int32_t value ) noexcept
 {
-	LogGTE( "TruncateRGB<%i>( %i )", (int)Component, value );
+	static_assert( Component <= 3 );
 
-	if ( value < ColorMin || value > ColorMax )
-	{
-		if constexpr ( Component == 0 )
-			m_errorFlags |= ErrorFlag::ColorFifoRSaturated;
-		if constexpr ( Component == 1 )
-			m_errorFlags |= ErrorFlag::ColorFifoGSaturated;
-		if constexpr ( Component == 2 )
-			m_errorFlags |= ErrorFlag::ColorFifoBSaturated;
-
-		const uint8_t result = ( value < ColorMin ) ? ColorMin : ColorMax;
-		LogGTE( "\tclamping to %i", (int)result );
-
-		return result;
-	}
-
-	return static_cast<uint8_t>( value );
+	if constexpr ( Component == 0 )
+		return static_cast<uint8_t>( Saturate( value, ColorMin, ColorMax, ErrorFlag::ColorFifoRSaturated ) );
+	if constexpr ( Component == 1 )
+		return static_cast<uint8_t>( Saturate( value, ColorMin, ColorMax, ErrorFlag::ColorFifoGSaturated ) );
+	if constexpr ( Component == 2 )
+		return static_cast<uint8_t>( Saturate( value, ColorMin, ColorMax, ErrorFlag::ColorFifoBSaturated ) );
 }
 
-void GTE::PushScreenZ( int32_t value ) noexcept
+inline void GTE::PushScreenZ( int32_t value ) noexcept
 {
-	LogGTE( "PushScreenZ( %i )", value );
-
-	if ( value < ZMin || value > ZMax )
-	{
-		value = ( value < ZMin ) ? ZMin : ZMax;
-		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
-		LogGTE( "\tclamping z to %i", value );
-	}
-
-	PushBack( m_screenZFifo, static_cast<uint16_t>( value ) );
+	PushBack( m_screenZFifo, static_cast<uint16_t>( Saturate( value, ZMin, ZMax, ErrorFlag::SZ3OrOTZSaturated ) ) );
 }
 
-void GTE::PushScreenXY( int32_t x, int32_t y ) noexcept
+inline void GTE::PushScreenXY( int32_t x, int32_t y ) noexcept
 {
-	LogGTE( "PushScreenXY( %i, %i )", x, y );
-
-	if ( x < ScreenMin || x > ScreenMax )
-	{
-		x = ( x < ScreenMin ) ? ScreenMin : ScreenMax;
-		m_errorFlags |= ErrorFlag::SX2Saturated;
-		LogGTE( "\tclamping x to %i", x );
-	}
-
-	if ( y < ScreenMin || y > ScreenMax )
-	{
-		y = ( y < ScreenMin ) ? ScreenMin : ScreenMax;
-		m_errorFlags |= ErrorFlag::SY2Saturated;
-		LogGTE( "\tclamping y to %i", y );
-	}
-
+	x = Saturate( x, ScreenMin, ScreenMax, ErrorFlag::SX2Saturated );
+	y = Saturate( y, ScreenMin, ScreenMax, ErrorFlag::SY2Saturated );
 	PushBack( m_screenXYFifo, ScreenXY{ static_cast<int16_t>( x ), static_cast<int16_t>( y ) } );
 }
 
 void GTE::SetOrderTableZ( int32_t z ) noexcept
 {
-	LogGTE( "SetOrderTableZ( %i )", z );
-
-	if ( z < ZMin || z > ZMax )
-	{
-		z = ( z < ZMin ) ? ZMin : ZMax;
-		m_errorFlags |= ErrorFlag::SZ3OrOTZSaturated;
-		LogGTE( "\tclamping z to %i", z );
-	}
-
-	m_orderTableZ = static_cast<uint16_t>( z );
+	m_orderTableZ = static_cast<uint16_t>( Saturate( z, ZMin, ZMax, ErrorFlag::SZ3OrOTZSaturated ) );
 }
 
-void GTE::Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept
-{
-	LogGTE( "Transform( m, v, %i, %s )", shiftAmount, lm ? "true" : "false" );
-	LogGTE( "m = \t%i\t%i\t%i\n\t%i\t%i\t%i\n\t%i\t%i\t%i",
-		matrix[ 0 ][ 0 ], matrix[ 0 ][ 1 ], matrix[ 0 ][ 2 ],
-		matrix[ 1 ][ 0 ], matrix[ 1 ][ 1 ], matrix[ 1 ][ 2 ],
-		matrix[ 2 ][ 0 ], matrix[ 2 ][ 1 ], matrix[ 2 ][ 2 ]
-		);
-	LogGTE( "v = %i, %i, %i", vector[ 0 ], vector[ 1 ], vector[ 2 ] );
+#define CMOAE( index, value ) CheckMacOverflowAndExtend<(index)>( (value) )
 
-#define MULT( N ) SetMAC<(N)+1>( DotProduct3( matrix[ (N) ], vector ), shiftAmount )
+void GTE::Transform( const Matrix& m, const Vector16& v, shift_t sf, bool lm ) noexcept
+{
+	int64_t result[ 3 ];
+
+#define MULT( N ) result[N] = CMOAE( N+1, CMOAE( N+1, CMOAE( N+1, int64_t( m[N][0] ) * v[0] ) + int64_t( m[N][1] ) * v[1] ) + int64_t( m[N][2] ) * v[2] )
 	MULT( 0 );
 	MULT( 1 );
 	MULT( 2 );
 #undef MULT
 
-	LogGTE( "transform result: %i, %i, %i", m_mac123[ 0 ], m_mac123[ 1 ], m_mac123[ 2 ] );
-
-	CopyMACToIR( lm );
+	SetMACAndIR<1>( result[ 0 ], sf, lm );
+	SetMACAndIR<2>( result[ 1 ], sf, lm );
+	SetMACAndIR<3>( result[ 2 ], sf, lm );
 }
 
-void GTE::Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept
+void GTE::Transform( const Matrix& m, const Vector16& v, const Vector32& t, shift_t sf, bool lm ) noexcept
 {
-	LogGTE( "Transform( m, v, t, %i, %s )", shiftAmount, lm ? "true" : "false" );
-	LogGTE( "m = \t%i\t%i\t%i\n\t%i\t%i\t%i\n\t%i\t%i\t%i",
-		matrix[ 0 ][ 0 ], matrix[ 0 ][ 1 ], matrix[ 0 ][ 2 ],
-		matrix[ 1 ][ 0 ], matrix[ 1 ][ 1 ], matrix[ 1 ][ 2 ],
-		matrix[ 2 ][ 0 ], matrix[ 2 ][ 1 ], matrix[ 2 ][ 2 ]
-	);
-	LogGTE( "v = %i, %i, %i", vector[ 0 ], vector[ 1 ], vector[ 2 ] );
-	LogGTE( "t = %i, %i, %i", translation[ 0 ], translation[ 1 ], translation[ 2 ] );
+	int64_t result[ 3 ];
 
-#define MULT_TRANSLATE( N ) SetMAC<(N)+1>( int64_t( translation[ (N) ] ) * int64_t( 0x1000 ) + DotProduct3( matrix[ (N) ], vector ), shiftAmount )
-	MULT_TRANSLATE( 0 );
-	MULT_TRANSLATE( 1 );
-	MULT_TRANSLATE( 2 );
+#define MULT( N ) result[N] = CMOAE( N+1, CMOAE( N+1, CMOAE( N+1,( int64_t( t[N] ) << 12 ) + int64_t( m[N][0] ) * v[0] ) + int64_t( m[N][1] ) * v[1] ) + int64_t( m[N][2] ) * v[2] )
+	MULT( 0 );
+	MULT( 1 );
+	MULT( 2 );
 #undef MULT
 
-	LogGTE( "transform result: %i, %i, %i", m_mac123[ 0 ], m_mac123[ 1 ], m_mac123[ 2 ] );
+	SetMACAndIR<1>( result[ 0 ], sf, lm );
+	SetMACAndIR<2>( result[ 1 ], sf, lm );
+	SetMACAndIR<3>( result[ 2 ], sf, lm );
+}
 
-	CopyMACToIR( lm );
+int64_t GTE::TransformRTP( const Matrix& m, const Vector16& v, const Vector32& t, shift_t sf, bool lm ) noexcept
+{
+	int64_t result[ 3 ];
+
+#define MULT( N ) result[N] = CMOAE( N+1, CMOAE( N+1, CMOAE( N+1,( int64_t( t[N] ) << 12 ) + int64_t( m[N][0] ) * v[0] ) + int64_t( m[N][1] ) * v[1] ) + int64_t( m[N][2] ) * v[2] )
+	MULT( 0 );
+	MULT( 1 );
+	MULT( 2 );
+#undef MULT
+
+	SetMACAndIR<1>( result[ 0 ], sf, lm );
+	SetMACAndIR<2>( result[ 1 ], sf, lm );
+	SetMAC<3>( result[ 2 ], sf );
+
+	// When using RTP with sf=0, then the IR3 saturation flag (FLAG.22) gets set <only> if "MAC3 SAR 12" exceeds -8000h..+7FFFh
+	Saturate( static_cast<int32_t>( result[ 2 ] >> 12 ), IR123Min, IR123Max, ErrorFlag::IR3Saturated );
+
+	// although IR3 is saturated when "MAC3" exceeds -8000h..+7FFFh
+	m_ir123.z = static_cast<int16_t>( std::clamp<int64_t>( m_mac123.z, lm ? 0 : IR123Min, IR123Max ) );
+
+	return result[ 2 ];
 }
 
 void GTE::MultiplyColorWithIR( ColorRGBC color ) noexcept
 {
-	LogGTE( "MultiplyColorWithIR( %08X )", color.value );
-
-	SetMAC<1>( ( int64_t( color.r ) * int64_t( m_ir123.x ) ) << 4 );
-	SetMAC<2>( ( int64_t( color.g ) * int64_t( m_ir123.y ) ) << 4 );
-	SetMAC<3>( ( int64_t( color.b ) * int64_t( m_ir123.z ) ) << 4 );
+	SetMAC<1>( ( int64_t( color.r ) * int64_t( m_ir123.x ) ) << 4, 0 );
+	SetMAC<2>( ( int64_t( color.g ) * int64_t( m_ir123.y ) ) << 4, 0 );
+	SetMAC<3>( ( int64_t( color.b ) * int64_t( m_ir123.z ) ) << 4, 0 );
 }
 
-void GTE::LerpFarColorWithMAC( int shiftAmount ) noexcept
+void GTE::LerpFarColorWithMAC( shift_t sf ) noexcept
 {
-	LogGTE( "LerpFarColorWithMAC( %i )", shiftAmount );
-	LogGTE( "far color = %u, %u, %u", m_farColor[ 0 ], m_farColor[ 1 ], m_farColor[ 2 ] );
-
 	// [IR1,IR2,IR3] = (([RFC,GFC,BFC] SHL 12) - [MAC1,MAC2,MAC3]) SAR (sf*12)
 	// saturated to -8000h..+7FFFh (ie. as if lm=0)
-	SetIR<1>( ( ( int64_t( m_farColor[ 0 ] ) << 12 ) - m_mac123[ 0 ] ) >> shiftAmount, false );
-	SetIR<2>( ( ( int64_t( m_farColor[ 1 ] ) << 12 ) - m_mac123[ 1 ] ) >> shiftAmount, false );
-	SetIR<3>( ( ( int64_t( m_farColor[ 2 ] ) << 12 ) - m_mac123[ 2 ] ) >> shiftAmount, false );
+
+	const auto macCopy = m_mac123;
+
+	SetMACAndIR<1>( ( int64_t( m_farColor[ 0 ] ) << 12 ) - m_mac123[ 0 ], sf, false );
+	SetMACAndIR<2>( ( int64_t( m_farColor[ 1 ] ) << 12 ) - m_mac123[ 1 ], sf, false );
+	SetMACAndIR<3>( ( int64_t( m_farColor[ 2 ] ) << 12 ) - m_mac123[ 2 ], sf, false );
 
 	// [MAC1,MAC2,MAC3] = (([IR1,IR2,IR3] * IR0) + [MAC1,MAC2,MAC3])
-	SetMAC<1>( ( m_ir123[ 0 ] * int64_t( m_ir0 ) ) + m_mac123[ 0 ] );
-	SetMAC<2>( ( m_ir123[ 1 ] * int64_t( m_ir0 ) ) + m_mac123[ 1 ] );
-	SetMAC<3>( ( m_ir123[ 2 ] * int64_t( m_ir0 ) ) + m_mac123[ 2 ] );
+	SetMAC<1>( m_ir123[ 0 ] * int64_t( m_ir0 ) + macCopy[ 0 ], 0 );
+	SetMAC<2>( m_ir123[ 1 ] * int64_t( m_ir0 ) + macCopy[ 1 ], 0 );
+	SetMAC<3>( m_ir123[ 2 ] * int64_t( m_ir0 ) + macCopy[ 2 ], 0 );
 }
 
-void GTE::ShiftMACRight( int shiftAmount ) noexcept
+void GTE::ShiftMACRight( shift_t sf ) noexcept
 {
-	LogGTE( "ShiftMACRight( %i )", shiftAmount );
-
 	// [MAC1,MAC2,MAC3] = [MAC1,MAC2,MAC3] SAR (sf*12)
-	SetMAC<1>( m_mac123[ 0 ], shiftAmount );
-	SetMAC<2>( m_mac123[ 1 ], shiftAmount );
-	SetMAC<3>( m_mac123[ 2 ], shiftAmount );
+	SetMAC<1>( m_mac123[ 0 ], sf );
+	SetMAC<2>( m_mac123[ 1 ], sf );
+	SetMAC<3>( m_mac123[ 2 ], sf );
 }
 
 void GTE::PushColorFromMAC( bool lm ) noexcept
 {
-	LogGTE( "PushColorFromMAC( %s )", lm ? "true" : "false" );
-
 	ColorRGBC color;
 	color.r = TruncateRGB<0>( m_mac123.x >> 4 );
 	color.g = TruncateRGB<1>( m_mac123.y >> 4 );
 	color.b = TruncateRGB<2>( m_mac123.z >> 4 );
 	color.c = m_color.c;
 
-	LogGTE( "result color = %08X", color.value );
-
 	PushBack( m_colorCodeFifo, color );
 
-	CopyMACToIR( lm );
+	SetIR<1>( m_mac123.x, lm );
+	SetIR<2>( m_mac123.y, lm );
+	SetIR<3>( m_mac123.z, lm );
 }
 
-void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept
+void GTE::RotateTranslatePerspectiveTransformation( const Vector16& vector, shift_t sf, bool lm, bool setMAC0 ) noexcept
 {
-	// perspective transformation ignores lm bit
+	// nocash says perspective transformation ignores lm bit, but JaCzekanski GTE tests require it 
 
-	LogGTE( "RotateTranslatePerspectiveTransformation" );
+	const int64_t resultZ = TransformRTP( m_rotation, vector, m_translation, sf, lm );
 
-	Transform( m_rotation, vector, m_translation, shiftAmount, false );
-
-	PushScreenZ( m_mac123.z >> ( 12 - shiftAmount ) );
+	PushScreenZ( static_cast<int32_t>( resultZ >> 12 ) );
 
 #if GTE_USE_UNR_DIVISION
-	const int64_t temp = UNRDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
+	const int64_t unrResult = UNRDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
 #else
-	const int64_t temp = FastDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
+	const int64_t unrResult = FastDivide( m_projectionPlaneDistance, m_screenZFifo.back() );
 #endif
 
-	const int32_t screenX = static_cast<int32_t>( ( temp * int64_t( m_ir123.x ) + int64_t( m_screenOffset.x ) ) >> 16 );
-	const int32_t screenY = static_cast<int32_t>( ( temp * int64_t( m_ir123.y ) + int64_t( m_screenOffset.y ) ) >> 16 );
+	const int32_t screenX = static_cast<int32_t>( SetMAC0( unrResult * m_ir123.x + m_screenOffset.x ) >> 16 );
+	const int32_t screenY = static_cast<int32_t>( SetMAC0( unrResult * m_ir123.y + m_screenOffset.y ) >> 16 );
 	PushScreenXY( screenX, screenY );
 
-	SetMAC<0>( temp * int64_t( m_depthQueueParamA ) + int64_t( m_depthQueueParamB ) );
-	SetIR<0>( m_mac0 >> 12, true );
+	if ( setMAC0 )
+	{
+		const int64_t mac0 = SetMAC0( unrResult * int64_t( m_depthQueueParamA ) + int64_t( m_depthQueueParamB ) );
+		SetIR0( static_cast<int32_t>( mac0 >> 12 ) );
+	}
 }
 
 template <bool MultiplyColorIR, bool LerpFarColor, bool ShiftMAC>
-void GTE::NormalizeColor( const Vector16& normal, int shiftAmount, bool lm ) noexcept
+void GTE::NormalizeColor( const Vector16& normal, shift_t sf, bool lm ) noexcept
 {
-	LogGTE( "NormalizeColor" );
+	Transform( m_lightMatrix, normal, sf, lm );
 
-	Transform( m_lightMatrix, normal, shiftAmount, lm );
-
-	Transform( m_colorMatrix, m_ir123, m_backgroundColor, shiftAmount, lm );
+	Transform( m_colorMatrix, m_ir123, m_backgroundColor, sf, lm );
 
 	if constexpr ( MultiplyColorIR )
 		MultiplyColorWithIR( m_color );
 
 	if constexpr ( LerpFarColor )
-		LerpFarColorWithMAC( shiftAmount );
+		LerpFarColorWithMAC( sf );
 
 	if constexpr ( ShiftMAC )
-		ShiftMACRight( shiftAmount );
+		ShiftMACRight( sf );
 
 	PushColorFromMAC( lm );
 }
 
 
 template <bool LerpFarColor>
-void GTE::Color( int shiftAmount, bool lm ) noexcept
+void GTE::Color( shift_t sf, bool lm ) noexcept
 {
-	LogGTE( "Color" );
-
-	Transform( m_colorMatrix, m_ir123, m_backgroundColor, shiftAmount, lm );
+	Transform( m_colorMatrix, m_ir123, m_backgroundColor, sf, lm );
 
 	MultiplyColorWithIR( m_color );
 
 	if constexpr ( LerpFarColor )
-		LerpFarColorWithMAC( shiftAmount );
+		LerpFarColorWithMAC( sf );
 
-	ShiftMACRight( shiftAmount );
+	ShiftMACRight( sf );
 
 	PushColorFromMAC( lm );
 }
 
 template <bool MultiplyColorIR, bool ShiftColorLeft16>
-void GTE::DepthCue( ColorRGBC color, int shiftAmount, bool lm ) noexcept
+void GTE::DepthCue( ColorRGBC color, shift_t sf, bool lm ) noexcept
 {
-	LogGTE( "DepthCue( %08X, %i, %s )", color.value, shiftAmount, lm ? "true" :"false" );
-
 	if constexpr ( MultiplyColorIR )
 		MultiplyColorWithIR( color );
 
 	if constexpr ( ShiftColorLeft16 )
 	{
-		SetMAC<1>( int64_t( color.r ) << 16 );
-		SetMAC<2>( int64_t( color.g ) << 16 );
-		SetMAC<3>( int64_t( color.b ) << 16 );
+		SetMAC<1>( int64_t( color.r ) << 16, 0 );
+		SetMAC<2>( int64_t( color.g ) << 16, 0 );
+		SetMAC<3>( int64_t( color.b ) << 16, 0 );
 	}
 
-	LerpFarColorWithMAC( shiftAmount );
-	ShiftMACRight( shiftAmount );
+	LerpFarColorWithMAC( sf );
+	ShiftMACRight( sf );
 	PushColorFromMAC( lm );
 }
 
-void GTE::MultiplyVectorMatrixVectorAdd( Command command ) noexcept
+void GTE::MultiplyVectorMatrixVectorAdd( Command command, shift_t sf, bool lm ) noexcept
 {
-	LogGTE( "MultiplyVectorMatrixVectorAdd( %u )", command.value );
-
-	const int shiftAmount = command.sf ? 12 : 0;
-
-	const Matrix* matrix = nullptr;
+	Matrix m;
 	switch ( static_cast<MultiplyMatrix>( command.multiplyMatrix ) )
 	{
-		case MultiplyMatrix::Rotation:	matrix = &m_rotation;		break;
-		case MultiplyMatrix::Light:		matrix = &m_lightMatrix;	break;
-		case MultiplyMatrix::Color:		matrix = &m_colorMatrix;	break;
-		case MultiplyMatrix::Reserved:	dbBreak();	return;
+		case MultiplyMatrix::Rotation:	m = m_rotation;		break;
+		case MultiplyMatrix::Light:		m = m_lightMatrix;	break;
+		case MultiplyMatrix::Color:		m = m_colorMatrix;	break;
+
+		case MultiplyMatrix::Reserved:
+		default:
+		{
+			const int16_t r = ( m_color.r << 4 );
+			m[ 0 ][ 0 ] = -r;
+			m[ 0 ][ 1 ] = r;
+			m[ 0 ][ 2 ] = m_ir0;
+			m[ 1 ][ 0 ] = m[ 1 ][ 1 ] = m[ 1 ][ 2 ] = m_rotation[ 0 ][ 2 ];
+			m[ 2 ][ 0 ] = m[ 2 ][ 1 ] = m[ 2 ][ 2 ] = m_rotation[ 1 ][ 1 ];
+			break;
+		}
 	}
 
-	const Vector16* vector = nullptr;
+	Vector16 v;
 	switch ( static_cast<MultiplyVector>( command.multiplyVector ) )
 	{
 		case MultiplyVector::V0:
 		case MultiplyVector::V1:
 		case MultiplyVector::V2:
-			vector = &m_vectors[ command.multiplyVector ];
+			v = m_vectors[ command.multiplyVector ];
 			break;
 
 		case MultiplyVector::IR:
-			vector = &m_ir123;
+		default:
+			v = m_ir123;
 			break;
 	}
 
-	const Vector32* translation = nullptr;
 	switch ( static_cast<TranslationVector>( command.translationVector ) )
 	{
-		case TranslationVector::Translation:		translation = &m_translation;		break;
-		case TranslationVector::BackgroundColor:	translation = &m_backgroundColor;	break;
-		case TranslationVector::FarColorBugged:		translation = &m_farColor;			break; // TODO: do buggy transformation
-		case TranslationVector::None:				translation = nullptr;				break;
-	}
+		case TranslationVector::Translation:
+			Transform( m, v, m_translation, sf, lm );
+			break;
 
-	dbAssert( matrix );
-	dbAssert( vector );
-	if ( translation )
-		Transform( *matrix, *vector, *translation, shiftAmount, command.lm );
-	else
-		Transform( *matrix, *vector, shiftAmount, command.lm );
+		case TranslationVector::BackgroundColor:
+			Transform( m, v, m_backgroundColor, sf, lm );
+			break;
+
+		case TranslationVector::FarColorBugged:
+		{
+			int64_t result[ 3 ];
+
+			// flag calculated from 1st component
+#define MULT1( N ) SetIR<N+1>( static_cast<int32_t>( CMOAE( N+1, ( int64_t( m_farColor[N] ) << 12 ) + int64_t( m[N][0] ) * v[0] ) >> sf ), lm )
+			MULT1( 0 );
+			MULT1( 1 );
+			MULT1( 2 );
+#undef MULT1
+
+			// result calculated from 2nd aand 3rd components
+#define MULT2( N ) result[N] = CMOAE( N+1, CMOAE( N+1, int64_t( m[N][1] ) * v[1] ) + int64_t( m[N][2] ) * v[2] )
+			MULT2( 0 );
+			MULT2( 1 );
+			MULT2( 2 );
+#undef MULT2
+
+			SetMACAndIR<1>( result[ 0 ], sf, lm );
+			SetMACAndIR<2>( result[ 1 ], sf, lm );
+			SetMACAndIR<3>( result[ 2 ], sf, lm );
+			break;
+		}
+
+		case TranslationVector::None:
+			Transform( m, v, sf, lm );
+			break;
+	}
 }
 
 uint32_t GTE::FastDivide( uint32_t lhs, uint32_t rhs ) noexcept
 {
-	LogGTE( "FastDivide( %u, %u )", lhs, rhs );
-
 	uint32_t result = 0;
 	if ( rhs * 2 <= lhs )
 	{
@@ -961,14 +948,11 @@ uint32_t GTE::FastDivide( uint32_t lhs, uint32_t rhs ) noexcept
 		result = std::min<uint32_t>( ( ( ( lhs * 0x20000 ) / rhs ) + 1 ) / 2, 0x1ffff );
 	}
 
-	LogGTE( "result = %u", result );
 	return result;
 }
 
 uint32_t GTE::UNRDivide( uint32_t lhs, uint32_t rhs ) noexcept
 {
-	LogGTE( "UNRDivide( %u, %u )", lhs, rhs );
-
 	static const std::array<uint8_t, 257> UNRTable
 	{
 		0xFF,0xFD,0xFB,0xF9,0xF7,0xF5,0xF3,0xF1,0xEF,0xEE,0xEC,0xEA,0xE8,0xE6,0xE4,0xE3,
@@ -1012,8 +996,9 @@ uint32_t GTE::UNRDivide( uint32_t lhs, uint32_t rhs ) noexcept
 		result = 0x1ffff;
 	}
 
-	LogGTE( "result = %u", result );
 	return result;
 }
+
+#undef CMOAE
 
 }

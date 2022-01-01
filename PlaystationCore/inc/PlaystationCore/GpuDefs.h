@@ -90,26 +90,14 @@ enum class DmaDirection
 	GpuReadToCpu
 };
 
-union PositionParameter
-{
-	explicit constexpr PositionParameter( uint32_t param ) : value{ param } {}
-
-	struct
-	{
-		int16_t x : 11;
-		int16_t : 5;
-		int16_t y : 11;
-		int16_t : 5;
-	};
-	uint32_t value;
-};
-static_assert( sizeof( PositionParameter ) == 4 );
-
 struct Position
 {
 	constexpr Position() = default;
 	constexpr Position( int16_t x_, int16_t y_ ) : x{ x_ }, y{ y_ } {}
-	constexpr Position( PositionParameter param ) : x{ param.x }, y{ param.y } {}
+	explicit constexpr Position( uint32_t param )
+		: x{ static_cast<int16_t>( param << 5 ) >> 5 }
+		, y{ static_cast<int16_t>( param >> 11 ) >> 5 }
+	{}
 
 	int16_t x = 0;
 	int16_t y = 0;
@@ -120,21 +108,22 @@ constexpr Position operator+( const Position& lhs, const Position& rhs ) noexcep
 	return Position( lhs.x + rhs.x, lhs.y + rhs.y );
 }
 
-struct Color
+union Color
 {
 	constexpr Color() = default;
 
 	constexpr Color( uint8_t r_, uint8_t g_, uint8_t b_ ) : r{ r_ }, g{ g_ }, b{ b_ } {}
 
-	explicit constexpr Color( uint32_t gpuParam )
-		: r{ static_cast<uint8_t>( gpuParam ) }
-		, g{ static_cast<uint8_t>( gpuParam >> 8 ) }
-		, b{ static_cast<uint8_t>( gpuParam >> 16 ) }
-	{}
+	explicit constexpr Color( uint32_t gpuParam ) : value{ gpuParam } {}
 
-	uint8_t r = 0;
-	uint8_t g = 0;
-	uint8_t b = 0;
+	struct
+	{
+		uint8_t r;
+		uint8_t g;
+		uint8_t b;
+		uint8_t command;
+	};
+	uint32_t value = 0;
 };
 
 struct TexCoord

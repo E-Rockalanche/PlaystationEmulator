@@ -165,13 +165,9 @@ int main( int argc, char** argv )
 	std::unique_ptr<PSX::MemoryCard> memCard1;
 	std::unique_ptr<PSX::MemoryCard> memCard2;
 
-	if ( memCard1Filename.has_value() )
+	auto openMemoryCardForGame = [&memCard1]( const fs::path& filename )
 	{
-		memCard1 = PSX::MemoryCard::Load( *memCard1Filename );
-	}
-	else if ( romFilename.has_value() )
-	{
-		fs::path saveFilename{ *romFilename };
+		fs::path saveFilename = filename;
 		saveFilename.replace_extension( "save" );
 
 		// try to load existing memory card
@@ -180,6 +176,15 @@ int main( int argc, char** argv )
 		// create new memory card
 		if ( memCard1 == nullptr )
 			memCard1 = PSX::MemoryCard::Create( std::move( saveFilename ) );
+	};
+
+	if ( memCard1Filename.has_value() )
+	{
+		memCard1 = PSX::MemoryCard::Load( *memCard1Filename );
+	}
+	else if ( romFilename.has_value() )
+	{
+		openMemoryCardForGame( *romFilename );
 	}
 
 	if ( memCard2Filename.has_value() )
@@ -359,6 +364,34 @@ int main( int argc, char** argv )
 								psxController.Press( PSX::Button::R2 );
 							break;
 						}
+					}
+					break;
+				}
+
+				case SDL_DROPFILE:
+				{
+					fs::path filename = event.drop.file;
+
+					if ( filename.extension() == fs::path( ".exe" ) )
+					{
+						playstationCore->HookExe( std::move( filename ) );
+						playstationCore->Reset();
+						windowTitle = event.drop.file;
+					}
+					else if ( filename.extension() == fs::path( ".save" ) )
+					{
+						auto memCard = PSX::MemoryCard::Load( std::move( filename ) );
+						if ( memCard )
+						{
+							memCard1 = std::move( memCard );
+							playstationCore->SetMemoryCard( 0, memCard1.get() );
+						}
+					}
+					else if ( playstationCore->LoadRom( filename ) )
+					{
+						openMemoryCardForGame( filename );
+						playstationCore->Reset();
+						windowTitle = event.drop.file;
 					}
 					break;
 				}

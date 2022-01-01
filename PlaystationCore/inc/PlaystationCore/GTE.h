@@ -1,11 +1,12 @@
 #pragma once
 
+#include "Defs.h"
+
 #include <Math/Color.h>
 #include <Math/Matrix.h>
 #include <Math/Vector.h>
 
 #include <array>
-#include <cstdint>
 
 namespace PSX
 {
@@ -242,9 +243,12 @@ private:
 	using Vector32 = Math::Vector3<int32_t>;
 	using ScreenXY = Math::Vector2<int16_t>;
 
+	using shift_t = uint_fast8_t;
+
 	static constexpr int64_t MAC0Min = std::numeric_limits<int32_t>::min();
 	static constexpr int64_t MAC0Max = std::numeric_limits<int32_t>::max();
 
+	// MAC 1, 2, & 3 are 44 bit registers
 	static constexpr int64_t MAC123Min = -( int64_t( 1 ) << 43 );
 	static constexpr int64_t MAC123Max = ( int64_t( 1 ) << 43 ) - 1;
 
@@ -268,15 +272,32 @@ private:
 
 private:
 
+	template <size_t Bits>
+	void CheckOverflow( int64_t value, uint32_t underflowFlag, uint32_t overflowFlag ) noexcept;
+
+	int32_t Saturate( int32_t value, int32_t min, int32_t max, uint32_t errorFlag ) noexcept;
+
 	template <size_t Index>
-	void SetMAC( int64_t value, int shiftAmount = 0 ) noexcept;
+	void CheckMacOverflow( int64_t value ) noexcept;
+
+	template <size_t Index>
+	int64_t CheckMacOverflowAndExtend( int64_t value ) noexcept;
+
+	// returns shifted raw value
+	template <size_t Index>
+	int64_t SetMAC( int64_t value, shift_t sf ) noexcept;
+
+	int64_t SetMAC0( int64_t value ) noexcept;
 
 	template <size_t Index>
 	void SetIR( int32_t value, bool lm ) noexcept;
 
-	void CopyMACToIR( bool lm ) noexcept;
+	void SetIR0( int32_t value ) noexcept;
 
 	template <size_t Index>
+	void SetMACAndIR( int64_t value, shift_t sf, bool lm ) noexcept;
+
+	template <size_t Component>
 	uint8_t TruncateRGB( int32_t value ) noexcept;
 
 	void PushScreenZ( int32_t value ) noexcept;
@@ -284,28 +305,31 @@ private:
 
 	void SetOrderTableZ( int32_t z ) noexcept;
 
-	void Transform( const Matrix& matrix, const Vector16& vector, int shiftAmount, bool lm ) noexcept;
-	void Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, int shiftAmount, bool lm ) noexcept;
+	void Transform( const Matrix& matrix, const Vector16& vector, shift_t sf, bool lm ) noexcept;
+	void Transform( const Matrix& matrix, const Vector16& vector, const Vector32& translation, shift_t sf, bool lm ) noexcept;
+
+	// returns unshifted Z result
+	int64_t TransformRTP( const Matrix& matrix, const Vector16& vector, const Vector32& translation, shift_t sf, bool lm ) noexcept;
 
 	void MultiplyColorWithIR( ColorRGBC color ) noexcept;
-	void LerpFarColorWithMAC( int shiftAmount ) noexcept;
-	void ShiftMACRight( int shiftAmount ) noexcept;
+	void LerpFarColorWithMAC( shift_t sf ) noexcept;
+	void ShiftMACRight( shift_t sf ) noexcept;
 	void PushColorFromMAC( bool lm ) noexcept;
 
 	// command functions
 
-	void RotateTranslatePerspectiveTransformation( const Vector16& vector, int shiftAmount ) noexcept;
+	void RotateTranslatePerspectiveTransformation( const Vector16& vector, shift_t sf, bool lm, bool setMAC0 ) noexcept;
 
-	void MultiplyVectorMatrixVectorAdd( Command command ) noexcept;
+	void MultiplyVectorMatrixVectorAdd( Command command, shift_t sf, bool lm ) noexcept;
 
 	template <bool MultiplyColorIR, bool LerpFarColor, bool ShiftMAC>
-	void NormalizeColor( const Vector16& vector, int shiftAmount, bool lm ) noexcept;
+	void NormalizeColor( const Vector16& vector, shift_t sf, bool lm ) noexcept;
 
 	template <bool LerpFarColor>
-	void Color( int shiftAmount, bool lm ) noexcept;
+	void Color( shift_t sf, bool lm ) noexcept;
 
 	template <bool MultiplyColorIR, bool ShiftColorLeft16>
-	void DepthCue( ColorRGBC color, int shiftAount, bool lm ) noexcept;
+	void DepthCue( ColorRGBC color, shift_t sf, bool lm ) noexcept;
 
 	uint32_t FastDivide( uint32_t lhs, uint32_t rhs ) noexcept;
 	uint32_t UNRDivide( uint32_t lhs, uint32_t rhs ) noexcept;

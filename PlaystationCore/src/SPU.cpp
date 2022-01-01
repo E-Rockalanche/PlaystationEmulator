@@ -494,8 +494,8 @@ Spu::Spu( CDRomDrive& cdromDrive, InterruptControl& interruptControl, EventManag
 
 void Spu::Reset()
 {
-	m_transferEvent->Cancel();
-	m_generateSamplesEvent->Cancel();
+	m_transferEvent->Reset();
+	m_generateSamplesEvent->Reset();
 
 	m_voices = {};
 

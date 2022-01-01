@@ -48,7 +48,7 @@ Dma::Dma( Ram& ram,
 
 void Dma::Reset()
 {
-	m_resumeDmaEvent->Cancel();
+	m_resumeDmaEvent->Reset();
 
 	for ( auto& channel : m_channels )
 		channel = {};
@@ -76,21 +76,39 @@ uint32_t Dma::Read( uint32_t index ) const noexcept
 			}
 
 			auto& state = m_channels[ channelIndex ];
+
+			uint32_t value;
 			switch ( static_cast<ChannelRegister>( registerIndex ) )
 			{
-				case ChannelRegister::BaseAddress:		return state.baseAddress;
-				case ChannelRegister::BlockControl:		return static_cast<uint32_t>( state.wordCount | ( state.blockCount << 16 ) );
-				case ChannelRegister::ChannelControl:	return state.control.value;
+				case ChannelRegister::BaseAddress:
+					value =  state.baseAddress;
+					dbLogDebug( "Dma::Read -- channel %u base address [%X]", channelIndex, value );
+					break;
+
+				case ChannelRegister::BlockControl:
+					value = static_cast<uint32_t>( state.wordCount | ( state.blockCount << 16 ) );
+					dbLogDebug( "Dma::Read -- channel %u block control [%X]", channelIndex, value );
+					break;
+
+				case ChannelRegister::ChannelControl:
+					value = state.control.value;
+					dbLogDebug( "Dma::Read -- channel %u channel control [%X]", channelIndex, value );
+					break;
+
 				default:
 					dbLogWarning( "Dma::Read -- invalid channel register" );
-					return 0xffffffffu;
+					value = 0xffffffffu;
+					break;
 			}
+			return value;
 		}
 
 		case Register::Control:
+			dbLogDebug( "Dma::Read -- control [%X]", m_controlRegister );
 			return m_controlRegister;
 
 		case Register::Interrupt:
+			dbLogDebug( "Dma::Read -- interrupt [%X]", m_interruptRegister.value );
 			return m_interruptRegister.value;
 
 		case Register::Unknown1:
@@ -123,16 +141,20 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 			switch ( static_cast<ChannelRegister>( registerIndex ) )
 			{
 				case ChannelRegister::BaseAddress:
+					dbLogDebug( "Dma::Write -- channel %u base address [%X]", channelIndex, value );
 					state.baseAddress = value & 0x00ffffff;
 					break;
 
 				case ChannelRegister::BlockControl:
+					dbLogDebug( "Dma::Write -- channel %u block control [%X]", channelIndex, value );
 					state.wordCount = static_cast<uint16_t>( value );
 					state.blockCount = static_cast<uint16_t>( value >> 16 );
 					break;
 
 				case ChannelRegister::ChannelControl:
 				{
+					dbLogDebug( "Dma::Write -- channel %u channel control [%X]", channelIndex, value );
+
 					const Channel channel = static_cast<Channel>( channelIndex );
 
 					if ( channel == Channel::RamOrderTable )
@@ -154,11 +176,14 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 		}
 
 		case Register::Control:
+			dbLogDebug( "Dma::Write -- control [%X]", value );
 			m_controlRegister = value;
 			break;
 
 		case Register::Interrupt:
 		{
+			dbLogDebug( "Dma::Write -- interrupt [%X]", value );
+
 			const bool oldIrqMasterFlag = m_interruptRegister.irqMasterFlag;
 
 			// Bit24-30 are acknowledged (reset to zero) when writing a "1" to that bits (and, additionally, IRQ3 must be acknowledged via Port 1F801070h).
@@ -343,7 +368,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 	}
 
 	if ( totalCycles > 0 )
-		m_eventManager.AddCycles( totalCycles );
+		m_eventManager.AddCyclesAndUpdateEvents( totalCycles );
 
 	switch ( result )
 	{

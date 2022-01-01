@@ -708,8 +708,8 @@ inline void MipsR3000Cpu::MoveFromCoprocessor( Instruction instr ) noexcept
 			break;
 
 		default:
-			dbBreak();
-			value = 0;
+			dbLogWarning( "MipsR3000Cpu::MoveFromCoprocessor -- invalid coprocessor [%u]", instr.z() );
+			value = 0xffffffffu;
 			break;
 	}
 	m_registers.Load( instr.rt(), value );

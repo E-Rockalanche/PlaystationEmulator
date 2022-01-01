@@ -48,6 +48,21 @@ constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noex
 	return { w, h };
 }
 
+enum class RectangleSize
+{
+	Variable,
+	One,
+	Eight,
+	Sixteen,
+};
+
+enum class PrimitiveType
+{
+	Polygon = 1,
+	Line = 2,
+	Rectangle = 3,
+};
+
 union RenderCommand
 {
 	RenderCommand() = default;
@@ -82,22 +97,7 @@ union RenderCommand
 };
 static_assert( sizeof( RenderCommand ) == 4 );
 
-enum class RectangleSize
-{
-	Variable,
-	One,
-	Eight,
-	Sixteen,
-};
-
-enum class PrimitiveType
-{
-	Polygon = 1,
-	Line = 2,
-	Rectangle = 3,
-};
-
-}
+} // namespace
 
 Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& eventManager )
 	: m_interruptControl{ interruptControl }
@@ -120,8 +120,8 @@ Gpu::~Gpu() = default;
 
 void Gpu::Reset()
 {
-	m_clockEvent->Cancel();
-	m_commandEvent->Cancel();
+	m_clockEvent->Reset();
+	m_commandEvent->Reset();
 
 	m_pendingCommandCycles = 0;
 	m_processingCommandBuffer = false;
@@ -158,7 +158,7 @@ void Gpu::SoftReset() noexcept
 	// reset GPUSTAT
 	m_status.value = 0x14802000;
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
-	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 } );
+	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 }, false );
 	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
@@ -207,7 +207,7 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 {
 	if ( m_commandBuffer.Full() )
 	{
-		dbLogWarning( "Gpu::WriteGP0 -- command buffer is full" );
+		dbBreakMessage( "Gpu::WriteGP0 -- command buffer is full" );
 		return;
 	}
 
@@ -220,12 +220,11 @@ void Gpu::ProcessCommandBuffer() noexcept
 {
 	m_processingCommandBuffer = true;
 
+	const auto oldPendingCommandCycles = m_pendingCommandCycles;
+
 	for ( ;; )
 	{
-		static constexpr float MaxRunAheadCommandCycles = 128;
-
-		bool stop = false;
-		while ( !m_commandBuffer.Empty() && !stop && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
+		if ( !m_commandBuffer.Empty() && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
 		{
 			switch ( m_state )
 			{
@@ -234,17 +233,19 @@ void Gpu::ProcessCommandBuffer() noexcept
 					ExecuteCommand();
 
 					if ( m_state != State::Parameters )
-						break;
+						continue;
 				}
 
 				[[fallthrough]];
 				case State::Parameters:
 				{
 					if ( m_commandBuffer.Size() >= m_remainingParamaters + 1 ) // +1 for command
+					{
 						std::invoke( m_commandFunction, this );
-					else
-						stop = true; // we need more data, goto DMA request
+						continue;
+					}
 
+					// need more parameters, request DMA
 					break;
 				}
 
@@ -262,12 +263,15 @@ void Gpu::ProcessCommandBuffer() noexcept
 					{
 						dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
 						FinishVRamWrite();
+						continue;
 					}
+
+					// need more data, request DMA
 					break;
 				}
 
 				case State::ReadingVRam:
-					stop = true;
+					// nothing to do while reading VRAM
 					break;
 
 				case State::PolyLine:
@@ -290,14 +294,19 @@ void Gpu::ProcessCommandBuffer() noexcept
 						if ( ( paramIndex % paramsPerVertex == 0 ) && ( ( param & TerminationMask ) == TerminationCode ) )
 						{
 							Command_RenderPolyLine();
-							break;
+							continue;
 						}
 						m_transferBuffer.push_back( param );
 					}
+
+					// need more parameters, request DMA
 					break;
 				}
 			}
 		}
+
+		// TEMP DEBUG
+		m_pendingCommandCycles = 0;
 
 		// try to request more data
 		const auto sizeBefore = m_commandBuffer.Size();
@@ -308,7 +317,8 @@ void Gpu::ProcessCommandBuffer() noexcept
 			break;
 	}
 
-	if ( m_pendingCommandCycles > 0 )
+	// schedule end of command execution
+	if ( m_pendingCommandCycles > oldPendingCommandCycles )
 		m_commandEvent->Schedule( static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( m_pendingCommandCycles ) ) ) );
 
 	m_processingCommandBuffer = false;
@@ -332,12 +342,12 @@ void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::CpuToGp0 )
 	{
-		dbLogError( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
+		dbLogWarning( "Gpu::DmaIn -- DMA direction not set to 'CPU -> GP0'" );
 		return;
 	}
 
 	if ( count > m_commandBuffer.Capacity() )
-		dbLogError( "GPU::DmaIn -- command buffer overrun" );
+		dbBreakMessage( "GPU::DmaIn -- command buffer overrun" );
 
 	count = std::min( count, m_commandBuffer.Capacity() );
 	m_commandBuffer.Push( input, count );
@@ -353,7 +363,7 @@ void Gpu::DmaOut( uint32_t* output, uint32_t count ) noexcept
 {
 	if ( m_status.GetDmaDirection() != DmaDirection::GpuReadToCpu )
 	{
-		dbLogError( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
+		dbLogWarning( "Gpu::DmaOut -- DMA direction not set to 'GPUREAD -> CPU'" );
 		std::fill_n( output, count, uint32_t( 0xffffffff ) );
 		return;
 	}
@@ -883,29 +893,18 @@ uint32_t Gpu::GpuStatus() noexcept
 
 void Gpu::UpdateDmaRequest() noexcept
 {
-	switch ( m_state )
-	{
-		case State::Idle:
-		case State::Parameters:
-			m_status.readyToReceiveCommand = m_pendingCommandCycles <= 0;
-			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = m_commandBuffer.Size() < ( m_remainingParamaters + 1 );
-			break;
+	// readyToReceiveDmaBlock can be set even when reading VRAM
+	// JaCzekanski's GPU bandwidth test relies on this behaviour
+	const bool canExecuteCommand = m_commandBuffer.Empty() && ( m_pendingCommandCycles < MaxRunAheadCommandCycles );
+	m_status.readyToReceiveDmaBlock = ( m_state != State::Parameters ) && ( m_state != State::PolyLine ) && canExecuteCommand;
+	m_status.readyToReceiveCommand = ( m_state == State::Idle ) && canExecuteCommand;
+	m_status.readyToSendVRamToCpu = ( m_state == State::ReadingVRam );
 
-		case State::WritingVRam:
-		case State::PolyLine:
-			m_status.readyToReceiveCommand = false;
-			m_status.readyToSendVRamToCpu = false;
-			m_status.readyToReceiveDmaBlock = true;
-			break;
-
-		case State::ReadingVRam:
-			m_status.readyToReceiveCommand = false;
-			m_status.readyToSendVRamToCpu = true;
-			m_status.readyToReceiveDmaBlock = false;
-			break;
-	}
-
+	// DMA / Data Request, meaning depends on GP1(04h) DMA Direction:
+	//   When GP1( 04h ) = 0 --->Always zero( 0 )
+	//   When GP1( 04h ) = 1 --->FIFO State( 0 = Full, 1 = Not Full )
+	//   When GP1( 04h ) = 2 --->Same as GPUSTAT.28
+	//   When GP1( 04h ) = 3 --->Same as GPUSTAT.27
 	bool dmaRequest = false;
 	switch ( static_cast<DmaDirection>( m_status.dmaDirection ) )
 	{
@@ -913,7 +912,7 @@ void Gpu::UpdateDmaRequest() noexcept
 			break;
 
 		case DmaDirection::Fifo:
-			dmaRequest = !m_commandBuffer.Empty();
+			dmaRequest = !m_commandBuffer.Full(); // Duckstation requests when command buffer is not empty?? This feature probably isn't used anyway
 			break;
 
 		case DmaDirection::CpuToGp0:
@@ -924,7 +923,7 @@ void Gpu::UpdateDmaRequest() noexcept
 			dmaRequest = m_status.readyToSendVRamToCpu;
 			break;
 	}
-
+	m_status.dmaRequest = dmaRequest;
 	m_dma->SetRequest( Dma::Channel::Gpu, dmaRequest );
 }
 
@@ -1002,7 +1001,6 @@ void Gpu::Command_RenderPolygon() noexcept
 	m_pendingCommandCycles += CommandCycles[ command.quadPolygon ][ command.shading ][ command.textureMapping ];
 
 	// vertex 1
-
 	if ( command.shading )
 	{
 		vertices[ 0 ].color = Color{ command.color };
@@ -1015,7 +1013,7 @@ void Gpu::Command_RenderPolygon() noexcept
 			v.color = color;
 	}
 
-	vertices[ 0 ].position = PositionParameter{ m_commandBuffer.Pop() };
+	vertices[ 0 ].position = Position{ m_commandBuffer.Pop() };
 
 	TexPage texPage;
 	ClutAttribute clut;
@@ -1034,13 +1032,14 @@ void Gpu::Command_RenderPolygon() noexcept
 	if ( command.shading )
 		vertices[ 1 ].color = Color{ m_commandBuffer.Pop() };
 
-	vertices[ 1 ].position = PositionParameter{ m_commandBuffer.Pop() };
+	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
 
 	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
 		texPage = static_cast<uint16_t>( value >> 16 );
+		m_status.SetTexPage( texPage );
 	}
 	else
 	{
@@ -1059,7 +1058,7 @@ void Gpu::Command_RenderPolygon() noexcept
 		if ( command.shading )
 			vertices[ i ].color = Color{ m_commandBuffer.Pop() };
 
-		vertices[ i ].position = PositionParameter{ m_commandBuffer.Pop() };
+		vertices[ i ].position = Position{ m_commandBuffer.Pop() };
 
 		if ( command.textureMapping )
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
@@ -1073,9 +1072,10 @@ void Gpu::Command_RenderPolygon() noexcept
 
 	// TODO: check for large polygons
 
-	m_renderer.SetDrawMode( texPage, clut );
 
 #if GPU_RENDER_POLYGONS
+	const bool dither = m_status.dither && ( command.shading || ( command.textureMapping && !command.textureMode ) );
+	m_renderer.SetDrawMode( texPage, clut, dither );
 	m_renderer.PushTriangle( vertices, command.semiTransparency );
 	if ( command.quadPolygon )
 		m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
@@ -1120,10 +1120,10 @@ void Gpu::Command_RenderRectangle() noexcept
 		v.color = color;
 
 	// get position
-	const Position pos = Position( PositionParameter( m_commandBuffer.Pop() ) ) + Position( m_drawOffsetX, m_drawOffsetY );
+	const Position pos = Position{ m_commandBuffer.Pop() } + Position{ m_drawOffsetX, m_drawOffsetY };
 
 	// get tex coord/set clut
-	TexCoord topLeftTexCoord;
+	TexCoord texcoord;
 
 	TexPage texPage = m_status.GetTexPage();
 	ClutAttribute clut;
@@ -1132,7 +1132,7 @@ void Gpu::Command_RenderRectangle() noexcept
 	{
 		const uint32_t value = m_commandBuffer.Pop();
 
-		topLeftTexCoord = TexCoord{ value };
+		texcoord = TexCoord{ value };
 
 		clut = static_cast<uint16_t>( value >> 16 );
 		for ( auto& v : vertices )
@@ -1187,15 +1187,14 @@ void Gpu::Command_RenderRectangle() noexcept
 
 	if ( command.textureMapping )
 	{
-		vertices[ 0 ].texCoord = topLeftTexCoord;
-		vertices[ 1 ].texCoord = TexCoord{ topLeftTexCoord.u,										static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ),	topLeftTexCoord.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( topLeftTexCoord.u + width - 1 ),	static_cast<uint16_t>( topLeftTexCoord.v + height - 1 ) };
+		vertices[ 0 ].texCoord = texcoord;
+		vertices[ 1 ].texCoord = TexCoord{ texcoord.u,										static_cast<uint16_t>( texcoord.v + height - 1 ) };
+		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	texcoord.v };
+		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	static_cast<uint16_t>( texcoord.v + height - 1 ) };
 	}
 
-	m_renderer.SetDrawMode( texPage, clut );
-
 #if GPU_RENDER_RECTANGLES
+	m_renderer.SetDrawMode( texPage, clut, false );
 	m_renderer.PushQuad( vertices, command.semiTransparency );
 #endif
 
