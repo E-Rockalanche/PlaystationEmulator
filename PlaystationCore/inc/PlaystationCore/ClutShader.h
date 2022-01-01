@@ -56,8 +56,10 @@ uniform float u_destBlend;
 uniform bool u_setMaskBit;
 uniform bool u_drawOpaquePixels;
 uniform bool u_drawTransparentPixels;
+uniform bool u_realColor;
 uniform ivec2 u_texWindowMask;
 uniform ivec2 u_texWindowOffset;
+
 uniform sampler2D u_vram;
 
 int FloatTo5bit( float value )
@@ -75,9 +77,28 @@ int SampleVRam( ivec2 pos )
 	return ( maskBit << 15 ) | ( blue << 10 ) | ( green << 5 ) | red;
 }
 
+vec4 ConvertColorToRGB555( vec4 color )
+{
+	color.r = round( color.r * 31.0 ) / 31.0;
+	color.g = round( color.g * 31.0 ) / 31.0;
+	color.b = round( color.b * 31.0 ) / 31.0;
+	return color;
+}
+
+vec4 SampleColor( ivec2 pos )
+{
+	vec4 color = texelFetch( u_vram, pos, 0 );
+	color.a = ceil( color.a );
+
+	if ( !u_realColor )
+		color = ConvertColorToRGB555( color );
+
+	return color;
+}
+
 vec4 SampleClut( int index )
 {
-	return texelFetch( u_vram, ClutBase + ivec2( index, 0 ), 0 );
+	return SampleColor( ClutBase + ivec2( index, 0 ) );
 }
 
 // texCoord counted in 4bit steps
@@ -116,8 +137,7 @@ vec4 LookupTexel()
 	}
 	else
 	{
-		color = texelFetch( u_vram, TexPageBase + texCoord, 0 ); // get 16bit color directly
-		color.a = ceil( color.a );
+		color = SampleColor( TexPageBase + texCoord );
 	}
 
 	return color;
@@ -127,13 +147,17 @@ void main()
 {
 	vec4 color;
 
+	vec4 blendColor = vec4( BlendColor, 0.0 );
+	if ( !u_realColor )
+		blendColor = ConvertColorToRGB555( blendColor );
+
 	float srcBlend = u_srcBlend;
 	float destBlend = u_destBlend;
 
 	if ( bool( TexPage & ( 1 << 11 ) ) )
 	{
 		// texture disabled
-		color = vec4( BlendColor, 0.0 );
+		color = blendColor;
 	}
 	else
 	{
@@ -141,11 +165,10 @@ void main()
 		color = LookupTexel();
 
 		// check if pixel is fully transparent
-		// TODO: can fully transparent pixels still set bit15 with setMask on?
 		if ( color == vec4( 0.0 ) )
 			discard;
 
-		color.rgb *= BlendColor.rgb * 2.0;
+		color.rgb *= blendColor.rgb * 2.0;
 
 		if ( color.a == 0 )
 		{

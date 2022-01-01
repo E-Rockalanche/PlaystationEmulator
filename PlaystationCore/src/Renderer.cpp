@@ -49,6 +49,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 	m_drawOpaquePixelsLoc = m_clutShader.GetUniformLocation( "u_drawOpaquePixels" );
 	m_drawTransparentPixelsLoc = m_clutShader.GetUniformLocation( "u_drawTransparentPixels" );
+	m_realColorLoc = m_clutShader.GetUniformLocation( "u_realColor" );
 
 	// create output 24bpp shader
 	m_output24bppShader = Render::Shader::Compile( Output24bitVertexShader, Output24bitFragmentShader );
@@ -472,6 +473,15 @@ void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut )
 	}
 }
 
+void Renderer::SetRealColor( bool realColor )
+{
+	if ( m_realColor != realColor )
+	{
+		m_realColor = realColor;
+		glUniform1i( m_realColorLoc, realColor );
+	}
+}
+
 void Renderer::UpdateScissorRect()
 {
 	const auto width = std::max<int>( m_drawAreaRight - m_drawAreaLeft + 1, 0 );
@@ -638,6 +648,7 @@ void Renderer::RestoreRenderState()
 	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
 	glUniform1i( m_drawOpaquePixelsLoc, true );
 	glUniform1i( m_drawTransparentPixelsLoc, true );
+	glUniform1i( m_realColorLoc, m_realColor );
 
 	glViewport( 0, 0, VRamWidth, VRamHeight );
 
