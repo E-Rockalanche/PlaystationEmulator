@@ -437,7 +437,7 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 
 void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 {
-	dither &= m_realColor;
+	dither &= !m_realColor;
 
 	if ( m_texPage.value != texPage.value || m_clut.value != clut.value || m_dither != dither )
 		DrawBatch();
