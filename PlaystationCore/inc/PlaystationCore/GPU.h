@@ -73,8 +73,8 @@ private:
 		uint16_t visibleCycleEnd;
 	};
 
-	static constexpr CrtConstants NTSCConstants{ 60, 263, 3412, 16, 256, 488, 3288 };
-	static constexpr CrtConstants PALConstants{ 50, 314, 3406, 20, 308, 487, 3282 };
+	static constexpr CrtConstants NTSCConstants{ 60, 263, 3372, 16, 256, 608, 3168 };
+	static constexpr CrtConstants PALConstants{ 50, 314, 3389, 20, 308, 608, 3168 };
 
 	// Video clock speed = Cpu clock speed * 11 / 7
 
