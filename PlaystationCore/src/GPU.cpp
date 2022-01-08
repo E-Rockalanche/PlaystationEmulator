@@ -169,11 +169,13 @@ void Gpu::SoftReset() noexcept
 	m_displayAreaStartY = 0;
 	m_renderer.SetDisplayStart( 0, 0 );
 
-	// reset display range
-	m_horDisplayRangeStart = 0x200;
-	m_horDisplayRangeEnd = 0x200 + 256 * 10;
-	m_verDisplayRangeStart = 0x10;
-	m_verDisplayRangeEnd = 0x10 + 240;
+	// reset horizontal display range
+	m_horDisplayRangeStart = 0x260;
+	m_horDisplayRangeEnd = 0x260 + 320 * 8;
+
+	// reset vertical display range
+	m_verDisplayRangeStart = 0x88 - 224 / 2;
+	m_verDisplayRangeEnd = 0x88 + 224 / 2;
 
 	// reset texture rect flip
 	m_texturedRectFlipX = false;
