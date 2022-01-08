@@ -16,25 +16,6 @@
 namespace PSX
 {
 
-static constexpr float CpuClockSpeed = CpuCyclesPerSecond; // Hz
-static constexpr float VideoClockSpeed = CpuCyclesPerSecond * 11.0f / 7.0f; // Hz
-
-static constexpr uint32_t RefreshRatePAL = 50;
-static constexpr uint32_t RefreshRateNTSC = 60;
-
-static constexpr uint32_t ScanlinesPAL = 314;
-static constexpr uint32_t ScanlinesNTSC = 263;
-
-constexpr float ConvertCpuToVideoCycles( cycles_t cycles ) noexcept
-{
-	return static_cast<float>( cycles ) * 11.0f / 7.0f;
-}
-
-constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
-{
-	return cycles * 7.0f / 11.0f;
-}
-
 class Gpu
 {
 public:
@@ -72,17 +53,49 @@ public:
 	uint32_t GetHorizontalResolution() const noexcept;
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
-	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
-	uint32_t GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
+	uint32_t GetRefreshRate() const noexcept { return m_crtConstants.refreshRate; }
 
-	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
-	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
+	bool GetDisplayFrame() const noexcept { return m_crtState.displayFrame; }
+	void ResetDisplayFrame() noexcept { m_crtState.displayFrame = false; }
 
 	void UpdateClockEventEarly();
 	void ScheduleNextEvent();
 
 private:
-	static constexpr float MaxRunAheadCommandCycles = 128;
+	struct CrtConstants
+	{
+		uint16_t refreshRate;
+		uint16_t scanlines;
+		uint16_t cyclesPerScanline;
+		uint16_t visibleScanlineStart;
+		uint16_t visibleScanlineEnd;
+		uint16_t visibleCycleStart;
+		uint16_t visibleCycleEnd;
+	};
+
+	static constexpr CrtConstants NTSCConstants{ 60, 263, 3412, 16, 256, 488, 3288 };
+	static constexpr CrtConstants PALConstants{ 50, 314, 3406, 20, 308, 487, 3282 };
+
+	// Video clock speed = Cpu clock speed * 11 / 7
+
+	// rounded down, remainder is stored in fractionalCycles
+	static constexpr cycles_t ConvertCpuToVideoCycles( cycles_t cpuCycles, cycles_t& fractionalCycles ) noexcept
+	{
+		const cycles_t multiplied = cpuCycles * 11 + fractionalCycles;
+		fractionalCycles = multiplied % 7;
+		return multiplied / 7;
+	}
+
+	// rounded up
+	static constexpr cycles_t ConvertVideoToCpuCycles( cycles_t gpuCycles, cycles_t fractionalCycles ) noexcept
+	{
+		return ( gpuCycles * 7 - fractionalCycles + 10 ) / 11;
+	}
+
+	static constexpr size_t DotTimerIndex = 0;
+	static constexpr size_t HBlankTimerIndex = 1;
+
+	static constexpr cycles_t MaxRunAheadCommandCycles = 128;
 
 	enum class State
 	{
@@ -134,6 +147,12 @@ private:
 			uint32_t readyToReceiveDmaBlock : 1;
 			uint32_t dmaDirection : 2; // 0=Off, 1=FIFO, 2=CPUtoGP0, 3=GPUREADtoCPU
 			uint32_t evenOddVblank : 1; // 0=Even or Vblank, 1=Odd
+		};
+		struct
+		{
+			uint32_t : 16;
+			uint32_t horizontalResolution : 3; // 256, 368, 320, 368, 512, 368, 640, 368
+			uint32_t : 13;
 		};
 		uint32_t value = 0;
 
@@ -190,7 +209,7 @@ private:
 		m_remainingParamaters = 0;
 	}
 
-	void UpdateCommandCycles( float gpuCycles ) noexcept;
+	void UpdateCommandCycles( cycles_t gpuCycles ) noexcept;
 
 	// command functions
 
@@ -203,35 +222,16 @@ private:
 	void Command_RenderPolyLine() noexcept;
 	void Command_RenderRectangle() noexcept;
 
-	// CRT functions
+	void UpdateCrtConstants() noexcept;
 
-	float GetVideoCyclesPerFrame() const noexcept
-	{
-		return VideoClockSpeed / static_cast<float>( GetRefreshRate() );
-	}
-
-	float GetVideoCyclesPerScanline() const noexcept
-	{
-		return GetVideoCyclesPerFrame() / GetScanlines();
-	}
-
-	float GetDotsPerVideoCycle() const noexcept
-	{
-		return GetHorizontalResolution() / 2560.0f;
-	}
-
-	float GetDotsPerScanline() const noexcept
-	{
-		return GetDotsPerVideoCycle() * GetVideoCyclesPerScanline();
-	}
-
-	void UpdateCycles( float gpuTicks ) noexcept;
+	void UpdateCycles( cycles_t cpuCycles ) noexcept;
 
 private:
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
 	Timers* m_timers = nullptr; // circular dependency
 	Dma* m_dma = nullptr; // circular dependency
+
 	EventHandle m_clockEvent;
 	EventHandle m_commandEvent;
 
@@ -239,7 +239,7 @@ private:
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;
 	CommandFunction m_commandFunction = nullptr;
-	float m_pendingCommandCycles = 0;
+	cycles_t m_pendingCommandCycles = 0;
 	bool m_processingCommandBuffer = false;
 
 	uint32_t m_gpuRead = 0;
@@ -279,13 +279,24 @@ private:
 	uint16_t m_verDisplayRangeEnd = 0;
 
 	// timing
-	uint32_t m_currentScanline = 0;
-	float m_currentDot = 0.0f;
-	float m_dotTimerFraction = 0.0f;
-	bool m_hblank = false;
-	bool m_vblank = false;
-	bool m_drawingEvenOddLine = false;
-	bool m_displayFrame = false;
+	CrtConstants m_crtConstants;
+
+	struct CrtState
+	{
+		cycles_t fractionalCycles = 0;
+
+		uint32_t scanline = 0;
+		cycles_t cycleInScanline = 0;
+
+		uint32_t dotClockDivider = 0;
+		uint32_t dotFraction = 0;
+
+		bool hblank = false;
+		bool vblank = false;
+		bool evenOddLine = false;
+		bool displayFrame = false;
+	};
+	CrtState m_crtState;
 
 	mutable cycles_t m_cachedCyclesUntilNextEvent = 0;
 
