@@ -216,7 +216,7 @@ void EventManager::RemoveEvent( Event* event )
 void EventManager::EndFrame( [[maybe_unused]] uint32_t frameRate )
 {
 	m_cyclesThisFrame += m_pendingCycles;
-	dbLogDebug( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / frameRate );
+	dbLog( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / frameRate );
 	m_cyclesThisFrame = -m_pendingCycles;
 }
 
