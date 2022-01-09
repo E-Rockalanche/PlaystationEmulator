@@ -228,7 +228,7 @@ void Timers::UpdateEventsEarly( uint32_t timerIndex )
 	{
 		auto& timer = m_timers[ timerIndex ];
 		if ( timer.GetSyncEnable() || !timer.IsUsingSystemClock() )
-			m_gpu->UpdateClockEventEarly();
+			m_gpu->UpdateCrtEventEarly();
 	}
 
 	m_timerEvent->UpdateEarly();
@@ -319,7 +319,7 @@ void Timers::Write( uint32_t offset, uint32_t value ) noexcept
 	ScheduleNextIrq();
 
 	if ( timerIndex < 2 && !timer.IsUsingSystemClock() )
-		m_gpu->ScheduleNextEvent();
+		m_gpu->ScheduleCrtEvent();
 }
 
 void Timers::AddCycles( cycles_t cycles ) noexcept

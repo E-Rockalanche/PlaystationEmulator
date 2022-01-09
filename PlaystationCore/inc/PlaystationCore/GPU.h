@@ -53,19 +53,18 @@ public:
 	uint32_t GetHorizontalResolution() const noexcept;
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
-	uint32_t GetRefreshRate() const noexcept { return m_crtConstants.refreshRate; }
+	float GetRefreshRate() const noexcept;
 
 	bool GetDisplayFrame() const noexcept { return m_crtState.displayFrame; }
 	void ResetDisplayFrame() noexcept { m_crtState.displayFrame = false; }
 
-	void UpdateClockEventEarly();
-	void ScheduleNextEvent();
+	void UpdateCrtEventEarly();
+	void ScheduleCrtEvent() noexcept;
 
 private:
 	struct CrtConstants
 	{
-		uint16_t refreshRate;
-		uint16_t scanlines;
+		uint16_t totalScanlines;
 		uint16_t cyclesPerScanline;
 		uint16_t visibleScanlineStart;
 		uint16_t visibleScanlineEnd;
@@ -73,24 +72,9 @@ private:
 		uint16_t visibleCycleEnd;
 	};
 
-	static constexpr CrtConstants NTSCConstants{ 60, 263, 3372, 16, 256, 608, 3168 };
-	static constexpr CrtConstants PALConstants{ 50, 314, 3389, 20, 308, 608, 3168 };
-
-	// Video clock speed = Cpu clock speed * 11 / 7
-
-	// rounded down, remainder is stored in fractionalCycles
-	static constexpr cycles_t ConvertCpuToVideoCycles( cycles_t cpuCycles, cycles_t& fractionalCycles ) noexcept
-	{
-		const cycles_t multiplied = cpuCycles * 11 + fractionalCycles;
-		fractionalCycles = multiplied % 7;
-		return multiplied / 7;
-	}
-
-	// rounded up
-	static constexpr cycles_t ConvertVideoToCpuCycles( cycles_t gpuCycles, cycles_t fractionalCycles ) noexcept
-	{
-		return ( gpuCycles * 7 - fractionalCycles + 10 ) / 11;
-	}
+	// values from https://problemkaputt.de/psx-spx.htm#gputimings
+	static constexpr CrtConstants NTSCConstants{ 263, 3413, 16, 256, 488, 3288 };
+	static constexpr CrtConstants PALConstants{ 314, 3406, 20, 308, 487, 3282 };
 
 	static constexpr size_t DotTimerIndex = 0;
 	static constexpr size_t HBlankTimerIndex = 1;
@@ -176,12 +160,34 @@ private:
 		DisplayAreaColorDepth GetDisplayAreaColorDepth() const noexcept { return static_cast<DisplayAreaColorDepth>( displayAreaColorDepth ); }
 
 		DmaDirection GetDmaDirection() const noexcept { return static_cast<DmaDirection>( dmaDirection ); }
+
+		bool Is480iMode() const noexcept { return verticalResolution && verticalInterlace; }
 	};
 	static_assert( sizeof( Status ) == 4 );
 
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
 private:
+	// rounded down, remainder is stored in fractionalCycles
+	static constexpr cycles_t ConvertCpuToGpuCycles( cycles_t cpuCycles, cycles_t& fractionalCycles ) noexcept
+	{
+		const auto multiplied = cpuCycles * 11 + fractionalCycles;
+		fractionalCycles = multiplied % 7;
+		return multiplied / 7;
+	}
+
+	// rounded down
+	static constexpr cycles_t ConvertCpuToGpuCycles( cycles_t cpuCycles ) noexcept
+	{
+		return ( cpuCycles * 11 ) / 7;
+	}
+
+	// rounded up so we don't undershoot conversion from CPU to GPU cycles
+	static constexpr cycles_t ConvertGpuToCpuCycles( cycles_t gpuCycles, cycles_t fractionalCycles = 0 ) noexcept
+	{
+		return ( gpuCycles * 7 - fractionalCycles + 10 ) / 11;
+	}
+
 	void SoftReset() noexcept;
 
 	void WriteGP0( uint32_t value ) noexcept;
@@ -209,7 +215,20 @@ private:
 		m_remainingParamaters = 0;
 	}
 
-	void UpdateCommandCycles( cycles_t gpuCycles ) noexcept;
+	// GPU commands run at twice the CPU clock speed according to Duckstation
+
+	static constexpr cycles_t ConvertCpuToCommandCycles( cycles_t cpuCycles ) noexcept
+	{
+		return cpuCycles * 2;
+	}
+
+	// round up so we don't undershoot conversion from CPU to command cycles
+	static constexpr cycles_t ConvertCommandToCpuCycles( cycles_t commandCycles ) noexcept
+	{
+		return ( commandCycles + 1 ) / 2;
+	}
+
+	void UpdateCommandCycles( cycles_t cpuCycles ) noexcept;
 
 	// command functions
 
@@ -224,7 +243,7 @@ private:
 
 	void UpdateCrtConstants() noexcept;
 
-	void UpdateCycles( cycles_t cpuCycles ) noexcept;
+	void UpdateCrtCycles( cycles_t cpuCycles ) noexcept;
 
 private:
 	InterruptControl& m_interruptControl;
@@ -232,7 +251,7 @@ private:
 	Timers* m_timers = nullptr; // circular dependency
 	Dma* m_dma = nullptr; // circular dependency
 
-	EventHandle m_clockEvent;
+	EventHandle m_crtEvent;
 	EventHandle m_commandEvent;
 
 	State m_state = State::Idle;

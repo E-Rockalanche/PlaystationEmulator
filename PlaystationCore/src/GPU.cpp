@@ -116,14 +116,14 @@ Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& 
 	, m_renderer{ renderer }
 	, m_vram{ std::make_unique<uint16_t[]>( VRamWidth * VRamHeight ) } // 1MB of VRAM
 {
-	m_clockEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles )
+	m_crtEvent = eventManager.CreateEvent( "GPU clock event", [this]( cycles_t cpuCycles )
 		{
-			UpdateCycles( cpuCycles );
+			UpdateCrtCycles( cpuCycles );
 		} );
 
 	m_commandEvent = eventManager.CreateEvent( "GPU command event", [this]( cycles_t cpuCycles )
 		{
-			UpdateCommandCycles( ( cpuCycles * 11 ) / 7 );
+			UpdateCommandCycles( cpuCycles );
 		} );
 }
 
@@ -185,21 +185,21 @@ void Gpu::SoftReset() noexcept
 	m_renderer.SetDisplayStart( 0, 0 );
 
 	// reset horizontal display range
-	m_horDisplayRangeStart = 0x200;
-	m_horDisplayRangeEnd = 0x200 + 256 * 10;
+	m_horDisplayRangeStart = 0x260;
+	m_horDisplayRangeEnd = 0x260 + 320 * 8;
 
 	// reset vertical display range
-	m_verDisplayRangeStart = 0x10;
-	m_verDisplayRangeEnd = 0x10 + 240;
+	m_verDisplayRangeStart = 0x88 - 224 / 2;
+	m_verDisplayRangeEnd = 0x88 + 224 / 2;
 
 	UpdateCrtConstants();
-	ScheduleNextEvent();
+	ScheduleCrtEvent();
 	UpdateDmaRequest();
 }
 
 void Gpu::Reset()
 {
-	m_clockEvent->Reset();
+	m_crtEvent->Reset();
 	m_commandEvent->Reset();
 
 	m_pendingCommandCycles = 0;
@@ -220,6 +220,13 @@ void Gpu::Reset()
 	m_transferBuffer.shrink_to_fit();
 
 	SoftReset();
+}
+
+float Gpu::GetRefreshRate() const noexcept
+{
+	constexpr double GpuCyclesPerSecond = ConvertCpuToGpuCycles( CpuCyclesPerSecond );
+	const double gpuCyclesPerframe = static_cast<double>( m_crtConstants.totalScanlines ) * static_cast<double>( m_crtConstants.cyclesPerScanline );
+	return static_cast<float>( GpuCyclesPerSecond / gpuCyclesPerframe );
 }
 
 void Gpu::WriteGP0( uint32_t value ) noexcept
@@ -337,15 +344,15 @@ void Gpu::ProcessCommandBuffer() noexcept
 	}
 
 	// schedule end of command execution
-	// if ( m_pendingCommandCycles > oldPendingCommandCycles )
-	// 	m_commandEvent->Schedule( static_cast<cycles_t>( std::ceil( ConvertVideoToCpuCycles( m_pendingCommandCycles ) ) ) );
+	if ( m_pendingCommandCycles > oldPendingCommandCycles )
+		m_commandEvent->Schedule( ConvertCommandToCpuCycles( m_pendingCommandCycles ) );
 
 	m_processingCommandBuffer = false;
 }
 
-void Gpu::UpdateCommandCycles( cycles_t gpuCycles ) noexcept
+void Gpu::UpdateCommandCycles( cycles_t cpuCycles ) noexcept
 {
-	m_pendingCommandCycles -= gpuCycles;
+	m_pendingCommandCycles -= ConvertCpuToCommandCycles( cpuCycles );
 	if ( m_pendingCommandCycles <= 0 )
 	{
 		m_pendingCommandCycles = 0;
@@ -391,9 +398,9 @@ void Gpu::DmaOut( uint32_t* output, uint32_t count ) noexcept
 		output[ i ] = GpuRead();
 }
 
-void Gpu::UpdateClockEventEarly()
+void Gpu::UpdateCrtEventEarly()
 {
-	m_clockEvent->UpdateEarly();
+	m_crtEvent->UpdateEarly();
 }
 
 void Gpu::InitCommand( uint32_t paramaterCount, CommandFunction function ) noexcept
@@ -716,14 +723,14 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		case 0x00: // soft reset GPU
 		{
 			dbLog( "Gpu::WriteGP1() -- soft reset" );
-			m_clockEvent->UpdateEarly();
+			m_crtEvent->UpdateEarly();
 			SoftReset();
 			break;
 		}
 
 		case 0x01: // reset command buffer
 			dbLogDebug( "Gpu::WriteGP1() -- clear command buffer" );
-			m_clockEvent->UpdateEarly();
+			m_crtEvent->UpdateEarly();
 			ClearCommandBuffer();
 			UpdateDmaRequest();
 			break;
@@ -735,7 +742,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x03: // display enable
 		{
-			m_clockEvent->UpdateEarly();
+			m_crtEvent->UpdateEarly();
 			const bool disableDisplay = value & 0x1;
 			dbLogDebug( "Gpu::WriteGP1() -- enable display: %s", disableDisplay ? "false" : "true" );
 			m_status.displayDisable = disableDisplay;
@@ -772,11 +779,11 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 			if ( horStart != m_horDisplayRangeStart || horEnd != m_horDisplayRangeEnd )
 			{
-				m_clockEvent->UpdateEarly();
+				m_crtEvent->UpdateEarly();
 				dbLogDebug( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", horStart, horEnd );
 				m_horDisplayRangeStart = horStart;
 				m_horDisplayRangeEnd = horEnd;
-				ScheduleNextEvent();
+				ScheduleCrtEvent();
 			}
 			break;
 		}
@@ -788,11 +795,11 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 			if ( verStart != m_verDisplayRangeStart || verEnd != m_verDisplayRangeEnd )
 			{
-				m_clockEvent->UpdateEarly();
+				m_crtEvent->UpdateEarly();
 				dbLogDebug( "Gpu::WriteGP1() -- set vertical display range [%u, %u]", verStart, verEnd );
 				m_verDisplayRangeStart = verStart;
 				m_verDisplayRangeEnd = verEnd;
-				ScheduleNextEvent();
+				ScheduleCrtEvent();
 			}
 			break;
 		}
@@ -813,7 +820,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			// update cycles and renderer if the new status is different
 			if ( newStatus.value != m_status.value )
 			{
-				m_clockEvent->UpdateEarly();
+				m_crtEvent->UpdateEarly();
 
 				const bool videoModeChanged = newStatus.videoMode != m_status.videoMode;
 
@@ -828,7 +835,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 				if ( videoModeChanged )
 					UpdateCrtConstants();
 
-				ScheduleNextEvent();
+				ScheduleCrtEvent();
 			}
 			break;
 		}
@@ -892,9 +899,10 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 uint32_t Gpu::GpuStatus() noexcept
 {
 	// update the CRT state if it can affect the even/odd status bit
-	const cycles_t currentGpuCycleInScanline = m_crtState.cycleInScanline + ( m_clockEvent->GetPendingCycles() * 11 ) / 7;
+	cycles_t fractionalCycles = m_crtState.fractionalCycles;
+	const cycles_t currentGpuCycleInScanline = m_crtState.cycleInScanline + ConvertCpuToGpuCycles( m_crtEvent->GetPendingCycles(), fractionalCycles );
 	if ( currentGpuCycleInScanline >= m_crtConstants.cyclesPerScanline )
-		m_clockEvent->UpdateEarly();
+		m_crtEvent->UpdateEarly();
 
 	return m_status.value;
 }
@@ -1213,7 +1221,7 @@ void Gpu::UpdateCrtConstants() noexcept
 {
 	m_crtConstants = m_status.videoMode ? PALConstants : NTSCConstants;
 
-	m_crtState.scanline %= m_crtConstants.scanlines;
+	m_crtState.scanline %= m_crtConstants.totalScanlines;
 	m_crtState.cycleInScanline %= m_crtConstants.cyclesPerScanline;
 
 	m_crtState.hblank = m_crtState.cycleInScanline < m_horDisplayRangeStart || m_crtState.cycleInScanline >= m_horDisplayRangeEnd;
@@ -1223,10 +1231,10 @@ void Gpu::UpdateCrtConstants() noexcept
 	m_timers->GetTimer( HBlankTimerIndex ).UpdateBlank( m_crtState.vblank );
 }
 
-void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
+void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 {
 	dbExpects( cpuCycles <= m_cachedCyclesUntilNextEvent );
-	const cycles_t gpuCycles = ConvertCpuToVideoCycles( cpuCycles, m_crtState.fractionalCycles );
+	const cycles_t gpuCycles = ConvertCpuToGpuCycles( cpuCycles, m_crtState.fractionalCycles );
 
 	auto& dotTimer = m_timers->GetTimer( DotTimerIndex );
 	if ( !dotTimer.IsUsingSystemClock() )
@@ -1253,45 +1261,64 @@ void Gpu::UpdateCycles( cycles_t cpuCycles ) noexcept
 	}
 
 	const bool hblank = m_crtState.cycleInScanline < m_horDisplayRangeStart || m_crtState.cycleInScanline >= m_horDisplayRangeEnd;
-	dotTimer.UpdateBlank( hblank );
-
-	// early out if we are still in the same scanline
-	if ( finishedScanlines == 0 )
+	if ( m_crtState.hblank != hblank )
 	{
-		ScheduleNextEvent();
-		return;
+		m_crtState.hblank = hblank;
+		dotTimer.UpdateBlank( hblank );
 	}
 
-	// add scanlines
-	m_crtState.scanline = ( m_crtState.scanline + finishedScanlines ) % m_crtConstants.scanlines;
-	m_crtState.evenOddLine = m_crtState.scanline & 1;
-
-	const bool vblank = m_crtState.scanline < m_verDisplayRangeStart || m_crtState.scanline >= m_verDisplayRangeEnd;
-	if ( m_crtState.vblank != vblank )
+	for ( uint32_t scanlinesToDraw = finishedScanlines; scanlinesToDraw > 0; )
 	{
-		m_crtState.vblank = vblank;
-		hblankTimer.UpdateBlank( vblank );
+		const uint32_t prevScanline = m_crtState.scanline;
+		const uint32_t curScanlinesToDraw = std::min( scanlinesToDraw, m_crtConstants.totalScanlines - prevScanline );
+		scanlinesToDraw -= curScanlinesToDraw;
+		m_crtState.scanline += curScanlinesToDraw;
+		dbAssert( m_crtState.scanline <= m_crtConstants.totalScanlines );
 
-		if ( vblank )
+		if ( prevScanline < m_verDisplayRangeStart && m_crtState.scanline >= m_verDisplayRangeEnd )
 		{
-			dbLogDebug( "VBlank start" );
-			m_interruptControl.SetInterrupt( Interrupt::VBlank );
-			m_crtState.displayFrame = true;
+			// skipped over vertical display range, set vblank to false
+			m_crtState.vblank = false;
 		}
-		else
+
+		const bool vblank = m_crtState.scanline < m_verDisplayRangeStart || m_crtState.scanline >= m_verDisplayRangeEnd;
+		if ( m_crtState.vblank != vblank )
 		{
-			dbLogDebug( "VBlank end" );
+			m_crtState.vblank = vblank;
+			hblankTimer.UpdateBlank( vblank );
+
+			if ( vblank )
+			{
+				dbLogDebug( "VBlank start" );
+				m_interruptControl.SetInterrupt( Interrupt::VBlank );
+				m_crtState.displayFrame = true;
+
+				// TODO: flush render batch & update display texture here
+			}
+			else
+			{
+				dbLogDebug( "VBlank end" );
+			}
+		}
+
+		if ( m_crtState.scanline == m_crtConstants.totalScanlines )
+		{
+			m_crtState.scanline = 0;
+			if ( m_status.verticalInterlace )
+				m_status.interlaceField = !m_status.interlaceField;
+			else
+				m_status.interlaceField = 0;
 		}
 	}
 
 	// In 480-lines mode, bit31 changes per frame. And in 240-lines mode, the bit changes per scanline.
 	// The bit is always zero during Vblank (vertical retrace and upper/lower screen border).
-	m_status.evenOddVblank = m_crtState.evenOddLine && !vblank;
+	m_status.evenOddVblank = !m_crtState.vblank && ( m_status.Is480iMode() ? (bool)m_status.interlaceField : (bool)( m_crtState.scanline & 1u ) );
 
-	ScheduleNextEvent();
+	ScheduleCrtEvent();
 }
 
-void Gpu::ScheduleNextEvent()
+void Gpu::ScheduleCrtEvent() noexcept
 {
 	cycles_t gpuCycles = std::numeric_limits<cycles_t>::max();
 
@@ -1318,14 +1345,22 @@ void Gpu::ScheduleNextEvent()
 	}
 
 	// schedule vblank or hblank timer sync
-	const uint32_t scanlinesUntilVBlankChange = UnitsUntilRangeChange<uint32_t>( m_crtState.scanline, m_verDisplayRangeStart, m_verDisplayRangeEnd, m_crtConstants.scanlines );
-	const cycles_t cyclesUntilVBlankChange = scanlinesUntilVBlankChange * m_crtConstants.cyclesPerScanline - m_crtState.cycleInScanline;
+	uint32_t scanlinesUntilChange = 0;
+	if ( hblankTimer.GetSyncEnable() )
+	{
+		scanlinesUntilChange = UnitsUntilRangeChange<uint32_t>( m_crtState.scanline, m_verDisplayRangeStart, m_verDisplayRangeEnd, m_crtConstants.totalScanlines );
+	}
+	else
+	{
+		scanlinesUntilChange = UnitsUntilTrigger<uint32_t>( m_crtState.scanline, m_verDisplayRangeEnd, m_crtConstants.totalScanlines );
+	}
+	const cycles_t cyclesUntilVBlankChange = scanlinesUntilChange * m_crtConstants.cyclesPerScanline - m_crtState.cycleInScanline;
 	gpuCycles = std::min( gpuCycles, cyclesUntilVBlankChange );
 
 	// schedule next update
-	const cycles_t cpuCycles = ConvertVideoToCpuCycles( gpuCycles, m_crtState.fractionalCycles );
+	const cycles_t cpuCycles = ConvertGpuToCpuCycles( gpuCycles, m_crtState.fractionalCycles );
 	m_cachedCyclesUntilNextEvent = cpuCycles;
-	m_clockEvent->Schedule( cpuCycles );
+	m_crtEvent->Schedule( cpuCycles );
 }
 
 } // namespace PSX
