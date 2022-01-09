@@ -213,10 +213,10 @@ void EventManager::RemoveEvent( Event* event )
 	m_events.erase( it );
 }
 
-void EventManager::EndFrame( [[maybe_unused]] uint32_t frameRate )
+void EventManager::EndFrame()
 {
 	m_cyclesThisFrame += m_pendingCycles;
-	dbLog( "EventManager::EndFrame -- cycles over/under: %i", m_cyclesThisFrame - CpuCyclesPerSecond / frameRate );
+	dbLogDebug( "EventManager::EndFrame -- CPU cycles this frame: %i", m_cyclesThisFrame );
 	m_cyclesThisFrame = -m_pendingCycles;
 }
 
