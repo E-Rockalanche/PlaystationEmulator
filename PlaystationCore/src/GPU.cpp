@@ -156,7 +156,7 @@ void Gpu::SoftReset() noexcept
 	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
 	m_renderer.SetDisplayEnable( !m_status.displayDisable );
-
+	
 	// reset texture rect flip
 	m_texturedRectFlipX = false;
 	m_texturedRectFlipY = false;
