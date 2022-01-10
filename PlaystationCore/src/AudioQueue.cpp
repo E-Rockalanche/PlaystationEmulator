@@ -108,7 +108,7 @@ inline void AudioQueue::ReadSamples( DestType* samples, size_t count )
 	const size_t remaining = count - available;
 	if ( remaining > 0 )
 	{
-		// dbLogWarning( "AudioQueue::FillSamples -- Starving audio device [%u]", remaining );
+		LogWarning( "AudioQueue::ReadSamples -- Starving audio device [%u]", remaining );
 		std::fill_n( samples + available, remaining, DestType( 0 ) );
 
 		// repeat old samples to fill audio gap. Hopefully this sounds better than filling with 0s
