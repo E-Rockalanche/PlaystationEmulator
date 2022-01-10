@@ -546,7 +546,7 @@ void Spu::EndFrame() noexcept
 {
 	GeneratePendingSamples();
 
-	Log( "Spu::EndFrame -- Generated frames: %u, total in queue: %u", m_generatedFrames, static_cast<uint32_t>( m_audioQueue.Size() / 2 ) );
+	dbLogDebug( "Spu::EndFrame -- Generated frames: %u, total in queue: %u", m_generatedFrames, static_cast<uint32_t>( m_audioQueue.Size() / 2 ) );
 	m_generatedFrames = 0;
 }
 
