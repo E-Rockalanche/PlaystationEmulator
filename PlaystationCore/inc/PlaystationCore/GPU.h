@@ -53,7 +53,7 @@ public:
 	uint32_t GetHorizontalResolution() const noexcept;
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
-	float GetRefreshRate() const noexcept;
+	double GetRefreshRate() const noexcept;
 
 	bool GetDisplayFrame() const noexcept { return m_crtState.displayFrame; }
 	void ResetDisplayFrame() noexcept { m_crtState.displayFrame = false; }

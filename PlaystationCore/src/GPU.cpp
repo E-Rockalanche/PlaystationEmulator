@@ -222,11 +222,11 @@ void Gpu::Reset()
 	SoftReset();
 }
 
-float Gpu::GetRefreshRate() const noexcept
+double Gpu::GetRefreshRate() const noexcept
 {
 	constexpr double GpuCyclesPerSecond = ConvertCpuToGpuCycles( CpuCyclesPerSecond );
 	const double gpuCyclesPerframe = static_cast<double>( m_crtConstants.totalScanlines ) * static_cast<double>( m_crtConstants.cyclesPerScanline );
-	return static_cast<float>( GpuCyclesPerSecond / gpuCyclesPerframe );
+	return GpuCyclesPerSecond / gpuCyclesPerframe;
 }
 
 void Gpu::WriteGP0( uint32_t value ) noexcept
