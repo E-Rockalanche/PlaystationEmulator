@@ -230,6 +230,7 @@
     <ClInclude Include="inc\stdx\string.h" />
     <ClInclude Include="inc\stdx\type_traits.h" />
     <ClInclude Include="inc\System\CommandLine.h" />
+    <ClInclude Include="inc\System\Stopwatch.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp" />
