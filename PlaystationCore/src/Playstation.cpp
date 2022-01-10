@@ -100,6 +100,7 @@ void Playstation::Reset()
 
 	m_audioQueue->Clear();
 	m_audioQueue->SetPaused( false );
+	m_audioQueue->PushSilenceFrames( m_audioQueue->GetDeviceBufferSize() / 2 );
 }
 
 void Playstation::SetController( size_t slot, Controller* controller )
