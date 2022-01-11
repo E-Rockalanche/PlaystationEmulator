@@ -544,7 +544,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 		}
 
 		default:
-			dbBreak(); // invalid command
+			dbLogWarning( "GTE::ExecuteCommand -- invalid opcode [%X]", command.opcode );
 			break;
 	}
 
