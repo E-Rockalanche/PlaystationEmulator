@@ -645,7 +645,8 @@ inline void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 		return;
 	}
 
-	m_gte.Write( coprocessor, LoadImp<uint32_t>( address ) );
+	if ( coprocessor == 2 )
+		m_gte.Write( instr.rt(), LoadImp<uint32_t>( address ) );
 }
 
 inline void MipsR3000Cpu::LoadWordLeft( Instruction instr ) noexcept
@@ -730,16 +731,16 @@ inline void MipsR3000Cpu::MoveFromLo( Instruction instr ) noexcept
 
 inline void MipsR3000Cpu::MoveToCoprocessor( Instruction instr ) noexcept
 {
-	const uint32_t regIndex = instr.rd();
+	const uint32_t rd = instr.rd();
 	const uint32_t value = m_registers[ instr.rt() ];
 	switch ( instr.z() )
 	{
 		case 0:
-			m_cop0.Write( regIndex, value );
+			m_cop0.Write( rd, value );
 			break;
 
 		case 2:
-			m_gte.Write( regIndex, value );
+			m_gte.Write( rd, value );
 			break;
 	}
 }
@@ -892,7 +893,8 @@ inline void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction instr ) noexcept
 		return;
 	}
 
-	m_memoryMap.Write<uint32_t>( address, m_gte.Read( instr.rt() ) );
+	if ( coprocessor == 2 )
+		m_memoryMap.Write<uint32_t>( address, m_gte.Read( instr.rt() ) );
 }
 
 inline void MipsR3000Cpu::StoreWordLeft( Instruction instr ) noexcept
