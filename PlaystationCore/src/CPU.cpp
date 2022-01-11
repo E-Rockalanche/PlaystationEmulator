@@ -228,8 +228,23 @@ void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocesso
 {
 	// dbExpects( code == Cop0::ExceptionCode::Interrupt || code == Cop0::ExceptionCode::Syscall );
 
-	// exceptions in delay slot return to branch instruction
-	const uint32_t returnAddress = m_currentPC - ( m_inDelaySlot ? 4 : 0 );
+	uint32_t returnAddress = m_currentPC;
+	if ( m_inDelaySlot )
+	{
+		// must return to jump/branch instruction before delay slot
+		returnAddress -= 4;
+	}
+	/*
+	else if ( code == Cop0::ExceptionCode::Interrupt )
+	{
+		// returning to a GTE command may cause graphical glitches/flickering
+		// the exception handler is supposed to ensure we don't return to a GTE command, but old BIOSes do not
+		const auto instruction = m_memoryMap.FetchInstruction( returnAddress );
+		dbAssert( instruction.has_value() );
+		if ( ( instruction->value & 0xfe000000 ) == 0x4a000000 )
+			returnAddress += 4;
+	}
+	*/
 
 	m_cop0.SetException( returnAddress, code, coprocessor, m_inDelaySlot );
 
@@ -365,6 +380,13 @@ inline void MipsR3000Cpu::RegisterImmediate( Instruction instr ) noexcept
 
 inline void MipsR3000Cpu::CoprocessorUnit( Instruction instr ) noexcept
 {
+	const uint32_t coprocessor = instr.z();
+	if ( !m_cop0.IsCoprocessorEnabled( coprocessor ) )
+	{
+		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable, coprocessor );
+		return;
+	}
+
 	switch ( static_cast<CoprocessorOpcode>( instr.subop() ) )
 	{
 		case CoprocessorOpcode::MoveControlFromCoprocessor:
@@ -480,19 +502,12 @@ inline void MipsR3000Cpu::Break( Instruction ) noexcept
 
 inline void MipsR3000Cpu::MoveControlFromCoprocessor( Instruction instr ) noexcept
 {
-	// TODO: the contents of coprocessor control register rd of coprocessor unit are loaded into general register rt
-
 	if ( instr.z() == 2 )
 		m_registers.Load( instr.rt(), m_gte.ReadControl( instr.rd() ) );
-	else
-		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable );
 }
 
 inline void MipsR3000Cpu::CoprocessorOperation( Instruction instr ) noexcept
 {
-	// TODO: a coprocessor operation is performed. The operation may specify and reference internal coprocessor registers, and may change the state of the coprocessor condition line,
-	// but does not modify state within the processor or the cache/memory system
-
 	switch ( instr.z() )
 	{
 		case 0:
@@ -502,21 +517,13 @@ inline void MipsR3000Cpu::CoprocessorOperation( Instruction instr ) noexcept
 		case 2:
 			m_gte.ExecuteCommand( instr.value );
 			break;
-
-		default:
-			dbBreak(); // TODO
-			break;
 	}
 }
 
 inline void MipsR3000Cpu::MoveControlToCoprocessor( Instruction instr ) noexcept
 {
-	// TODO: the contents of general register rt are loaded into control register rd of coprocessor unit
-
 	if ( instr.z() == 2 )
 		m_gte.WriteControl( instr.rd(), m_registers[ instr.rt() ] );
-	else
-		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable );
 }
 
 inline void MipsR3000Cpu::Divide( Instruction instr ) noexcept
@@ -624,18 +631,21 @@ inline void MipsR3000Cpu::LoadWord( Instruction instr ) noexcept
 
 inline void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 {
-	const auto address = GetVAddr( instr );
-	if ( address % 4 == 0 )
+	const uint32_t coprocessor = instr.z();
+	if ( !m_cop0.IsCoprocessorEnabled( coprocessor ) )
 	{
-		if ( instr.z() == 2 )
-			m_gte.Write( instr.rt(), LoadImp<uint32_t>( address ) );
-		else
-			RaiseException( Cop0::ExceptionCode::CoprocessorUnusable ); // TODO: does this trigger if cop2 is disabled?
+		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable, coprocessor );
+		return;
 	}
-	else
+
+	const uint32_t address = GetVAddr( instr );
+	if ( address % 4 != 0 )
 	{
 		RaiseException( Cop0::ExceptionCode::AddressErrorLoad );
+		return;
 	}
+
+	m_gte.Write( coprocessor, LoadImp<uint32_t>( address ) );
 }
 
 inline void MipsR3000Cpu::LoadWordLeft( Instruction instr ) noexcept
@@ -694,25 +704,18 @@ inline void MipsR3000Cpu::LoadWordRight( Instruction instr ) noexcept
 
 inline void MipsR3000Cpu::MoveFromCoprocessor( Instruction instr ) noexcept
 {
-	const uint32_t regIndex = instr.rd();
-
-	uint32_t value;
+	const uint32_t rt = instr.rt();
+	const uint32_t rd = instr.rd();
 	switch ( instr.z() )
 	{
 		case 0:
-			value = m_cop0.Read( regIndex );
+			m_registers.Load( rt, m_cop0.Read( rd ) );
 			break;
 
 		case 2:
-			value = m_gte.Read( regIndex );
-			break;
-
-		default:
-			dbLogWarning( "MipsR3000Cpu::MoveFromCoprocessor -- invalid coprocessor [%u]", instr.z() );
-			value = 0xffffffffu;
+			m_registers.Load( rt, m_gte.Read( rd ) );
 			break;
 	}
-	m_registers.Load( instr.rt(), value );
 }
 
 inline void MipsR3000Cpu::MoveFromHi( Instruction instr ) noexcept
@@ -737,10 +740,6 @@ inline void MipsR3000Cpu::MoveToCoprocessor( Instruction instr ) noexcept
 
 		case 2:
 			m_gte.Write( regIndex, value );
-			break;
-
-		default:
-			dbBreak();
 			break;
 	}
 }
@@ -879,20 +878,21 @@ inline void MipsR3000Cpu::StoreWord( Instruction instr ) noexcept
 
 inline void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction instr ) noexcept
 {
-	const auto coprocessor = instr.z();
+	const uint32_t coprocessor = instr.z();
+	if ( !m_cop0.IsCoprocessorEnabled( coprocessor ) )
+	{
+		RaiseException( Cop0::ExceptionCode::CoprocessorUnusable, coprocessor );
+		return;
+	}
 
 	const uint32_t address = GetVAddr( instr );
-	if ( address % 4 == 0 )
-	{
-		if ( coprocessor == 2 )
-			m_memoryMap.Write<uint32_t>( address, m_gte.Read( instr.rt() ) );
-		else
-			RaiseException( Cop0::ExceptionCode::CoprocessorUnusable, coprocessor );
-	}
-	else
+	if ( address % 4 != 0 )
 	{
 		RaiseException( Cop0::ExceptionCode::AddressErrorStore, coprocessor );
+		return;
 	}
+
+	m_memoryMap.Write<uint32_t>( address, m_gte.Read( instr.rt() ) );
 }
 
 inline void MipsR3000Cpu::StoreWordLeft( Instruction instr ) noexcept
