@@ -331,9 +331,6 @@ void Gpu::ProcessCommandBuffer() noexcept
 			}
 		}
 
-		// TEMP DEBUG
-		m_pendingCommandCycles = 0;
-
 		// try to request more data
 		const auto sizeBefore = m_commandBuffer.Size();
 		UpdateDmaRequest();
@@ -1080,14 +1077,30 @@ void Gpu::Command_RenderPolygon() noexcept
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
 
+	// TODO: check for large polygons
+
 	for ( size_t i = 0; i < numVertices; ++i )
 	{
 		vertices[ i ].position.x += m_drawOffsetX;
 		vertices[ i ].position.y += m_drawOffsetY;
 	}
 
-	// TODO: check for large polygons
+	AddTriangleCommandCycles(
+		vertices[ 0 ].position.x, vertices[ 0 ].position.y,
+		vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+		vertices[ 2 ].position.x, vertices[ 2 ].position.y,
+		command.textureMapping,
+		command.semiTransparency );
 
+	if ( command.quadPolygon )
+	{
+		AddTriangleCommandCycles(
+			vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+			vertices[ 2 ].position.x, vertices[ 2 ].position.y,
+			vertices[ 3 ].position.x, vertices[ 3 ].position.y,
+			command.textureMapping,
+			command.semiTransparency );
+	}
 
 #if GPU_RENDER_POLYGONS
 	const bool dither = m_status.dither && ( command.shading || ( command.textureMapping && !command.textureMode ) );
@@ -1208,6 +1221,8 @@ void Gpu::Command_RenderRectangle() noexcept
 		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	texcoord.v };
 		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	static_cast<uint16_t>( texcoord.v + height - 1 ) };
 	}
+
+	AddRectangleCommandCycles( width, height, command.textureMapping, command.semiTransparency );
 
 #if GPU_RENDER_RECTANGLES
 	m_renderer.SetDrawMode( texPage, clut, false );

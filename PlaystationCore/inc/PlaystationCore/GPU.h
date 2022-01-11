@@ -162,6 +162,11 @@ private:
 		DmaDirection GetDmaDirection() const noexcept { return static_cast<DmaDirection>( dmaDirection ); }
 
 		bool Is480iMode() const noexcept { return verticalResolution && verticalInterlace; }
+
+		bool SkipDrawingToActiveInterlaceFields() const noexcept
+		{
+			return Is480iMode() && !drawToDisplayArea;
+		}
 	};
 	static_assert( sizeof( Status ) == 4 );
 
@@ -213,6 +218,55 @@ private:
 	{
 		m_state = State::Idle;
 		m_remainingParamaters = 0;
+	}
+
+	inline void ClampToDrawArea( int32_t& x, int32_t& y ) const noexcept
+	{
+		x = std::clamp<int32_t>( x, (int32_t)m_drawAreaLeft, (int32_t)m_drawAreaRight );
+		y = std::clamp<int32_t>( y, (int32_t)m_drawAreaTop, (int32_t)m_drawAreaBottom );
+	}
+
+	inline void AddTriangleCommandCycles( int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t x3, int32_t y3, bool textured, bool semitransparent )
+	{
+		// Don't worry about intersecting triangle with draw area. Just clamp coordinates. Better to unsershoot than overshoot draw timing
+		ClampToDrawArea( x1, y1 );
+		ClampToDrawArea( x2, y2 );
+		ClampToDrawArea( x3, y3 );
+
+		cycles_t cycles = std::abs( ( x1 * ( y2 - y3 ) + x2 * ( y3 - y1 ) + x3 * ( y1 - y2 ) ) / 2 );
+		if ( textured )
+			cycles *= 2;
+
+		if ( semitransparent || m_status.checkMaskOnDraw )
+			cycles += ( cycles + 1 ) / 2;
+
+		if ( m_status.SkipDrawingToActiveInterlaceFields() )
+			cycles /= 2;
+
+		m_pendingCommandCycles += cycles;
+	}
+
+	inline void AddRectangleCommandCycles( uint32_t width, uint32_t height, bool textured, bool semitransparent )
+	{
+		uint32_t cyclesPerRow = static_cast<cycles_t>( width );
+		if ( textured )
+			cyclesPerRow *= 2;
+
+		if ( semitransparent || m_status.checkMaskOnDraw )
+			cyclesPerRow += ( width + 1 ) / 2;
+
+		if ( m_status.SkipDrawingToActiveInterlaceFields() )
+			height = std::max<uint32_t>( height / 2, 1 );
+
+		m_pendingCommandCycles += static_cast<cycles_t>( cyclesPerRow * height );
+	}
+
+	inline void AddLineCommandCycles( uint32_t width, uint32_t height )
+	{
+		if ( m_status.SkipDrawingToActiveInterlaceFields() )
+			height = std::max<uint32_t>( height / 2, 1 );
+
+		m_pendingCommandCycles += static_cast<cycles_t>( std::max( width, height ) );
 	}
 
 	// GPU commands run at twice the CPU clock speed according to Duckstation
