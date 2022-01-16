@@ -62,6 +62,7 @@ public:
 	bool GetPaused() const { return m_paused; }
 
 	void PushSamples( const int16_t* samples, size_t count );
+	void PushSilenceFrames( size_t count );
 
 	void IgnoreSamples( size_t count );
 

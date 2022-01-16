@@ -67,6 +67,8 @@ bool AudioQueue::Initialize( int frequency, uint8_t channels, uint16_t bufferSiz
 		return false;
 	}
 
+	Log( "audio buffer size: %u", (uint32_t)obtained.samples );
+
 	m_deviceId = deviceId;
 	m_settings = obtained;
 
@@ -108,11 +110,12 @@ inline void AudioQueue::ReadSamples( DestType* samples, size_t count )
 	const size_t remaining = count - available;
 	if ( remaining > 0 )
 	{
-		// dbLogWarning( "AudioQueue::FillSamples -- Starving audio device [%u]", remaining );
+		LogWarning( "AudioQueue::ReadSamples -- Starving audio device [%u]", remaining );
+		std::fill_n( samples + available, remaining, DestType( 0 ) );
 
 		// repeat old samples to fill audio gap. Hopefully this sounds better than filling with 0s
-		UnpopSamples( remaining );
-		PopSamples( samples + available, remaining );
+		// UnpopSamples( remaining );
+		// PopSamples( samples + available, remaining );
 	}
 }
 
@@ -126,13 +129,12 @@ void AudioQueue::FillAudioDeviceBuffer( uint8_t* buffer, int bufferLength )
 	switch ( m_settings.format )
 	{
 		case AUDIO_S16:
-		{
 			ReadSamples( reinterpret_cast<int16_t*>( buffer ), static_cast<size_t>( bufferLength ) / sizeof( int16_t ) );
 			break;
-		}
 
 		default:
 			dbBreak();
+			break;
 	}
 }
 
@@ -160,6 +162,34 @@ void AudioQueue::PushSamples( const int16_t* samples, size_t count )
 
 	std::copy_n( samples, seg1Count, m_queue.get() + m_last );
 	std::copy_n( samples + seg1Count, seg2Count, m_queue.get() );
+
+	m_size += count;
+	m_last = ( m_last + count ) % m_bufferSize;
+
+	CheckFullBuffer();
+}
+
+void AudioQueue::PushSilenceFrames( size_t count )
+{
+	std::unique_lock lock{ m_queueMutex };
+
+	if ( m_paused )
+		return;
+
+	count *= m_settings.channels;
+
+	const size_t capacity = m_bufferSize - m_size;
+	if ( capacity < count )
+	{
+		dbLogWarning( "AudioQueue::PushSilenceFrames -- Exceeding queue capacity" );
+		count = capacity;
+	}
+
+	const size_t seg1Count = std::min( count, m_bufferSize - m_last );
+	const size_t seg2Count = count - seg1Count;
+
+	std::fill_n( m_queue.get() + m_last, seg1Count, SampleType( 0 ) );
+	std::fill_n( m_queue.get(), seg2Count, SampleType( 0 ) );
 
 	m_size += count;
 	m_last = ( m_last + count ) % m_bufferSize;

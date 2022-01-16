@@ -100,6 +100,7 @@ void Playstation::Reset()
 
 	m_audioQueue->Clear();
 	m_audioQueue->SetPaused( false );
+	m_audioQueue->PushSilenceFrames( m_audioQueue->GetDeviceBufferSize() / 2 );
 }
 
 void Playstation::SetController( size_t slot, Controller* controller )
@@ -117,7 +118,7 @@ void Playstation::RunFrame()
 	while ( !m_gpu->GetDisplayFrame() )
 		m_cpu->RunUntilEvent();
 
-	m_eventManager->EndFrame( m_gpu->GetRefreshRate() );
+	m_eventManager->EndFrame();
 	m_spu->EndFrame();
 	m_gpu->ResetDisplayFrame();
 	m_renderer->DisplayFrame();
@@ -144,9 +145,9 @@ void Playstation::HookExe( fs::path filename )
 	m_cpu->SetHookExecutable( std::move( filename ) );
 }
 
-float Playstation::GetRefreshRate() const
+double Playstation::GetRefreshRate() const
 {
-	return static_cast<float>( m_gpu->GetRefreshRate() );
+	return m_gpu->GetRefreshRate();
 }
 
 }

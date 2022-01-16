@@ -95,12 +95,12 @@ void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, 
 	}
 
 	m_trapReturnAddress = pc;
+	m_jumpDestination = pc; // TODO: set to jump destination when in branch delay slot
+
 	m_exceptionCause = ( static_cast<uint32_t>( code ) << 2 ) | ( coprocessor << 28 ) | ( static_cast<uint32_t>( branchDelay ) << 31 );
 
 	// save interrupt enable and user/kernel mode
 	m_systemStatus = ( ( m_systemStatus & 0x0000000fu ) << 2 ) | ( m_systemStatus & 0xffffffc0u );
-
-	// TODO: set jump destination?
 }
 
 void Cop0::PrepareReturnFromException() noexcept

@@ -11,6 +11,7 @@
 #include <Render/Error.h>
 
 #include <System/CommandLine.h>
+#include <System/Stopwatch.h>
 
 #include <SDL.h>
 #include <glad/glad.h>
@@ -203,7 +204,8 @@ int main( int argc, char** argv )
 	float avgFps = 0.0f;
 	static constexpr float FpsSmoothing = 0.9f;
 
-	uint32_t ticks = SDL_GetTicks();
+	System::Stopwatch stopwatch;
+	stopwatch.Start();
 
 	while ( !quit )
 	{
@@ -406,8 +408,6 @@ int main( int argc, char** argv )
 			SDL_SetWindowTitle( window, cbuf );
 		}
 
-		static constexpr uint32_t HookAddress = 0x80030000;
-
 		if ( !paused || stepFrame )
 		{
 			stepFrame = false;
@@ -419,18 +419,32 @@ int main( int argc, char** argv )
 			playstationCore->GetRenderer().DisplayFrame();
 		}
 
-		const auto refreshRate = playstationCore->GetRefreshRate();
-		const float targetMilliseconds = 1000.0f / refreshRate;
+		using MillisecondsD = std::chrono::duration<double, std::milli>;
+		static const auto SpinDuration = MillisecondsD( 2.0 );
 
-		const uint32_t curTicks = SDL_GetTicks();
-		const uint32_t elapsed = curTicks - ticks;
+		const double refreshRate = playstationCore->GetRefreshRate();
+		const auto targetMilliseconds = MillisecondsD( 1000.0 / refreshRate );
+		const auto coreElapsed = std::chrono::duration_cast<MillisecondsD>( stopwatch.GetElapsed() );
 
-		if ( elapsed < targetMilliseconds )
-			SDL_Delay( static_cast<uint32_t>( targetMilliseconds - elapsed ) );
+		// limit frame rate
+		if ( coreElapsed < targetMilliseconds )
+		{
+			if ( coreElapsed < ( targetMilliseconds - SpinDuration ) )
+				std::this_thread::sleep_for( targetMilliseconds - SpinDuration - coreElapsed );
 
-		ticks = curTicks;
+			while ( stopwatch.GetElapsed() < targetMilliseconds ) {}
+		}
 
-		const float curFps = std::min<float>( 1000.0f / elapsed, refreshRate );
+		// compensate for any lag from the last frame
+		const auto totalElapsed = std::chrono::duration_cast<MillisecondsD>( stopwatch.GetElapsed() );
+		const MillisecondsD compensation = ( totalElapsed > targetMilliseconds && totalElapsed < targetMilliseconds * 2 ) ? ( totalElapsed - targetMilliseconds ) : MillisecondsD{};
+		stopwatch.Start( std::chrono::duration_cast<System::Stopwatch::Duration>( compensation ) );
+
+		if ( coreElapsed > targetMilliseconds )
+			LogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", (float)targetMilliseconds.count(), (float)totalElapsed.count(), (float)coreElapsed.count(), (float)compensation.count() );
+
+		// calculate FPS
+		const float curFps = static_cast<float>( 1000.0 / totalElapsed.count() );
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
 	}
 

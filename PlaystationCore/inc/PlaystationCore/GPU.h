@@ -16,25 +16,6 @@
 namespace PSX
 {
 
-static constexpr float CpuClockSpeed = CpuCyclesPerSecond; // Hz
-static constexpr float VideoClockSpeed = CpuCyclesPerSecond * 11.0f / 7.0f; // Hz
-
-static constexpr uint32_t RefreshRatePAL = 50;
-static constexpr uint32_t RefreshRateNTSC = 60;
-
-static constexpr uint32_t ScanlinesPAL = 314;
-static constexpr uint32_t ScanlinesNTSC = 263;
-
-constexpr float ConvertCpuToVideoCycles( cycles_t cycles ) noexcept
-{
-	return static_cast<float>( cycles ) * 11.0f / 7.0f;
-}
-
-constexpr float ConvertVideoToCpuCycles( float cycles ) noexcept
-{
-	return cycles * 7.0f / 11.0f;
-}
-
 class Gpu
 {
 public:
@@ -72,17 +53,33 @@ public:
 	uint32_t GetHorizontalResolution() const noexcept;
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
-	uint32_t GetScanlines() const noexcept { return m_status.videoMode ? ScanlinesPAL : ScanlinesNTSC; }
-	uint32_t GetRefreshRate() const noexcept { return m_status.videoMode ? RefreshRatePAL : RefreshRateNTSC; }
+	double GetRefreshRate() const noexcept;
 
-	bool GetDisplayFrame() const noexcept { return m_displayFrame; }
-	void ResetDisplayFrame() noexcept { m_displayFrame = false; }
+	bool GetDisplayFrame() const noexcept { return m_crtState.displayFrame; }
+	void ResetDisplayFrame() noexcept { m_crtState.displayFrame = false; }
 
-	void UpdateClockEventEarly();
-	void ScheduleNextEvent();
+	void UpdateCrtEventEarly();
+	void ScheduleCrtEvent() noexcept;
 
 private:
-	static constexpr float MaxRunAheadCommandCycles = 128;
+	struct CrtConstants
+	{
+		uint16_t totalScanlines;
+		uint16_t cyclesPerScanline;
+		uint16_t visibleScanlineStart;
+		uint16_t visibleScanlineEnd;
+		uint16_t visibleCycleStart;
+		uint16_t visibleCycleEnd;
+	};
+
+	// values from https://problemkaputt.de/psx-spx.htm#gputimings
+	static constexpr CrtConstants NTSCConstants{ 263, 3413, 16, 256, 488, 3288 };
+	static constexpr CrtConstants PALConstants{ 314, 3406, 20, 308, 487, 3282 };
+
+	static constexpr size_t DotTimerIndex = 0;
+	static constexpr size_t HBlankTimerIndex = 1;
+
+	static constexpr cycles_t MaxRunAheadCommandCycles = 128;
 
 	enum class State
 	{
@@ -135,6 +132,12 @@ private:
 			uint32_t dmaDirection : 2; // 0=Off, 1=FIFO, 2=CPUtoGP0, 3=GPUREADtoCPU
 			uint32_t evenOddVblank : 1; // 0=Even or Vblank, 1=Odd
 		};
+		struct
+		{
+			uint32_t : 16;
+			uint32_t horizontalResolution : 3; // 256, 368, 320, 368, 512, 368, 640, 368
+			uint32_t : 13;
+		};
 		uint32_t value = 0;
 
 		static constexpr uint32_t TexPageMask = 0x000001ff;
@@ -157,12 +160,39 @@ private:
 		DisplayAreaColorDepth GetDisplayAreaColorDepth() const noexcept { return static_cast<DisplayAreaColorDepth>( displayAreaColorDepth ); }
 
 		DmaDirection GetDmaDirection() const noexcept { return static_cast<DmaDirection>( dmaDirection ); }
+
+		bool Is480iMode() const noexcept { return verticalResolution && verticalInterlace; }
+
+		bool SkipDrawingToActiveInterlaceFields() const noexcept
+		{
+			return Is480iMode() && !drawToDisplayArea;
+		}
 	};
 	static_assert( sizeof( Status ) == 4 );
 
 	using CommandFunction = void( Gpu::* )( ) noexcept;
 
 private:
+	// rounded down, remainder is stored in fractionalCycles
+	static constexpr cycles_t ConvertCpuToGpuCycles( cycles_t cpuCycles, cycles_t& fractionalCycles ) noexcept
+	{
+		const auto multiplied = cpuCycles * 11 + fractionalCycles;
+		fractionalCycles = multiplied % 7;
+		return multiplied / 7;
+	}
+
+	// rounded down
+	static constexpr cycles_t ConvertCpuToGpuCycles( cycles_t cpuCycles ) noexcept
+	{
+		return ( cpuCycles * 11 ) / 7;
+	}
+
+	// rounded up so we don't undershoot conversion from CPU to GPU cycles
+	static constexpr cycles_t ConvertGpuToCpuCycles( cycles_t gpuCycles, cycles_t fractionalCycles = 0 ) noexcept
+	{
+		return ( gpuCycles * 7 - fractionalCycles + 10 ) / 11;
+	}
+
 	void SoftReset() noexcept;
 
 	void WriteGP0( uint32_t value ) noexcept;
@@ -190,7 +220,69 @@ private:
 		m_remainingParamaters = 0;
 	}
 
-	void UpdateCommandCycles( float gpuCycles ) noexcept;
+	inline void ClampToDrawArea( int32_t& x, int32_t& y ) const noexcept
+	{
+		x = std::clamp<int32_t>( x, (int32_t)m_drawAreaLeft, (int32_t)m_drawAreaRight );
+		y = std::clamp<int32_t>( y, (int32_t)m_drawAreaTop, (int32_t)m_drawAreaBottom );
+	}
+
+	inline void AddTriangleCommandCycles( int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t x3, int32_t y3, bool textured, bool semitransparent )
+	{
+		// Don't worry about intersecting triangle with draw area. Just clamp coordinates. Better to unsershoot than overshoot draw timing
+		ClampToDrawArea( x1, y1 );
+		ClampToDrawArea( x2, y2 );
+		ClampToDrawArea( x3, y3 );
+
+		cycles_t cycles = std::abs( ( x1 * ( y2 - y3 ) + x2 * ( y3 - y1 ) + x3 * ( y1 - y2 ) ) / 2 );
+		if ( textured )
+			cycles *= 2;
+
+		if ( semitransparent || m_status.checkMaskOnDraw )
+			cycles += ( cycles + 1 ) / 2;
+
+		if ( m_status.SkipDrawingToActiveInterlaceFields() )
+			cycles /= 2;
+
+		m_pendingCommandCycles += cycles;
+	}
+
+	inline void AddRectangleCommandCycles( uint32_t width, uint32_t height, bool textured, bool semitransparent )
+	{
+		uint32_t cyclesPerRow = static_cast<cycles_t>( width );
+		if ( textured )
+			cyclesPerRow *= 2;
+
+		if ( semitransparent || m_status.checkMaskOnDraw )
+			cyclesPerRow += ( width + 1 ) / 2;
+
+		if ( m_status.SkipDrawingToActiveInterlaceFields() )
+			height = std::max<uint32_t>( height / 2, 1 );
+
+		m_pendingCommandCycles += static_cast<cycles_t>( cyclesPerRow * height );
+	}
+
+	inline void AddLineCommandCycles( uint32_t width, uint32_t height )
+	{
+		if ( m_status.SkipDrawingToActiveInterlaceFields() )
+			height = std::max<uint32_t>( height / 2, 1 );
+
+		m_pendingCommandCycles += static_cast<cycles_t>( std::max( width, height ) );
+	}
+
+	// GPU commands run at twice the CPU clock speed according to Duckstation
+
+	static constexpr cycles_t ConvertCpuToCommandCycles( cycles_t cpuCycles ) noexcept
+	{
+		return cpuCycles * 2;
+	}
+
+	// round up so we don't undershoot conversion from CPU to command cycles
+	static constexpr cycles_t ConvertCommandToCpuCycles( cycles_t commandCycles ) noexcept
+	{
+		return ( commandCycles + 1 ) / 2;
+	}
+
+	void UpdateCommandCycles( cycles_t cpuCycles ) noexcept;
 
 	// command functions
 
@@ -203,43 +295,24 @@ private:
 	void Command_RenderPolyLine() noexcept;
 	void Command_RenderRectangle() noexcept;
 
-	// CRT functions
+	void UpdateCrtConstants() noexcept;
 
-	float GetVideoCyclesPerFrame() const noexcept
-	{
-		return VideoClockSpeed / static_cast<float>( GetRefreshRate() );
-	}
-
-	float GetVideoCyclesPerScanline() const noexcept
-	{
-		return GetVideoCyclesPerFrame() / GetScanlines();
-	}
-
-	float GetDotsPerVideoCycle() const noexcept
-	{
-		return GetHorizontalResolution() / 2560.0f;
-	}
-
-	float GetDotsPerScanline() const noexcept
-	{
-		return GetDotsPerVideoCycle() * GetVideoCyclesPerScanline();
-	}
-
-	void UpdateCycles( float gpuTicks ) noexcept;
+	void UpdateCrtCycles( cycles_t cpuCycles ) noexcept;
 
 private:
 	InterruptControl& m_interruptControl;
 	Renderer& m_renderer;
 	Timers* m_timers = nullptr; // circular dependency
 	Dma* m_dma = nullptr; // circular dependency
-	EventHandle m_clockEvent;
+
+	EventHandle m_crtEvent;
 	EventHandle m_commandEvent;
 
 	State m_state = State::Idle;
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;
 	CommandFunction m_commandFunction = nullptr;
-	float m_pendingCommandCycles = 0;
+	cycles_t m_pendingCommandCycles = 0;
 	bool m_processingCommandBuffer = false;
 
 	uint32_t m_gpuRead = 0;
@@ -279,13 +352,24 @@ private:
 	uint16_t m_verDisplayRangeEnd = 0;
 
 	// timing
-	uint32_t m_currentScanline = 0;
-	float m_currentDot = 0.0f;
-	float m_dotTimerFraction = 0.0f;
-	bool m_hblank = false;
-	bool m_vblank = false;
-	bool m_drawingEvenOddLine = false;
-	bool m_displayFrame = false;
+	CrtConstants m_crtConstants;
+
+	struct CrtState
+	{
+		cycles_t fractionalCycles = 0;
+
+		uint32_t scanline = 0;
+		cycles_t cycleInScanline = 0;
+
+		uint32_t dotClockDivider = 0;
+		uint32_t dotFraction = 0;
+
+		bool hblank = false;
+		bool vblank = false;
+		bool evenOddLine = false;
+		bool displayFrame = false;
+	};
+	CrtState m_crtState;
 
 	mutable cycles_t m_cachedCyclesUntilNextEvent = 0;
 

@@ -111,12 +111,29 @@ public:
 		return m_exceptionCause | ( m_interruptControl.PendingInterrupt() << 10 );
 	}
 
-	inline bool GetInterruptEnable() const noexcept
+	bool IsCoprocessorEnabled( size_t coprocessor ) const noexcept
+	{
+		dbExpects( coprocessor < 4 );
+		const bool enabled = m_systemStatus & ( 1u << ( 28 + coprocessor ) );
+		return enabled || ( coprocessor == 0 && GetKernelMode() );
+	}
+
+	bool GetUserMode() const noexcept
+	{
+		return m_systemStatus & SystemStatus::UserMode;
+	}
+
+	bool GetKernelMode() const noexcept
+	{
+		return !GetUserMode();
+	}
+
+	STDX_forceinline bool GetInterruptEnable() const noexcept
 	{
 		return m_systemStatus & SystemStatus::InterruptEnable;
 	}
 
-	inline bool ShouldTriggerInterrupt() const noexcept
+	STDX_forceinline bool ShouldTriggerInterrupt() const noexcept
 	{
 		// TODO: cache result when state changes
 		return GetInterruptEnable() && ( m_systemStatus & GetExceptionCause() & SystemStatus::InterruptMask );

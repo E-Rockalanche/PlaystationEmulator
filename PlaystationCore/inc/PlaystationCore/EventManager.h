@@ -128,7 +128,7 @@ public:
 		return m_pendingCycles;
 	}
 
-	void EndFrame( uint32_t frameRate );
+	void EndFrame();
 
 private:
 	void ScheduleNextEvent();
