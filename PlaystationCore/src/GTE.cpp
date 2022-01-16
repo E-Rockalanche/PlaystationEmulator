@@ -362,7 +362,7 @@ void GTE::Write( uint32_t index, uint32_t value ) noexcept
 	}
 }
 
-void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
+cycles_t GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 {
 	Command command{ commandValue };
 
@@ -371,16 +371,20 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 	const shift_t sf = command.sf ? 12 : 0;
 	const bool lm = command.lm;
 
+	cycles_t commandCycles = 0;
+
 	switch ( static_cast<Opcode>( command.opcode ) )
 	{
 		case Opcode::RotateTranslatePerspectiveSingle:
 			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf, lm, true );
+			commandCycles = 15;
 			break;
 
 		case Opcode::RotateTranslatePerspectiveTriple:
 			RotateTranslatePerspectiveTransformation( m_vectors[ 0 ], sf, lm, false );
 			RotateTranslatePerspectiveTransformation( m_vectors[ 1 ], sf, lm, false );
 			RotateTranslatePerspectiveTransformation( m_vectors[ 2 ], sf, lm, true );
+			commandCycles = 23;
 			break;
 
 		case Opcode::NormalClipping:
@@ -398,6 +402,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 				int64_t( sxy1.x ) * int64_t( sxy0.y ) -
 				int64_t( sxy2.x ) * int64_t( sxy1.y ) );
 
+			commandCycles = 8;
 			break;
 		}
 
@@ -411,6 +416,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 
 			// OTZ  =  MAC0/1000h
 			SetOrderTableZ( static_cast<int32_t>( result >> 12 ) );
+			commandCycles = 5;
 			break;
 		}
 
@@ -424,11 +430,13 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 
 			// OTZ  =  MAC0/1000h
 			SetOrderTableZ( static_cast<int32_t>( result >> 12 ) );
+			commandCycles = 6;
 			break;
 		}
 
 		case Opcode::MultiplyVectorMatrixVectorAdd:
 			MultiplyVectorMatrixVectorAdd( command, sf, lm );
+			commandCycles = 8;
 			break;
 
 		case Opcode::SquareIR:
@@ -442,6 +450,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			SetIR<1>( m_mac123.x, true );
 			SetIR<2>( m_mac123.y, true );
 			SetIR<3>( m_mac123.z, true );
+			commandCycles = 5;
 			break;
 		}
 
@@ -457,59 +466,71 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			SetIR<1>( m_mac123.x, lm );
 			SetIR<2>( m_mac123.y, lm );
 			SetIR<3>( m_mac123.z, lm );
+			commandCycles = 6;
 			break;
 		}
 
 		case Opcode::NormalColorSingle:
 			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
+			commandCycles = 14;
 			break;
 
 		case Opcode::NormalColorTriple:
 			NormalizeColor<false, false, false>( m_vectors[ 0 ], sf, lm );
 			NormalizeColor<false, false, false>( m_vectors[ 1 ], sf, lm );
 			NormalizeColor<false, false, false>( m_vectors[ 2 ], sf, lm );
+			commandCycles = 30;
 			break;
 
 		case Opcode::NormalColorColorSingle:
 			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
+			commandCycles = 17;
 			break;
 
 		case Opcode::NormalColorColorTriple:
 			NormalizeColor<true, false, true>( m_vectors[ 0 ], sf, lm );
 			NormalizeColor<true, false, true>( m_vectors[ 1 ], sf, lm );
 			NormalizeColor<true, false, true>( m_vectors[ 2 ], sf, lm );
+			commandCycles = 39;
 			break;
 
 		case Opcode::NormalColorDepthCueSingle:
 			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
+			commandCycles = 19;
 			break;
 
 		case Opcode::NormalColorDepthCueTriple:
 			NormalizeColor<true, true, true>( m_vectors[ 0 ], sf, lm );
 			NormalizeColor<true, true, true>( m_vectors[ 1 ], sf, lm );
 			NormalizeColor<true, true, true>( m_vectors[ 2 ], sf, lm );
+			commandCycles = 44;
 			break;
 
 		case Opcode::ColorColor:
 			Color<false>( sf, lm );
+			commandCycles = 11;
 			break;
 
 		case Opcode::ColorDepthCue:
 			Color<true>( sf, lm );
+			commandCycles = 13;
 			break;
 
 		case Opcode::DepthCueColorLight:
 			DepthCue<true, false>( m_color, sf, lm );
+			commandCycles = 8;
 			break;
 
 		case Opcode::DepthCueingSingle:
 			DepthCue<false, true>( m_color, sf, lm );
+			commandCycles = 8;
 			break;
 
 		case Opcode::DepthCueingTriple:
 			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
 			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
 			DepthCue<false, true>( m_colorCodeFifo.front(), sf, lm );
+			commandCycles = 17;
 			break;
 
 		case Opcode::InterpolateFarColor:
@@ -522,6 +543,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			LerpFarColorWithMAC( sf );
 			ShiftMACRight( sf );
 			PushColorFromMAC( lm );
+			commandCycles = 8;
 			break;
 		}
 
@@ -531,6 +553,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			SetMAC<2>( int64_t( m_ir123[ 1 ] ) * int64_t( m_ir0 ), sf );
 			SetMAC<3>( int64_t( m_ir123[ 2 ] ) * int64_t( m_ir0 ), sf );
 			PushColorFromMAC( lm );
+			commandCycles = 5;
 			break;
 		}
 
@@ -540,6 +563,7 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 			SetMAC<2>( int64_t( m_ir123[ 1 ] ) * int64_t( m_ir0 ) + ( int64_t( m_mac123[ 1 ] ) << sf ), sf );
 			SetMAC<3>( int64_t( m_ir123[ 2 ] ) * int64_t( m_ir0 ) + ( int64_t( m_mac123[ 2 ] ) << sf ), sf );
 			PushColorFromMAC( lm );
+			commandCycles = 5;
 			break;
 		}
 
@@ -550,6 +574,8 @@ void GTE::ExecuteCommand( uint32_t commandValue ) noexcept
 
 	if ( m_errorFlags & ErrorFlag::ErrorMask )
 		m_errorFlags |= ErrorFlag::Error;
+
+	return commandCycles;
 }
 
 

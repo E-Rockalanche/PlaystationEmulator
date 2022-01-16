@@ -132,6 +132,7 @@ void EventManager::Reset()
 
 	m_pendingCycles = 0;
 	m_cyclesUntilNextEvent = 0;
+	m_cyclesUntilGteComplete = 0;
 	m_cyclesThisFrame = 0;
 	m_nextEvent = nullptr;
 
@@ -154,6 +155,8 @@ void EventManager::UpdateNextEvent()
 		{
 			for ( Event* event : m_events )
 				event->AddPendingCycles( m_pendingCycles );
+
+			m_cyclesUntilGteComplete = std::max( m_cyclesUntilGteComplete - m_pendingCycles, 0 );
 
 			m_cyclesThisFrame += m_pendingCycles;
 			m_pendingCycles = 0;
