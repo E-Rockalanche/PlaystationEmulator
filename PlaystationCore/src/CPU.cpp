@@ -51,9 +51,17 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 
 		if ( STDX_unlikely( m_cop0.ShouldTriggerInterrupt() ) )
 		{
-			// update current PC now so we can save the proper return address
-			m_currentPC = m_pc;
-			RaiseException( Cop0::ExceptionCode::Interrupt );
+			// the exception handler may or may not modify the return address if the next instruction is a GTE command
+			// this usually results in polygon flickering
+			// to prevent this, delay the interrupt until after the GTE command
+			const auto instruction = m_memoryMap.FetchInstruction( m_pc );
+			dbAssert( instruction.has_value() );
+			if ( ( instruction->value & 0xfe000000 ) != 0x4a000000 )
+			{
+				// update current PC now so we can save the proper return address
+				m_currentPC = m_pc;
+				RaiseException( Cop0::ExceptionCode::Interrupt );
+			}
 		}
 
 		m_currentPC = m_pc;
@@ -226,28 +234,8 @@ inline void MipsR3000Cpu::ExecuteInstruction( Instruction instr ) noexcept
 
 void MipsR3000Cpu::RaiseException( Cop0::ExceptionCode code, uint32_t coprocessor ) noexcept
 {
-	// dbExpects( code == Cop0::ExceptionCode::Interrupt || code == Cop0::ExceptionCode::Syscall );
-
-	uint32_t returnAddress = m_currentPC;
-	if ( m_inDelaySlot )
-	{
-		// must return to jump/branch instruction before delay slot
-		returnAddress -= 4;
-	}
-	/*
-	else if ( code == Cop0::ExceptionCode::Interrupt )
-	{
-		// returning to a GTE command may cause graphical glitches/flickering
-		// the exception handler is supposed to ensure we don't return to a GTE command, but old BIOSes do not
-		const auto instruction = m_memoryMap.FetchInstruction( returnAddress );
-		dbAssert( instruction.has_value() );
-		if ( ( instruction->value & 0xfe000000 ) == 0x4a000000 )
-			returnAddress += 4;
-	}
-	*/
-
+	const uint32_t returnAddress = m_inDelaySlot ? m_currentPC - 4 : m_currentPC;
 	m_cop0.SetException( returnAddress, code, coprocessor, m_inDelaySlot );
-
 	SetProgramCounter( m_cop0.GetExceptionVector() );
 }
 
