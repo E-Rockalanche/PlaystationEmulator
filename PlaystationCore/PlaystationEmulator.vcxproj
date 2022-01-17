@@ -211,6 +211,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\AsyncCDRomReader.cpp" />
     <ClCompile Include="src\AudioQueue.cpp" />
     <ClCompile Include="src\BIOS.cpp" />
     <ClCompile Include="src\CDRom.cpp" />
@@ -251,6 +252,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="inc\PlaystationCore\AsyncCDRomReader.h" />
     <ClInclude Include="inc\PlaystationCore\AudioQueue.h" />
     <ClInclude Include="inc\PlaystationCore\BIOS.h" />
     <ClInclude Include="inc\PlaystationCore\CDRom.h" />

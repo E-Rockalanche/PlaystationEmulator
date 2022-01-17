@@ -13,6 +13,8 @@
 namespace PSX
 {
 
+class AsyncCDRomReader;
+
 class CDRomDrive
 {
 public:
@@ -29,11 +31,10 @@ public:
 	void Write( uint32_t index, uint8_t value ) noexcept;
 
 	void SetCDRom( std::unique_ptr<CDRom> cdrom );
+	void RemoveCDRom();
 
-	bool CanReadDisk() const noexcept
-	{
-		return m_cdrom != nullptr;
-	}
+	const CDRom* GetCDRom() const noexcept;
+	bool CanReadDisk() const noexcept;
 
 	std::pair<int16_t, int16_t> GetAudioFrame()
 	{
@@ -79,7 +80,8 @@ private:
 		Reading,
 		ReadingNoRetry,
 		Playing,
-		ChangingSession
+		ChangingSession,
+		ShellOpening
 	};
 
 	enum class Command : uint8_t
@@ -252,6 +254,12 @@ private:
 
 	cycles_t GetFirstResponseCycles( Command command ) const noexcept;
 
+	cycles_t GetCyclesToStopMotor( bool motorWasOn ) const noexcept
+	{
+		// numbers from Duckstation
+		return motorWasOn ? ( m_mode.doubleSpeed ? 25000000 : 13000000 ) : 7000;
+	}
+
 	void ClearSectorBuffers() noexcept
 	{
 		for ( auto& sector : m_sectorBuffers )
@@ -295,7 +303,8 @@ private:
 	EventHandle m_commandEvent;
 	EventHandle m_secondResponseEvent;
 	EventHandle m_driveEvent;
-	std::unique_ptr<CDRom> m_cdrom;
+
+	std::unique_ptr<AsyncCDRomReader> m_cdromReader;
 
 	Status m_status;
 	uint8_t m_interruptEnable = 0;
@@ -322,18 +331,7 @@ private:
 	};
 	XaFilter m_xaFilter;
 
-	struct SubQ
-	{
-		uint8_t trackNumberBCD = 0;
-		uint8_t trackIndexBCD = 0;
-		uint8_t trackMinuteBCD = 0;
-		uint8_t trackSecondBCD = 0;
-		uint8_t trackSectorBCD = 0;
-		uint8_t absoluteMinuteBCD = 0;
-		uint8_t absoluteSecondBCD = 0;
-		uint8_t absoluteSectorBCD = 0;
-	};
-	SubQ m_lastSubQ;
+	CDRom::SubQ m_lastSubQ;
 
 	uint8_t m_playingTrackNumberBCD = 0;
 

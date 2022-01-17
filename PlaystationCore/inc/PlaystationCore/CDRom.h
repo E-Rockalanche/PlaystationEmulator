@@ -195,6 +195,35 @@ public:
 		uint32_t filePosition = 0;
 	};
 
+	struct SubQ
+	{
+		union Control
+		{
+			struct
+			{
+				uint8_t adr : 4;
+				uint8_t audioPreemphasis : 1;
+				uint8_t digitalCopyAllowed : 1;
+				uint8_t data : 1;
+				uint8_t fourChannelAudio : 1;
+			};
+			uint8_t value = 0;
+		};
+
+		Control control;
+		uint8_t trackNumberBCD = 0;
+		uint8_t trackIndexBCD = 0;
+		uint8_t trackMinuteBCD = 0;
+		uint8_t trackSecondBCD = 0;
+		uint8_t trackSectorBCD = 0;
+		uint8_t reserved = 0;
+		uint8_t absoluteMinuteBCD = 0;
+		uint8_t absoluteSecondBCD = 0;
+		uint8_t absoluteSectorBCD = 0;
+		uint16_t crc = 0;
+	};
+	static_assert( sizeof( SubQ ) == 12 );
+
 public:
 	static std::unique_ptr<CDRom> Open( const fs::path& filename );
 	static std::unique_ptr<CDRom> OpenBin( const fs::path& filename );
@@ -214,8 +243,10 @@ public:
 	bool Seek( uint32_t trackNumber, Location locationInTrack );
 	bool SeekTrack1() { return Seek( 1, Location{} ); }
 
+	bool ReadSubQ( SubQ& subq );
+
 	// read sector from current seek position
-	bool ReadSector( Sector& sector );
+	bool ReadSector( Sector& sector, SubQ& subq );
 
 	uint32_t GetTrackCount() const noexcept
 	{
@@ -253,7 +284,7 @@ public:
 		return m_currentIndex;
 	}
 
-	LogicalSector GetCurrentSeekSector() const noexcept
+	LogicalSector GetCurrentSeekPosition() const noexcept
 	{
 		return m_position;
 	}

@@ -99,6 +99,9 @@
     <ClCompile Include="src\CDRom_Cue.cpp">
       <Filter>src\CDRoms</Filter>
     </ClCompile>
+    <ClCompile Include="src\AsyncCDRomReader.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -210,6 +213,9 @@
       <Filter>inc</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\CDRom.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\AsyncCDRomReader.h">
       <Filter>inc</Filter>
     </ClInclude>
   </ItemGroup>

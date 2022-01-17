@@ -84,7 +84,30 @@ void CDRom::AddLeadOutIndex()
 	m_indices.push_back( leadOut );
 }
 
-bool CDRom::ReadSector( Sector& sector )
+bool CDRom::ReadSubQ( SubQ& subq )
+{
+	dbAssert( m_currentIndex );
+
+	const auto trackLocation = GetCurrentTrackLocation();
+	const auto seekLocation = GetCurrentSeekLocation();
+	const bool isLeadOut = m_currentIndex->trackNumber == LeadOutTrackNumber;
+	subq.control.value = 1;
+	subq.control.data = m_currentIndex->trackType != Track::Type::Audio;
+	subq.trackNumberBCD = isLeadOut ? LeadOutTrackNumber : BinaryToBCD( static_cast<uint8_t>( m_currentIndex->trackNumber ) );
+	subq.trackIndexBCD = BinaryToBCD( static_cast<uint8_t>( m_currentIndex->indexNumber ) );
+	subq.trackMinuteBCD = BinaryToBCD( trackLocation.minute );
+	subq.trackSecondBCD = BinaryToBCD( trackLocation.second );
+	subq.trackSectorBCD = BinaryToBCD( trackLocation.sector );
+	subq.reserved = 0;
+	subq.absoluteMinuteBCD = BinaryToBCD( seekLocation.minute );
+	subq.absoluteSecondBCD = BinaryToBCD( seekLocation.second );
+	subq.absoluteSectorBCD = BinaryToBCD( seekLocation.sector );
+	subq.crc = 0; // TODO
+
+	return true;
+}
+
+bool CDRom::ReadSector( Sector& sector, SubQ& subq )
 {
 	dbAssert( m_currentIndex );
 
@@ -108,7 +131,7 @@ bool CDRom::ReadSector( Sector& sector )
 		return false;
 	}
 
-	// TODO: read sub channel Q
+	ReadSubQ( subq );
 
 	++m_position;
 	++m_positionInIndex;
