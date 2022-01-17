@@ -375,6 +375,9 @@ inline void MipsR3000Cpu::CoprocessorUnit( Instruction instr ) noexcept
 		return;
 	}
 
+	if ( coprocessor == 2 )
+		m_eventManager.StallUntilGteComplete();
+
 	switch ( static_cast<CoprocessorOpcode>( instr.subop() ) )
 	{
 		case CoprocessorOpcode::MoveControlFromCoprocessor:
@@ -503,8 +506,11 @@ inline void MipsR3000Cpu::CoprocessorOperation( Instruction instr ) noexcept
 			break;
 
 		case 2:
-			m_gte.ExecuteCommand( instr.value );
+		{
+			const cycles_t gteCommandCycles = m_gte.ExecuteCommand( instr.value );
+			m_eventManager.AddGteCycles( gteCommandCycles );
 			break;
+		}
 	}
 }
 
@@ -634,7 +640,10 @@ inline void MipsR3000Cpu::LoadWordToCoprocessor( Instruction instr ) noexcept
 	}
 
 	if ( coprocessor == 2 )
+	{
+		m_eventManager.StallUntilGteComplete();
 		m_gte.Write( instr.rt(), LoadImp<uint32_t>( address ) );
+	}
 }
 
 inline void MipsR3000Cpu::LoadWordLeft( Instruction instr ) noexcept
@@ -882,7 +891,10 @@ inline void MipsR3000Cpu::StoreWordFromCoprocessor( Instruction instr ) noexcept
 	}
 
 	if ( coprocessor == 2 )
+	{
+		m_eventManager.StallUntilGteComplete();
 		m_memoryMap.Write<uint32_t>( address, m_gte.Read( instr.rt() ) );
+	}
 }
 
 inline void MipsR3000Cpu::StoreWordLeft( Instruction instr ) noexcept

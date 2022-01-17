@@ -31,7 +31,8 @@ public:
 		Write( index + 32, value );
 	}
 
-	void ExecuteCommand( uint32_t command ) noexcept;
+	// returns cycles to complete command
+	cycles_t ExecuteCommand( uint32_t command ) noexcept;
 
 private:
 	enum class Register : uint32_t

@@ -128,6 +128,16 @@ public:
 		return m_pendingCycles;
 	}
 
+	inline void AddGteCycles( cycles_t cycles ) noexcept
+	{
+		m_cyclesUntilGteComplete = m_pendingCycles + cycles;
+	}
+
+	inline void StallUntilGteComplete() noexcept
+	{
+		m_pendingCycles = std::max( m_pendingCycles, m_cyclesUntilGteComplete );
+	}
+
 	void EndFrame();
 
 private:
@@ -138,10 +148,9 @@ private:
 	void RemoveEvent( Event* event );
 
 private:
-	// cached cycles for next event
-	cycles_t m_cyclesUntilNextEvent = 0;
+	cycles_t m_cyclesUntilNextEvent = 0; // cached from event
 	cycles_t m_pendingCycles = 0;
-
+	cycles_t m_cyclesUntilGteComplete = 0; // need to stall CPU until GTE commands are complete. Events are too much for this
 	cycles_t m_cyclesThisFrame = 0;
 
 	std::vector<Event*> m_events;
