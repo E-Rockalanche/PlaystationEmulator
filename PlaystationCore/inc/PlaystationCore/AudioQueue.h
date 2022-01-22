@@ -49,10 +49,16 @@ public:
 public:
 	AudioQueue() = default;
 
+	AudioQueue( const AudioQueue& ) = delete;
+	AudioQueue( AudioQueue&& ) = delete;
+
 	~AudioQueue()
 	{
 		Destroy();
 	}
+
+	AudioQueue& operator=( const AudioQueue& ) = delete;
+	AudioQueue& operator=( AudioQueue&& ) = delete;
 
 	void Destroy();
 
