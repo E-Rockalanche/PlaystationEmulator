@@ -19,13 +19,13 @@ namespace
 {
 
 template <typename T>
-inline constexpr T UnitsUntilRangeChange( T current, T start, T end, T wrappingSize )
+inline constexpr T UnitsUntilRangeChange( T current, T start, T end, T wrappingSize ) noexcept
 {
 	return ( current < start ) ? ( start - current ) : ( current < end ) ? ( end - current ) : ( wrappingSize - current + start );
 };
 
 template <typename T>
-inline constexpr T UnitsUntilTrigger( T current, T trigger, T wrappingSize )
+inline constexpr T UnitsUntilTrigger( T current, T trigger, T wrappingSize ) noexcept
 {
 	return ( current < trigger ) ? ( trigger - current ) : ( wrappingSize - current + trigger );
 };
@@ -37,7 +37,7 @@ inline constexpr T FloorTo( T value, T multiple ) noexcept
 	return static_cast<T>( ( value / multiple ) * multiple );
 }
 
-constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
+inline constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
 {
 	// Horizontally the filling is done in 16-pixel (32-bytes) units
 	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0;
@@ -45,7 +45,7 @@ constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) 
 	return { x, y };
 }
 
-constexpr std::pair<uint16_t, uint16_t> DecodeFillSize( uint32_t gpuParam ) noexcept
+inline constexpr std::pair<uint16_t, uint16_t> DecodeFillSize( uint32_t gpuParam ) noexcept
 {
 	// Horizontally the filling is done in 16-pixel (32-bytes) units
 	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & VRamWidthMask ) + 0x0f ) & ~0x0f;
@@ -53,14 +53,14 @@ constexpr std::pair<uint16_t, uint16_t> DecodeFillSize( uint32_t gpuParam ) noex
 	return { w, h };
 }
 
-constexpr std::pair<uint16_t, uint16_t> DecodeCopyPosition( uint32_t gpuParam ) noexcept
+inline constexpr std::pair<uint16_t, uint16_t> DecodeCopyPosition( uint32_t gpuParam ) noexcept
 {
 	const uint16_t x = static_cast<uint16_t>( gpuParam ) & VRamWidthMask;
 	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
 	return { x, y };
 }
 
-constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noexcept
+inline constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noexcept
 {
 	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) - 1 ) & VRamWidthMask ) + 1;
 	const uint16_t h = ( ( static_cast<uint16_t>( gpuParam >> 16 ) - 1 ) & VRamHeightMask ) + 1;
@@ -135,7 +135,6 @@ Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& 
 }
 
 Gpu::~Gpu() = default;
-
 
 void Gpu::ClearCommandBuffer() noexcept
 {
