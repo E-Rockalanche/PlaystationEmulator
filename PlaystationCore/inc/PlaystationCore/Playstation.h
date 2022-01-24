@@ -27,7 +27,7 @@ public:
 
 	void HookExe( fs::path filename );
 
-	double GetRefreshRate() const;
+	float GetRefreshRate() const;
 
 public:
 	AudioQueue&			GetAudioQueue()			{ dbAssert( m_audioQueue); return *m_audioQueue; }

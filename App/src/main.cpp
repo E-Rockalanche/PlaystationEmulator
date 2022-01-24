@@ -419,11 +419,11 @@ int main( int argc, char** argv )
 			playstationCore->GetRenderer().DisplayFrame();
 		}
 
-		using MillisecondsD = std::chrono::duration<double, std::milli>;
+		using MillisecondsD = std::chrono::duration<float, std::milli>;
 		static const auto SpinDuration = MillisecondsD( 2.0 );
 
-		const double refreshRate = playstationCore->GetRefreshRate();
-		const auto targetMilliseconds = MillisecondsD( 1000.0 / refreshRate );
+		const float refreshRate = playstationCore->GetRefreshRate();
+		const auto targetMilliseconds = MillisecondsD( 1000.0f / refreshRate );
 		const auto coreElapsed = std::chrono::duration_cast<MillisecondsD>( stopwatch.GetElapsed() );
 
 		// limit frame rate
@@ -441,10 +441,10 @@ int main( int argc, char** argv )
 		stopwatch.Start( std::chrono::duration_cast<System::Stopwatch::Duration>( compensation ) );
 
 		if ( coreElapsed > targetMilliseconds )
-			LogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", (float)targetMilliseconds.count(), (float)totalElapsed.count(), (float)coreElapsed.count(), (float)compensation.count() );
+			LogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", targetMilliseconds.count(), totalElapsed.count(), coreElapsed.count(), compensation.count() );
 
 		// calculate FPS
-		const float curFps = static_cast<float>( 1000.0 / totalElapsed.count() );
+		const float curFps = 1000.0f / totalElapsed.count();
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
 	}
 
