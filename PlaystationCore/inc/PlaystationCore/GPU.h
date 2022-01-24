@@ -53,7 +53,8 @@ public:
 	uint32_t GetHorizontalResolution() const noexcept;
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
-	double GetRefreshRate() const noexcept;
+	float GetRefreshRate() const noexcept;
+	float GetAspectRatio() const noexcept;
 
 	bool GetDisplayFrame() const noexcept { return m_crtState.displayFrame; }
 	void ResetDisplayFrame() noexcept { m_crtState.displayFrame = false; }
@@ -296,6 +297,7 @@ private:
 	void Command_RenderRectangle() noexcept;
 
 	void UpdateCrtConstants() noexcept;
+	void UpdateCrtDisplay() noexcept;
 
 	void UpdateCrtCycles( cycles_t cpuCycles ) noexcept;
 

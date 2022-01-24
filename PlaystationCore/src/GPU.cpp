@@ -30,6 +30,13 @@ inline constexpr T UnitsUntilTrigger( T current, T trigger, T wrappingSize )
 	return ( current < trigger ) ? ( trigger - current ) : ( wrappingSize - current + trigger );
 };
 
+template <typename T>
+inline constexpr T FloorTo( T value, T multiple ) noexcept
+{
+	dbExpects( multiple != 0 );
+	return static_cast<T>( ( value / multiple ) * multiple );
+}
+
 constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
 {
 	// Horizontally the filling is done in 16-pixel (32-bytes) units
@@ -153,7 +160,6 @@ void Gpu::SoftReset() noexcept
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
 	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 }, false );
 	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
-	m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
 	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
 	m_renderer.SetDisplayEnable( !m_status.displayDisable );
 	
@@ -182,7 +188,6 @@ void Gpu::SoftReset() noexcept
 	// reset display address
 	m_displayAreaStartX = 0;
 	m_displayAreaStartY = 0;
-	m_renderer.SetDisplayStart( 0, 0 );
 
 	// reset horizontal display range
 	m_horDisplayRangeStart = 0x260;
@@ -222,11 +227,17 @@ void Gpu::Reset()
 	SoftReset();
 }
 
-double Gpu::GetRefreshRate() const noexcept
+float Gpu::GetRefreshRate() const noexcept
 {
-	constexpr double GpuCyclesPerSecond = ConvertCpuToGpuCycles( CpuCyclesPerSecond );
-	const double gpuCyclesPerframe = static_cast<double>( m_crtConstants.totalScanlines ) * static_cast<double>( m_crtConstants.cyclesPerScanline );
+	constexpr float GpuCyclesPerSecond = static_cast<float>( ConvertCpuToGpuCycles( CpuCyclesPerSecond ) );
+	const float gpuCyclesPerframe = static_cast<float>( m_crtConstants.totalScanlines ) * static_cast<float>( m_crtConstants.cyclesPerScanline );
 	return GpuCyclesPerSecond / gpuCyclesPerframe;
+}
+
+float Gpu::GetAspectRatio() const noexcept
+{
+	// TODO: calculate aspect ratio for different display modes (bordered, cropped, auto, etc)
+	return 4.0f / 3.0f;
 }
 
 void Gpu::WriteGP0( uint32_t value ) noexcept
@@ -762,10 +773,15 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x05: // start of display area
 		{
-			m_displayAreaStartX = value & 0x3fe;
-			m_displayAreaStartY = ( value >> 10 ) & 0x1ff;
-			dbLogDebug( "Gpu::WriteGP1() -- set display area start [%u, %u]", m_displayAreaStartX, m_displayAreaStartY );
-			m_renderer.SetDisplayStart( m_displayAreaStartX, m_displayAreaStartY );
+			const uint16_t displayAreaStartX = value & 0x3fe;
+			const uint16_t displayAreaStartY = ( value >> 10 ) & 0x1ff;
+			if ( m_displayAreaStartX != displayAreaStartX || m_displayAreaStartY != displayAreaStartY )
+			{
+				dbLogDebug( "Gpu::WriteGP1() -- set display area start [%u, %u]", displayAreaStartX, displayAreaStartY );
+				m_displayAreaStartX = displayAreaStartX;
+				m_displayAreaStartY = displayAreaStartY;
+				UpdateCrtDisplay();
+			}
 			break;
 		}
 
@@ -780,6 +796,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 				dbLogDebug( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", horStart, horEnd );
 				m_horDisplayRangeStart = horStart;
 				m_horDisplayRangeEnd = horEnd;
+				UpdateCrtDisplay();
 				ScheduleCrtEvent();
 			}
 			break;
@@ -796,6 +813,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 				dbLogDebug( "Gpu::WriteGP1() -- set vertical display range [%u, %u]", verStart, verEnd );
 				m_verDisplayRangeStart = verStart;
 				m_verDisplayRangeEnd = verEnd;
+				UpdateCrtDisplay();
 				ScheduleCrtEvent();
 			}
 			break;
@@ -807,30 +825,29 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 			dbLogDebug( "Gpu::WriteGP1() -- set display mode [%X]", value );
 
-			Status newStatus = m_status;
+			const Status oldStatus = m_status;
 
 			// bits 0-5 same as GPUSTAT bits 17-22
-			stdx::masked_set<uint32_t>( newStatus.value, 0x3f << 17, value << 17 );
-			newStatus.horizontalResolution2 = ( value >> 6 ) & 1;
-			newStatus.reverseFlag = ( value >> 7 ) & 1;
+			stdx::masked_set<uint32_t>( m_status.value, 0x3f << 17, value << 17 );
+			m_status.horizontalResolution2 = ( value >> 6 ) & 1;
+			m_status.reverseFlag = ( value >> 7 ) & 1;
 
 			// update cycles and renderer if the new status is different
-			if ( newStatus.value != m_status.value )
+			if ( oldStatus.value != m_status.value )
 			{
 				m_crtEvent->UpdateEarly();
 
-				const bool videoModeChanged = newStatus.videoMode != m_status.videoMode;
+				m_renderer.SetColorDepth( static_cast<DisplayAreaColorDepth>( m_status.displayAreaColorDepth ) );
 
-				m_status.value = newStatus.value;
-
-				m_renderer.SetDisplaySize( GetHorizontalResolution(), GetVerticalResolution() );
-				m_renderer.SetColorDepth( static_cast<DisplayAreaColorDepth>( newStatus.displayAreaColorDepth ) );
-
-				static constexpr std::array<uint16_t, 8> DotClockDividers{ 10, 7, 8, 7, 5, 7, 4, 7 };
-				m_crtState.dotClockDivider = DotClockDividers[ newStatus.horizontalResolution ];
+				const bool videoModeChanged = oldStatus.videoMode != m_status.videoMode;
+				const bool resolutionChanged = oldStatus.horizontalResolution != m_status.horizontalResolution ||
+					oldStatus.verticalResolution != m_status.verticalResolution ||
+					oldStatus.verticalInterlace != m_status.verticalInterlace;
 
 				if ( videoModeChanged )
 					UpdateCrtConstants();
+				else if ( resolutionChanged )
+					UpdateCrtDisplay();
 
 				ScheduleCrtEvent();
 			}
@@ -1244,6 +1261,81 @@ void Gpu::UpdateCrtConstants() noexcept
 
 	m_timers->GetTimer( DotTimerIndex ).UpdateBlank( m_crtState.hblank );
 	m_timers->GetTimer( HBlankTimerIndex ).UpdateBlank( m_crtState.vblank );
+
+	UpdateCrtDisplay();
+}
+
+void Gpu::UpdateCrtDisplay() noexcept
+{
+	static constexpr std::array<uint16_t, 8> DotClockDividers{ 10, 7, 8, 7, 5, 7, 4, 7 };
+	const uint32_t dotClockDivider = m_crtState.dotClockDivider = DotClockDividers[ m_status.horizontalResolution ];
+
+	// clamp and round horizontal display range
+	const uint32_t horDisplayRangeStart = FloorTo<uint32_t>( std::min( m_horDisplayRangeStart, m_crtConstants.cyclesPerScanline ), dotClockDivider );
+	const uint32_t horDisplayRangeEnd = FloorTo<uint32_t>( std::min( m_horDisplayRangeEnd, m_crtConstants.cyclesPerScanline ), dotClockDivider );
+
+	// clamp vertical display range
+	const uint32_t verDisplayRangeStart = std::min( m_verDisplayRangeStart, m_crtConstants.totalScanlines );
+	const uint32_t verDisplayRangeEnd = std::min( m_verDisplayRangeEnd, m_crtConstants.totalScanlines );
+
+	// calculate target display size
+	const uint32_t heightMultiplier = m_status.verticalInterlace ? 2 : 1;
+	const uint32_t targetDisplayWidth = ( m_crtConstants.visibleCycleEnd - m_crtConstants.visibleCycleStart ) / dotClockDivider;
+	const uint32_t targetDisplayHeight = ( m_crtConstants.visibleScanlineEnd - m_crtConstants.visibleScanlineStart ) * heightMultiplier;
+
+	// calculate display width (rounded to 4 pixels)
+	const uint32_t horDisplayCycles = ( horDisplayRangeEnd > horDisplayRangeStart ) ? ( horDisplayRangeEnd - horDisplayRangeStart ) : 0;
+	uint32_t vramDisplayWidth = FloorTo<uint32_t>( horDisplayCycles / dotClockDivider + 2, 4 );
+
+	// calculate display X
+	uint32_t vramDisplayX = 0;
+	uint32_t targetDisplayX = 0;
+	if ( horDisplayRangeStart >= m_crtConstants.visibleCycleStart )
+	{
+		// black border
+		vramDisplayX = m_displayAreaStartX;
+		targetDisplayX = ( horDisplayRangeStart - m_crtConstants.visibleCycleStart ) / dotClockDivider;
+	}
+	else
+	{
+		// cropped
+		const uint32_t cropLeft = ( m_crtConstants.visibleCycleStart - horDisplayRangeStart ) / dotClockDivider;
+		vramDisplayX = ( m_displayAreaStartX + cropLeft ) % VRamWidth;
+		targetDisplayX = 0;
+		vramDisplayWidth -= cropLeft;
+	}
+
+	// crop vram display width to target bounds
+	vramDisplayWidth = std::min( vramDisplayWidth, targetDisplayWidth - targetDisplayX );
+
+	// calculate display height
+	uint32_t vramDisplayHeight = ( ( m_verDisplayRangeEnd > m_verDisplayRangeStart ) ? ( m_verDisplayRangeEnd - m_verDisplayRangeStart ) : 0 ) * heightMultiplier;
+
+	// calculate display Y
+	uint32_t vramDisplayY = 0;
+	uint32_t targetDisplayY = 0;
+	if ( verDisplayRangeStart >= m_crtConstants.visibleScanlineStart )
+	{
+		// black border
+		vramDisplayY = m_displayAreaStartY;
+		targetDisplayY = ( verDisplayRangeStart - m_crtConstants.visibleScanlineStart ) * heightMultiplier;
+	}
+	else
+	{
+		// cropped
+		const uint32_t cropTop = ( m_crtConstants.visibleScanlineStart - verDisplayRangeStart ) * heightMultiplier;
+		vramDisplayY = ( m_displayAreaStartY + cropTop ) % VRamHeight;
+		targetDisplayY = 0;
+		vramDisplayHeight -= cropTop;
+	}
+
+	// crop vram height to target bounds
+	vramDisplayHeight = std::min( vramDisplayHeight, targetDisplayHeight - targetDisplayY );
+
+	m_renderer.SetDisplayArea(
+		Renderer::DisplayArea{ vramDisplayX, vramDisplayY, vramDisplayWidth, vramDisplayHeight },
+		Renderer::DisplayArea{ targetDisplayX, targetDisplayY, targetDisplayWidth, targetDisplayHeight },
+		GetAspectRatio() );
 }
 
 void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept

@@ -197,7 +197,7 @@
     <ClInclude Include="inc\PlaystationCore\Output16bitShader.h">
       <Filter>inc\shaders</Filter>
     </ClInclude>
-    <ClInclude Include="inc\PlaystationCore\FullscreenShader.h">
+    <ClInclude Include="inc\PlaystationCore\VRamViewShader.h">
       <Filter>inc\shaders</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\ClutShader.h">
@@ -211,6 +211,9 @@
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\CDRom.h">
       <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\DisplayShader.h">
+      <Filter>inc\shaders</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
