@@ -27,8 +27,15 @@ namespace PSX
 class Renderer
 {
 public:
-	using Rect = Math::Rectangle<int>;
+	struct DisplayArea
+	{
+		uint32_t x = 0;
+		uint32_t y = 0;
+		uint32_t width = 0;
+		uint32_t height = 0;
+	};
 
+public:
 	bool Initialize( SDL_Window* window );
 
 	void Reset();
@@ -36,8 +43,6 @@ public:
 	void EnableVRamView( bool enable );
 	bool IsVRamViewEnabled() const { return m_viewVRam; }
 
-	void SetDisplayStart( uint32_t x, uint32_t y );
-	void SetDisplaySize( uint32_t w, uint32_t h );
 	void SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY );
 	void SetDrawArea( GLint left, GLint top, GLint right, GLint bottom );
 	void SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMode );
@@ -56,6 +61,8 @@ public:
 
 	bool UsingRealColor() const { return m_realColor; }
 	void SetRealColor( bool realColor );
+
+	void SetDisplayArea( const DisplayArea& vramDisplayArea, const DisplayArea& targetDisplayArea, float aspectRatio );
 
 	// update vram with pixel buffer
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
@@ -98,6 +105,7 @@ private:
 	SDL_Window* m_window = nullptr;
 
 	Render::Texture2D m_vramDrawTexture;
+	Render::Texture2D m_vramDrawDepthBuffer;
 	Render::Framebuffer m_vramDrawFramebuffer;
 
 	Render::Texture2D m_vramReadTexture;
@@ -106,7 +114,8 @@ private:
 	Render::Texture2D m_vramTransferTexture;
 	Render::Framebuffer m_vramTransferFramebuffer;
 
-	Render::Texture2D m_depthBuffer;
+	Render::Texture2D m_displayTexture;
+	Render::Framebuffer m_displayFramebuffer;
 
 	Render::VertexArrayObject m_noAttributeVAO;
 	Render::VertexArrayObject m_vramDrawVAO;
@@ -123,7 +132,7 @@ private:
 	GLint m_ditherLoc = -1;
 	GLint m_realColorLoc = -1;
 
-	Render::Shader m_fullscreenShader;
+	Render::Shader m_vramViewShader;
 
 	Render::Shader m_output24bppShader;
 	GLint m_srcRect24Loc = -1;
@@ -133,16 +142,13 @@ private:
 
 	VRamCopyShader m_vramCopyShader;
 
-	uint32_t m_displayX = 0;
-	uint32_t m_displayY = 0;
-	uint32_t m_displayWidth = 0;
-	uint32_t m_displayHeight = 0;
+	Render::Shader m_displayShader;
 
-	// scissor rect
-	GLint m_drawAreaLeft = 0;
-	GLint m_drawAreaTop = 0;
-	GLint m_drawAreaRight = 0;
-	GLint m_drawAreaBottom = 0;
+	DisplayArea m_vramDisplayArea;
+	DisplayArea m_targetDisplayArea;
+	float m_aspectRatio = 0.0f;
+
+	Math::Rectangle<GLint> m_drawArea; // scissor rect
 
 	DisplayAreaColorDepth m_colorDepth = DisplayAreaColorDepth::B15;
 
@@ -176,12 +182,12 @@ private:
 		float srcBlend = 1.0f;
 		float destBlend = 0.0f;
 	};
-
 	Uniform m_uniform;
 
 	std::vector<Vertex> m_vertices;
 
-	Rect m_dirtyArea;
+	using DirtyArea = Math::Rectangle<int32_t>;
+	DirtyArea m_dirtyArea;
 };
 
 }

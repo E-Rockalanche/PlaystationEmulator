@@ -1,7 +1,8 @@
 #include "Renderer.h"
 
 #include "ClutShader.h"
-#include "FullscreenShader.h"
+#include "DisplayShader.h"
+#include "VRamViewShader.h"
 #include "Output16bitShader.h"
 #include "Output24bitShader.h"
 
@@ -37,8 +38,8 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vertices.reserve( VertexBufferSize );
 	
 	// create fullscreen shader
-	m_fullscreenShader = Render::Shader::Compile( FullscreenVertexShader, FullscreenFragmentShader );
-	dbAssert( m_fullscreenShader.Valid() );
+	m_vramViewShader = Render::Shader::Compile( VRamViewVertexShader, VRamViewFragmentShader );
+	dbAssert( m_vramViewShader.Valid() );
 
 	// create clut shader
 	m_clutShader = Render::Shader::Compile( ClutVertexShader, ClutFragmentShader );
@@ -64,6 +65,10 @@ bool Renderer::Initialize( SDL_Window* window )
 
 	m_vramCopyShader.Initialize();
 
+	// create display shader
+	m_displayShader = Render::Shader::Compile( DisplayVertexShader, DisplayFragmentShader );
+	dbAssert( m_displayShader.Valid() );
+
 	// set shader attribute locations in VAO
 	constexpr auto Stride = sizeof( Vertex );
 
@@ -80,8 +85,8 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramDrawFramebuffer = Render::Framebuffer::Create();
 	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
 	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
-	m_depthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::UByte );
-	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Depth, m_depthBuffer );
+	m_vramDrawDepthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::UByte );
+	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Depth, m_vramDrawDepthBuffer );
 	dbAssert( m_vramDrawFramebuffer.IsComplete() );
 	m_vramDrawFramebuffer.Unbind();
 
@@ -97,6 +102,12 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramTransferTexture = Render::Texture2D::Create();
 	m_vramTransferFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramTransferTexture );
 	m_vramTransferFramebuffer.Unbind();
+
+	// display texture
+	m_displayFramebuffer = Render::Framebuffer::Create();
+	m_displayTexture = Render::Texture2D::Create();
+	m_displayFramebuffer.AttachTexture( Render::AttachmentType::Color, m_displayTexture );
+	m_displayFramebuffer.Unbind();
 
 	// get ready to render!
 	RestoreRenderState();
@@ -128,18 +139,6 @@ void Renderer::EnableVRamView( bool enable )
 	m_viewVRam = enable;
 }
 
-void Renderer::SetDisplayStart( uint32_t x, uint32_t y )
-{
-	m_displayX = x;
-	m_displayY = y;
-}
-
-void Renderer::SetDisplaySize( uint32_t w, uint32_t h )
-{
-	m_displayWidth = w;
-	m_displayHeight = h;
-}
-
 void Renderer::SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY )
 {
 	if ( m_uniform.texWindowMaskX != maskX || m_uniform.texWindowMaskY != maskY || m_uniform.texWindowOffsetX != offsetX || m_uniform.texWindowOffsetY != offsetY )
@@ -159,19 +158,16 @@ void Renderer::SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offset
 
 void Renderer::SetDrawArea( GLint left, GLint top, GLint right, GLint bottom )
 {
-	if ( m_drawAreaLeft != left || m_drawAreaTop != top || m_drawAreaRight != right || m_drawAreaBottom != bottom )
+	if ( m_drawArea.left != left || m_drawArea.top != top || m_drawArea.right != right || m_drawArea.bottom != bottom )
 	{
 		DrawBatch();
 
-		m_drawAreaLeft = left;
-		m_drawAreaTop = top;
-		m_drawAreaRight = right;
-		m_drawAreaBottom = bottom;
+		m_drawArea = Math::Rectangle{ left, top, right, bottom };
 
 		UpdateScissorRect();
 
 		// grow dirty area once instead of for each render primitive
-		m_dirtyArea.Grow( Rect( left, top, right + 1, bottom + 1 ) );
+		m_dirtyArea.Grow( DirtyArea( left, top, right + 1, bottom + 1 ) );
 	}
 }
 
@@ -231,7 +227,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 
 	if ( !wrapX && !wrapY && !m_checkMaskBit && !m_forceMaskBit )
 	{
-		m_dirtyArea.Grow( Rect::FromExtents( left, top, width, height ) );
+		m_dirtyArea.Grow( DirtyArea::FromExtents( left, top, width, height ) );
 		m_vramDrawTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
 	}
 	else
@@ -259,7 +255,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		m_vramTransferTexture.Bind();
 
 		// bottom right
-		m_dirtyArea.Grow( Rect::FromExtents( left, top, width1, height1 ) );
+		m_dirtyArea.Grow( DirtyArea::FromExtents( left, top, width1, height1 ) );
 		glViewport( left, top, width1, height1 );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
@@ -358,7 +354,7 @@ void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 	const uint32_t width1 = width - width2;
 	const uint32_t height1 = height - height2;
 
-	m_dirtyArea.Grow( Rect::FromExtents( left, top, width1, height1 ) );
+	m_dirtyArea.Grow( DirtyArea::FromExtents( left, top, width1, height1 ) );
 	glScissor( left, top, width1, height1 );
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
@@ -396,7 +392,7 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 
 	DrawBatch();
 
-	if ( m_dirtyArea.Intersects( Rect::FromExtents( srcX, srcY, width, height ) ) )
+	if ( m_dirtyArea.Intersects( DirtyArea::FromExtents( srcX, srcY, width, height ) ) )
 		UpdateReadTexture();
 
 	if ( m_checkMaskBit || m_forceMaskBit )
@@ -432,7 +428,7 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 		dbCheckRenderErrors();
 	}
 
-	m_dirtyArea.Grow( Rect::FromExtents( destX, destY, width, height ) );
+	m_dirtyArea.Grow( DirtyArea::FromExtents( destX, destY, width, height ) );
 }
 
 void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
@@ -464,7 +460,7 @@ void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 		const int texBaseX = texPage.texturePageBaseX * TexturePageBaseXMult;
 		const int texBaseY = texPage.texturePageBaseY * TexturePageBaseYMult;
 		const int texSize = 64 << colorMode;
-		const Rect texRect( texBaseX, texBaseY, texSize, texSize );
+		const DirtyArea texRect( texBaseX, texBaseY, texSize, texSize );
 
 		if ( m_dirtyArea.Intersects( texRect ) )
 		{
@@ -474,12 +470,26 @@ void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 		{
 			const int clutBaseX = clut.x * ClutBaseXMult;
 			const int clutBaseY = clut.y * ClutBaseYMult;
-			const Rect clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+			const DirtyArea clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
 
 			if ( m_dirtyArea.Intersects( clutRect ) )
 				UpdateReadTexture();
 		}
 	}
+}
+
+void Renderer::SetDisplayArea( const DisplayArea& vramDisplayArea, const DisplayArea& targetDisplayArea, float aspectRatio )
+{
+	if ( m_displayTexture.GetWidth() != static_cast<GLsizei>( targetDisplayArea.width ) ||
+		m_displayTexture.GetHeight() != static_cast<GLsizei>( targetDisplayArea.height ) )
+	{
+		// update display texture size (usually when switching between NTSC and PAL)
+		m_displayTexture.UpdateImage( Render::InternalFormat::RGB, targetDisplayArea.width, targetDisplayArea.height, Render::PixelFormat::RGB, Render::PixelType::UByte );
+	}
+
+	m_vramDisplayArea = vramDisplayArea;
+	m_targetDisplayArea = targetDisplayArea;
+	m_aspectRatio = aspectRatio;
 }
 
 void Renderer::SetRealColor( bool realColor )
@@ -493,9 +503,9 @@ void Renderer::SetRealColor( bool realColor )
 
 void Renderer::UpdateScissorRect()
 {
-	const auto width = std::max<int>( m_drawAreaRight - m_drawAreaLeft + 1, 0 );
-	const auto height = std::max<int>( m_drawAreaBottom - m_drawAreaTop + 1, 0 );
-	glScissor( m_drawAreaLeft, m_drawAreaTop, width, height );
+	const auto width = std::max<int>( m_drawArea.right - m_drawArea.left + 1, 0 );
+	const auto height = std::max<int>( m_drawArea.bottom - m_drawArea.top + 1, 0 );
+	glScissor( m_drawArea.left, m_drawArea.top, width, height );
 	dbCheckRenderErrors();
 }
 
@@ -554,7 +564,7 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
 
-	if ( m_drawAreaLeft >= m_drawAreaRight || m_drawAreaTop >= m_drawAreaBottom )
+	if ( m_drawArea.left >= m_drawArea.right || m_drawArea.top >= m_drawArea.bottom )
 		return;
 
 	EnableSemiTransparency( semiTransparent );
@@ -686,38 +696,50 @@ void Renderer::DisplayFrame()
 	if ( m_viewVRam )
 	{
 		m_noAttributeVAO.Bind();
-		m_fullscreenShader.Bind();
+		m_vramViewShader.Bind();
 		m_vramDrawTexture.Bind();
 		glViewport( 0, 0, VRamWidth, VRamHeight );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
 	else if ( m_displayEnable )
 	{
-		float renderScale = std::min( (float)winWidth / (float)m_displayWidth, (float)winHeight / (float)m_displayHeight );
-		if ( !m_stretchToFit )
-			renderScale = std::max( 1.0f, std::floor( renderScale ) );
-
-		const int renderWidth = static_cast<int>( m_displayWidth * renderScale );
-		const int renderHeight = static_cast<int>( m_displayHeight * renderScale );
-		const int renderX = ( winWidth - renderWidth ) / 2;
-		const int renderY = ( winHeight - renderHeight ) / 2;
-
-		glViewport( renderX, renderY, renderWidth, renderHeight );
-
+		// render to display texture
 		m_noAttributeVAO.Bind();
-		m_vramDrawTexture.Bind();
 
 		if ( m_colorDepth == DisplayAreaColorDepth::B24 )
 		{
 			m_output24bppShader.Bind();
-			glUniform4i( m_srcRect24Loc, m_displayX, m_displayY, m_displayWidth, m_displayHeight );
+			glUniform4i( m_srcRect24Loc, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
 		}
 		else
 		{
 			m_output16bppShader.Bind();
-			glUniform4i( m_srcRect16Loc, m_displayX, m_displayY, m_displayWidth, m_displayHeight );
+			glUniform4i( m_srcRect16Loc, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
 		}
 
+		m_vramDrawTexture.Bind();
+		m_displayFramebuffer.Bind();
+		glViewport( m_targetDisplayArea.x, m_targetDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
+		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+		m_displayFramebuffer.Unbind();
+
+		// render to window
+		m_displayShader.Bind();
+		m_displayTexture.Bind();
+
+		const float displayWidth = static_cast<float>( m_vramDisplayArea.width );
+		const float displayHeight = static_cast<float>( m_vramDisplayArea.width ) / m_aspectRatio;
+
+		float renderScale = std::min( winWidth / displayWidth, winHeight / displayHeight );
+		if ( !m_stretchToFit )
+			renderScale = std::max( 1.0f, std::floor( renderScale ) );
+
+		const int renderWidth = static_cast<int>( displayWidth * renderScale );
+		const int renderHeight = static_cast<int>( displayHeight * renderScale );
+		const int renderX = ( winWidth - renderWidth ) / 2;
+		const int renderY = ( winHeight - renderHeight ) / 2;
+
+		glViewport( renderX, renderY, renderWidth, renderHeight );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
 

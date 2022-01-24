@@ -145,7 +145,7 @@ void Playstation::HookExe( fs::path filename )
 	m_cpu->SetHookExecutable( std::move( filename ) );
 }
 
-double Playstation::GetRefreshRate() const
+float Playstation::GetRefreshRate() const
 {
 	return m_gpu->GetRefreshRate();
 }

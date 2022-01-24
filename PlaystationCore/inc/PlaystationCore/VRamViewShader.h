@@ -3,7 +3,7 @@
 namespace PSX
 {
 
-const char* const FullscreenVertexShader = R"glsl(
+const char* const VRamViewVertexShader = R"glsl(
 #version 330 core
 
 const vec2 positions[4] = vec2[]( vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(1.0, 1.0) );
@@ -19,7 +19,7 @@ void main()
 
 )glsl";
 
-const char* const FullscreenFragmentShader = R"glsl(
+const char* const VRamViewFragmentShader = R"glsl(
 #version 330 core
 
 in vec2 TexCoord;

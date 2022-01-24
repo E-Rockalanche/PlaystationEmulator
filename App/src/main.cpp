@@ -166,17 +166,18 @@ int main( int argc, char** argv )
 	std::unique_ptr<PSX::MemoryCard> memCard1;
 	std::unique_ptr<PSX::MemoryCard> memCard2;
 
-	auto openMemoryCardForGame = [&memCard1]( const fs::path& filename )
+	auto openMemoryCardForGame = []( fs::path filename )
 	{
-		fs::path saveFilename = filename;
-		saveFilename.replace_extension( "save" );
+		filename.replace_extension( "save" );
 
 		// try to load existing memory card
-		memCard1 = PSX::MemoryCard::Load( saveFilename );
+		auto memoryCard = PSX::MemoryCard::Load( filename );
 
 		// create new memory card
-		if ( memCard1 == nullptr )
-			memCard1 = PSX::MemoryCard::Create( std::move( saveFilename ) );
+		if ( memoryCard == nullptr )
+			memoryCard = PSX::MemoryCard::Create( std::move( filename ) );
+
+		return memoryCard;
 	};
 
 	if ( memCard1Filename.has_value() )
@@ -185,7 +186,7 @@ int main( int argc, char** argv )
 	}
 	else if ( romFilename.has_value() )
 	{
-		openMemoryCardForGame( *romFilename );
+		memCard1 = openMemoryCardForGame( *romFilename );
 	}
 
 	if ( memCard2Filename.has_value() )
@@ -197,7 +198,7 @@ int main( int argc, char** argv )
 	playstationCore->Reset();
 
 	bool quit = false;
-	bool paused = false;
+	bool paused = true;
 	bool stepFrame = false;
 	bool fullscreen = false;
 
@@ -379,6 +380,7 @@ int main( int argc, char** argv )
 						playstationCore->HookExe( std::move( filename ) );
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
+						paused = false;
 					}
 					else if ( filename.extension() == fs::path( ".save" ) )
 					{
@@ -391,9 +393,11 @@ int main( int argc, char** argv )
 					}
 					else if ( playstationCore->LoadRom( filename ) )
 					{
-						openMemoryCardForGame( filename );
+						memCard1 = openMemoryCardForGame( std::move( filename ) );
+						playstationCore->SetMemoryCard( 0, memCard1.get() );
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
+						paused = false;
 					}
 					break;
 				}
@@ -419,11 +423,11 @@ int main( int argc, char** argv )
 			playstationCore->GetRenderer().DisplayFrame();
 		}
 
-		using MillisecondsD = std::chrono::duration<double, std::milli>;
+		using MillisecondsD = std::chrono::duration<float, std::milli>;
 		static const auto SpinDuration = MillisecondsD( 2.0 );
 
-		const double refreshRate = playstationCore->GetRefreshRate();
-		const auto targetMilliseconds = MillisecondsD( 1000.0 / refreshRate );
+		const float refreshRate = playstationCore->GetRefreshRate();
+		const auto targetMilliseconds = MillisecondsD( 1000.0f / refreshRate );
 		const auto coreElapsed = std::chrono::duration_cast<MillisecondsD>( stopwatch.GetElapsed() );
 
 		// limit frame rate
@@ -441,10 +445,10 @@ int main( int argc, char** argv )
 		stopwatch.Start( std::chrono::duration_cast<System::Stopwatch::Duration>( compensation ) );
 
 		if ( coreElapsed > targetMilliseconds )
-			LogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", (float)targetMilliseconds.count(), (float)totalElapsed.count(), (float)coreElapsed.count(), (float)compensation.count() );
+			LogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", targetMilliseconds.count(), totalElapsed.count(), coreElapsed.count(), compensation.count() );
 
 		// calculate FPS
-		const float curFps = static_cast<float>( 1000.0 / totalElapsed.count() );
+		const float curFps = 1000.0f / totalElapsed.count();
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
 	}
 

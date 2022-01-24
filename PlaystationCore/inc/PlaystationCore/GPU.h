@@ -53,7 +53,8 @@ public:
 	uint32_t GetHorizontalResolution() const noexcept;
 	uint32_t GetVerticalResolution() const noexcept { return IsInterlaced() ? 480 : 240; }
 
-	double GetRefreshRate() const noexcept;
+	float GetRefreshRate() const noexcept;
+	float GetAspectRatio() const noexcept;
 
 	bool GetDisplayFrame() const noexcept { return m_crtState.displayFrame; }
 	void ResetDisplayFrame() noexcept { m_crtState.displayFrame = false; }
@@ -296,6 +297,7 @@ private:
 	void Command_RenderRectangle() noexcept;
 
 	void UpdateCrtConstants() noexcept;
+	void UpdateCrtDisplay() noexcept;
 
 	void UpdateCrtCycles( cycles_t cpuCycles ) noexcept;
 
@@ -364,6 +366,12 @@ private:
 		uint32_t dotClockDivider = 0;
 		uint32_t dotFraction = 0;
 
+		// custom visible range (based on crop mode)
+		uint16_t visibleCycleStart = 0;
+		uint16_t visibleCycleEnd = 0;
+		uint16_t visibleScanlineStart = 0;
+		uint16_t visibleScanlineEnd = 0;
+
 		bool hblank = false;
 		bool vblank = false;
 		bool evenOddLine = false;
@@ -402,6 +410,8 @@ private:
 		}
 	};
 	std::optional<VRamTransferState> m_vramTransferState;
+
+	CropMode m_cropMode = CropMode::Fit;
 };
 
 }
