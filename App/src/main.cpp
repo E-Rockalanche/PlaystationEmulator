@@ -166,17 +166,18 @@ int main( int argc, char** argv )
 	std::unique_ptr<PSX::MemoryCard> memCard1;
 	std::unique_ptr<PSX::MemoryCard> memCard2;
 
-	auto openMemoryCardForGame = [&memCard1]( const fs::path& filename )
+	auto openMemoryCardForGame = []( fs::path filename )
 	{
-		fs::path saveFilename = filename;
-		saveFilename.replace_extension( "save" );
+		filename.replace_extension( "save" );
 
 		// try to load existing memory card
-		memCard1 = PSX::MemoryCard::Load( saveFilename );
+		auto memoryCard = PSX::MemoryCard::Load( filename );
 
 		// create new memory card
-		if ( memCard1 == nullptr )
-			memCard1 = PSX::MemoryCard::Create( std::move( saveFilename ) );
+		if ( memoryCard == nullptr )
+			memoryCard = PSX::MemoryCard::Create( std::move( filename ) );
+
+		return memoryCard;
 	};
 
 	if ( memCard1Filename.has_value() )
@@ -185,7 +186,7 @@ int main( int argc, char** argv )
 	}
 	else if ( romFilename.has_value() )
 	{
-		openMemoryCardForGame( *romFilename );
+		memCard1 = openMemoryCardForGame( *romFilename );
 	}
 
 	if ( memCard2Filename.has_value() )
@@ -197,7 +198,7 @@ int main( int argc, char** argv )
 	playstationCore->Reset();
 
 	bool quit = false;
-	bool paused = false;
+	bool paused = true;
 	bool stepFrame = false;
 	bool fullscreen = false;
 
@@ -379,6 +380,7 @@ int main( int argc, char** argv )
 						playstationCore->HookExe( std::move( filename ) );
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
+						paused = false;
 					}
 					else if ( filename.extension() == fs::path( ".save" ) )
 					{
@@ -391,9 +393,11 @@ int main( int argc, char** argv )
 					}
 					else if ( playstationCore->LoadRom( filename ) )
 					{
-						openMemoryCardForGame( filename );
+						memCard1 = openMemoryCardForGame( std::move( filename ) );
+						playstationCore->SetMemoryCard( 0, memCard1.get() );
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
+						paused = false;
 					}
 					break;
 				}
