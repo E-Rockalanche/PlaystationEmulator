@@ -366,6 +366,12 @@ private:
 		uint32_t dotClockDivider = 0;
 		uint32_t dotFraction = 0;
 
+		// custom visible range (based on crop mode)
+		uint16_t visibleCycleStart = 0;
+		uint16_t visibleCycleEnd = 0;
+		uint16_t visibleScanlineStart = 0;
+		uint16_t visibleScanlineEnd = 0;
+
 		bool hblank = false;
 		bool vblank = false;
 		bool evenOddLine = false;
@@ -404,6 +410,8 @@ private:
 		}
 	};
 	std::optional<VRamTransferState> m_vramTransferState;
+
+	CropMode m_cropMode = CropMode::Fit;
 };
 
 }

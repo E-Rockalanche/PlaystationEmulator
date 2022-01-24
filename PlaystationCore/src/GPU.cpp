@@ -236,8 +236,18 @@ float Gpu::GetRefreshRate() const noexcept
 
 float Gpu::GetAspectRatio() const noexcept
 {
-	// TODO: calculate aspect ratio for different display modes (bordered, cropped, auto, etc)
-	return 4.0f / 3.0f;
+	constexpr float DefaultAspectRatio = 4.0f / 3.0f;
+
+	const float horCustomRange = static_cast<float>( m_crtState.visibleCycleEnd - m_crtState.visibleCycleStart );
+	const float verCustomRange = static_cast<float>( m_crtState.visibleScanlineEnd - m_crtState.visibleScanlineEnd );
+
+	if ( horCustomRange <= 0 || verCustomRange <= 0 )
+		return DefaultAspectRatio;
+
+	const float horCrtRange = static_cast<float>( m_crtConstants.visibleCycleEnd - m_crtConstants.visibleCycleStart );
+	const float verCrtRange = static_cast<float>( m_crtConstants.visibleScanlineEnd - m_crtConstants.visibleScanlineEnd );
+
+	return DefaultAspectRatio * ( horCustomRange / verCustomRange ) / ( horCrtRange / verCrtRange );
 }
 
 void Gpu::WriteGP0( uint32_t value ) noexcept
@@ -1278,10 +1288,43 @@ void Gpu::UpdateCrtDisplay() noexcept
 	const uint32_t verDisplayRangeStart = std::min( m_verDisplayRangeStart, m_crtConstants.totalScanlines );
 	const uint32_t verDisplayRangeEnd = std::min( m_verDisplayRangeEnd, m_crtConstants.totalScanlines );
 
+	// calculate custom visible range
+	uint32_t visibleCycleStart = 0;
+	uint32_t visibleCycleEnd = 0;
+	uint32_t visibleScanlineStart = 0;
+	uint32_t visibleScanlineEnd = 0;
+	switch ( m_cropMode )
+	{
+		case CropMode::None:
+			// use default CRT constants. May introduce borders or overscan depending on game
+			visibleCycleStart = m_crtConstants.visibleCycleStart;
+			visibleCycleEnd = m_crtConstants.visibleCycleEnd;
+			visibleScanlineStart = m_crtConstants.visibleScanlineStart;
+			visibleScanlineEnd = m_crtConstants.visibleScanlineEnd;
+			break;
+
+		case CropMode::Fit:
+			visibleCycleStart = horDisplayRangeStart;
+			visibleCycleEnd = horDisplayRangeEnd;
+			visibleScanlineStart = verDisplayRangeStart;
+			visibleScanlineEnd = verDisplayRangeEnd;
+			break;
+
+		default:
+			dbBreak();
+			break;
+	}
+
+	// clamp custom visible range to CRT visible range
+	visibleCycleStart =		std::clamp<uint32_t>( visibleCycleStart,		m_crtConstants.visibleCycleStart,		m_crtConstants.visibleCycleEnd );
+	visibleCycleEnd =		std::clamp<uint32_t>( visibleCycleEnd,			visibleCycleStart,						m_crtConstants.visibleCycleEnd );
+	visibleScanlineStart =	std::clamp<uint32_t>( visibleScanlineStart,		m_crtConstants.visibleScanlineStart,	m_crtConstants.visibleScanlineEnd );
+	visibleScanlineEnd =	std::clamp<uint32_t>( visibleScanlineEnd,		visibleScanlineStart,					m_crtConstants.visibleScanlineEnd );
+
 	// calculate target display size
 	const uint32_t heightMultiplier = m_status.verticalInterlace ? 2 : 1;
-	const uint32_t targetDisplayWidth = ( m_crtConstants.visibleCycleEnd - m_crtConstants.visibleCycleStart ) / dotClockDivider;
-	const uint32_t targetDisplayHeight = ( m_crtConstants.visibleScanlineEnd - m_crtConstants.visibleScanlineStart ) * heightMultiplier;
+	const uint32_t targetDisplayWidth = ( visibleCycleEnd - visibleCycleStart ) / dotClockDivider;
+	const uint32_t targetDisplayHeight = ( visibleScanlineEnd - visibleScanlineStart ) * heightMultiplier;
 
 	// calculate display width (rounded to 4 pixels)
 	const uint32_t horDisplayCycles = ( horDisplayRangeEnd > horDisplayRangeStart ) ? ( horDisplayRangeEnd - horDisplayRangeStart ) : 0;
@@ -1290,16 +1333,16 @@ void Gpu::UpdateCrtDisplay() noexcept
 	// calculate display X
 	uint32_t vramDisplayX = 0;
 	uint32_t targetDisplayX = 0;
-	if ( horDisplayRangeStart >= m_crtConstants.visibleCycleStart )
+	if ( horDisplayRangeStart >= visibleCycleStart )
 	{
 		// black border
 		vramDisplayX = m_displayAreaStartX;
-		targetDisplayX = ( horDisplayRangeStart - m_crtConstants.visibleCycleStart ) / dotClockDivider;
+		targetDisplayX = ( horDisplayRangeStart - visibleCycleStart ) / dotClockDivider;
 	}
 	else
 	{
 		// cropped
-		const uint32_t cropLeft = ( m_crtConstants.visibleCycleStart - horDisplayRangeStart ) / dotClockDivider;
+		const uint32_t cropLeft = ( visibleCycleStart - horDisplayRangeStart ) / dotClockDivider;
 		vramDisplayX = ( m_displayAreaStartX + cropLeft ) % VRamWidth;
 		targetDisplayX = 0;
 		vramDisplayWidth -= cropLeft;
@@ -1314,16 +1357,16 @@ void Gpu::UpdateCrtDisplay() noexcept
 	// calculate display Y
 	uint32_t vramDisplayY = 0;
 	uint32_t targetDisplayY = 0;
-	if ( verDisplayRangeStart >= m_crtConstants.visibleScanlineStart )
+	if ( verDisplayRangeStart >= visibleScanlineStart )
 	{
 		// black border
 		vramDisplayY = m_displayAreaStartY;
-		targetDisplayY = ( verDisplayRangeStart - m_crtConstants.visibleScanlineStart ) * heightMultiplier;
+		targetDisplayY = ( verDisplayRangeStart - visibleScanlineStart ) * heightMultiplier;
 	}
 	else
 	{
 		// cropped
-		const uint32_t cropTop = ( m_crtConstants.visibleScanlineStart - verDisplayRangeStart ) * heightMultiplier;
+		const uint32_t cropTop = ( visibleScanlineStart - verDisplayRangeStart ) * heightMultiplier;
 		vramDisplayY = ( m_displayAreaStartY + cropTop ) % VRamHeight;
 		targetDisplayY = 0;
 		vramDisplayHeight -= cropTop;

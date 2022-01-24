@@ -90,6 +90,12 @@ enum class DmaDirection
 	GpuReadToCpu
 };
 
+enum class CropMode
+{
+	None,
+	Fit
+};
+
 struct Position
 {
 	constexpr Position() = default;
