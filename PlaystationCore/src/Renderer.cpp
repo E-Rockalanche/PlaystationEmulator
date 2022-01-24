@@ -106,6 +106,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	// display texture
 	m_displayFramebuffer = Render::Framebuffer::Create();
 	m_displayTexture = Render::Texture2D::Create();
+	m_displayTexture.SetLinearFilering( true );
 	m_displayFramebuffer.AttachTexture( Render::AttachmentType::Color, m_displayTexture );
 	m_displayFramebuffer.Unbind();
 
