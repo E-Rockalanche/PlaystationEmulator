@@ -674,6 +674,8 @@ void Gpu::ExecuteCommand() noexcept
 
 					if ( command.numLines )
 					{
+						dbAssert( m_transferBuffer.empty() );
+
 						// read vertices into transfer buffer
 						m_state = State::PolyLine;
 						m_transferBuffer.reserve( 256 );
@@ -1010,6 +1012,8 @@ void Gpu::Command_CopyRectangle() noexcept
 
 void Gpu::Command_WriteToVRam() noexcept
 {
+	dbAssert( m_transferBuffer.empty() );
+
 	// affected by mask settings
 	SetupVRamCopy();
 	auto& state = *m_vramTransferState;
@@ -1218,6 +1222,8 @@ void Gpu::Command_RenderPolyLine() noexcept
 		p1 = p2;
 		c1 = c2;
 	}
+
+	m_transferBuffer.clear();
 
 	EndCommand();
 }
