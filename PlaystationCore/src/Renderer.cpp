@@ -106,6 +106,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	// display texture
 	m_displayFramebuffer = Render::Framebuffer::Create();
 	m_displayTexture = Render::Texture2D::Create();
+	m_displayTexture.SetLinearFilering( true );
 	m_displayFramebuffer.AttachTexture( Render::AttachmentType::Color, m_displayTexture );
 	m_displayFramebuffer.Unbind();
 
@@ -433,18 +434,22 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 
 void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 {
-	dither &= !m_realColor;
+	if ( m_realColor )
+		dither = false;
 
-	if ( m_texPage.value != texPage.value || m_clut.value != clut.value || m_dither != dither )
+	const bool ditherDiff = m_dither != dither;
+	const bool drawModeDiff = m_texPage.value != texPage.value || m_clut.value != clut.value;
+
+	if ( drawModeDiff || ditherDiff )
 		DrawBatch();
 
-	if ( m_dither != dither )
+	if ( ditherDiff )
 	{
 		m_dither = dither;
 		glUniform1i( m_ditherLoc, dither );
 	}
 
-	if ( m_texPage.value != texPage.value || m_clut.value != clut.value )
+	if ( drawModeDiff )
 	{
 		m_texPage = texPage;
 		m_clut = clut;
@@ -568,17 +573,6 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 		return;
 
 	EnableSemiTransparency( semiTransparent );
-
-	/*
-	// grow dirty area
-	for ( size_t i = 0; i < 3; ++i )
-	{
-		auto& p = vertices[ i ].position;
-		const auto x = std::clamp<int>( m_uniform.originX + p.x, m_drawAreaLeft, m_drawAreaRight );
-		const auto y = std::clamp<int>( m_uniform.originY + p.y, m_drawAreaTop, m_drawAreaBottom );
-		m_dirtyArea.Grow( x, y );
-	}
-	*/
 
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
 }

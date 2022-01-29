@@ -151,7 +151,7 @@ private:
 
 		TexPage GetTexPage() const noexcept
 		{
-			return static_cast<uint16_t>( ( value & TexPageMask ) | ( textureDisable << 11 ) );
+			return TexPage{ static_cast<uint16_t>( value & TexPageMask ) }; // ignore texture disable
 		}
 
 		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }
@@ -294,6 +294,7 @@ private:
 	void Command_RenderPolygon() noexcept;
 	void Command_RenderLine() noexcept;
 	void Command_RenderPolyLine() noexcept;
+	void Command_RenderLineInternal( Position p1, Color c1, Position p2, Color c2, TexPage texPage, bool semiTransparent ) noexcept;
 	void Command_RenderRectangle() noexcept;
 
 	void UpdateCrtConstants() noexcept;
