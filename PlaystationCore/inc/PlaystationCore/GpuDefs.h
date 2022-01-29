@@ -10,6 +10,9 @@ namespace PSX
 constexpr uint32_t VRamWidth = 1024;
 constexpr uint32_t VRamHeight = 512;
 
+constexpr uint32_t MaxPrimitiveWidth = VRamWidth - 1;
+constexpr uint32_t MaxPrimitiveHeight = VRamHeight - 1;
+
 constexpr float VRamWidthF = static_cast<float>( VRamWidth );
 constexpr float VRamHeightF = static_cast<float>( VRamHeight );
 
@@ -152,7 +155,7 @@ struct TexCoord
 union ClutAttribute
 {
 	ClutAttribute() = default;
-	ClutAttribute( uint16_t v ) : value{ static_cast<uint16_t>( v & 0x7fff ) } {}
+	explicit ClutAttribute( uint16_t v ) : value{ static_cast<uint16_t>( v & 0x7fff ) } {}
 
 	struct
 	{
@@ -166,10 +169,10 @@ static_assert( sizeof( ClutAttribute ) == 2 );
 
 union TexPage
 {
-	static constexpr uint16_t WriteMask = 0x09ff;
+	static constexpr uint16_t WriteMask = 0x01ff; // ignore texture disable
 
 	TexPage() = default;
-	TexPage( uint16_t v ) : value{ static_cast<uint16_t>( v & WriteMask ) } {}
+	explicit TexPage( uint16_t v ) : value{ static_cast<uint16_t>( v & WriteMask ) } {}
 
 	struct
 	{

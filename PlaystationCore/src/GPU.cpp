@@ -9,9 +9,6 @@
 #include <stdx/assert.h>
 #include <stdx/bit.h>
 
-#define GPU_RENDER_POLYGONS true
-#define GPU_RENDER_RECTANGLES true
-
 namespace PSX
 {
 
@@ -35,6 +32,12 @@ inline constexpr T FloorTo( T value, T multiple ) noexcept
 {
 	dbExpects( multiple != 0 );
 	return static_cast<T>( ( value / multiple ) * multiple );
+}
+
+template <typename T>
+inline constexpr std::pair<T, T> MinMax( T lhs, T rhs ) noexcept
+{
+	return ( lhs < rhs ) ? std::make_pair( lhs, rhs ) : std::make_pair( rhs, lhs );
 }
 
 inline constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
@@ -1054,14 +1057,13 @@ void Gpu::Command_RenderPolygon() noexcept
 
 	vertices[ 0 ].position = Position{ m_commandBuffer.Pop() };
 
-	TexPage texPage;
 	ClutAttribute clut;
 	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 0 ].texCoord = TexCoord{ value };
 
-		clut = static_cast<uint16_t>( value >> 16 );
+		clut = ClutAttribute{ static_cast<uint16_t>( value >> 16 ) };
 		for ( auto& v : vertices )
 			v.clut = clut;
 	}
@@ -1073,11 +1075,12 @@ void Gpu::Command_RenderPolygon() noexcept
 
 	vertices[ 1 ].position = Position{ m_commandBuffer.Pop() };
 
+	TexPage texPage;
 	if ( command.textureMapping )
 	{
 		const auto value = m_commandBuffer.Pop();
 		vertices[ 1 ].texCoord = TexCoord{ value };
-		texPage = static_cast<uint16_t>( value >> 16 );
+		texPage = TexPage{ static_cast<uint16_t>( value >> 16 ) };
 		m_status.SetTexPage( texPage );
 	}
 	else
@@ -1111,51 +1114,219 @@ void Gpu::Command_RenderPolygon() noexcept
 		vertices[ i ].position.y += m_drawOffsetY;
 	}
 
-	AddTriangleCommandCycles(
-		vertices[ 0 ].position.x, vertices[ 0 ].position.y,
-		vertices[ 1 ].position.x, vertices[ 1 ].position.y,
-		vertices[ 2 ].position.x, vertices[ 2 ].position.y,
-		command.textureMapping,
-		command.semiTransparency );
+	const bool dither = m_status.dither && ( command.shading || ( command.textureMapping && !command.textureMode ) );
+	m_renderer.SetDrawMode( texPage, clut, dither );
+
+	const auto [minX12, maxX12] = MinMax( vertices[ 1 ].position.x, vertices[ 2 ].position.x );
+	const auto [minY12, maxY12] = MinMax( vertices[ 1 ].position.y, vertices[ 2 ].position.y );
+	const int16_t minX012 = std::min( minX12, vertices[ 0 ].position.x );
+	const int16_t maxX012 = std::max( maxX12, vertices[ 0 ].position.x );
+	const int16_t minY012 = std::min( minY12, vertices[ 0 ].position.y );
+	const int16_t maxY012 = std::max( maxY12, vertices[ 0 ].position.y );
+
+	// cull first ppolygon
+	if ( ( maxX012 - minX012 ) <= MaxPrimitiveWidth && ( maxY012 - minY012 ) <= MaxPrimitiveHeight )
+	{
+		AddTriangleCommandCycles(
+			vertices[ 0 ].position.x, vertices[ 0 ].position.y,
+			vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+			vertices[ 2 ].position.x, vertices[ 2 ].position.y,
+			command.textureMapping,
+			command.semiTransparency );
+
+		m_renderer.PushTriangle( vertices, command.semiTransparency );
+	}
+	else
+	{
+		dbLogDebug( "Gpu::Command_RenderPolygon -- culling triangle (%i, %i), (%i, %i), (%i, %i)",
+			vertices[ 0 ].position.x, vertices[ 0 ].position.y,
+			vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+			vertices[ 2 ].position.x, vertices[ 2 ].position.y );
+	}
 
 	if ( command.quadPolygon )
 	{
-		AddTriangleCommandCycles(
-			vertices[ 1 ].position.x, vertices[ 1 ].position.y,
-			vertices[ 2 ].position.x, vertices[ 2 ].position.y,
-			vertices[ 3 ].position.x, vertices[ 3 ].position.y,
-			command.textureMapping,
-			command.semiTransparency );
-	}
+		const int16_t minX123 = std::min( minX12, vertices[ 3 ].position.x );
+		const int16_t maxX123 = std::max( maxX12, vertices[ 3 ].position.x );
+		const int16_t minY123 = std::min( minY12, vertices[ 3 ].position.y );
+		const int16_t maxY123 = std::max( maxY12, vertices[ 3 ].position.y );
 
-#if GPU_RENDER_POLYGONS
-	const bool dither = m_status.dither && ( command.shading || ( command.textureMapping && !command.textureMode ) );
-	m_renderer.SetDrawMode( texPage, clut, dither );
-	m_renderer.PushTriangle( vertices, command.semiTransparency );
-	if ( command.quadPolygon )
-		m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
-#endif
+		// cull second polygon
+		if ( ( maxX123 - minX123 ) <= MaxPrimitiveWidth && ( maxY123 - minY123 ) <= MaxPrimitiveHeight )
+		{
+			AddTriangleCommandCycles(
+				vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+				vertices[ 2 ].position.x, vertices[ 2 ].position.y,
+				vertices[ 3 ].position.x, vertices[ 3 ].position.y,
+				command.textureMapping,
+				command.semiTransparency );
+
+			m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
+		}
+		else
+		{
+			dbLogDebug( "Gpu::Command_RenderPolygon -- culling triangle 2 (%i, %i), (%i, %i), (%i, %i)",
+				vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+				vertices[ 2 ].position.x, vertices[ 2 ].position.y,
+				vertices[ 3 ].position.x, vertices[ 3 ].position.y );
+		}
+	}
 
 	EndCommand();
 }
 
 void Gpu::Command_RenderLine() noexcept
 {
-	// TODO
-	const RenderCommand command{ m_commandBuffer.Pop() };
-	m_commandBuffer.Ignore( command.shading ? 3 : 2 );
-
 	m_pendingCommandCycles += 16; // Number from Duckstation
+
+	TexPage texPage = m_status.GetTexPage();
+	texPage.textureDisable = true;
+	m_renderer.SetDrawMode( texPage, ClutAttribute{}, m_status.dither );
+
+	const RenderCommand command{ m_commandBuffer.Pop() };
+	const Color c1 = Color{ command.value };
+	const Position p1 = Position{ m_commandBuffer.Pop() };
+	const Color c2 = command.shading ? Color{ m_commandBuffer.Pop() } : c1;
+	const Position p2 = Position{ m_commandBuffer.Pop() };
+
+	Command_RenderLineInternal( p1, c1, p2, c2, texPage, command.semiTransparency );
+
 	EndCommand();
 }
 
 void Gpu::Command_RenderPolyLine() noexcept
 {
-	// TODO
-	m_transferBuffer.clear();
+	dbExpects( m_transferBuffer.size() >= 3 );
 
 	m_pendingCommandCycles += 16; // Number from Duckstation
+
+	TexPage texPage = m_status.GetTexPage();
+	texPage.textureDisable = true;
+	m_renderer.SetDrawMode( texPage, ClutAttribute{}, m_status.dither );
+
+	const RenderCommand command{ m_transferBuffer[ 0 ] };
+	Color c1{ command.value };
+	Position p1{ m_transferBuffer[ 1 ] };
+
+	for ( size_t i = 2; i < m_transferBuffer.size(); )
+	{
+		const Color c2 = command.shading ? Color{ m_transferBuffer[ i++ ] } : c1;
+		const Position p2{ m_transferBuffer[ i++ ] };
+
+		Command_RenderLineInternal( p1, c1, p2, c2, texPage, command.semiTransparency );
+
+		p1 = p2;
+		c1 = c2;
+	}
+
 	EndCommand();
+}
+
+void Gpu::Command_RenderLineInternal( Position p1, Color c1, Position p2, Color c2, TexPage texPage, bool semiTransparent ) noexcept
+{
+	Vertex vertices[ 4 ];
+
+	const int32_t dx = p2.x - p1.x;
+	const int32_t dy = p2.y - p1.y;
+
+	const int32_t absDx = std::abs( dx );
+	const int32_t absDy = std::abs( dy );
+
+	// cull lines that are too long
+	if ( absDx > MaxPrimitiveWidth || absDy > MaxPrimitiveHeight )
+		return;
+
+	p1.x += m_drawOffsetX;
+	p1.y += m_drawOffsetY;
+	p2.x += m_drawOffsetX;
+	p2.y += m_drawOffsetY;
+
+	const int32_t clipX1 = std::clamp<int32_t>( p1.x, m_drawAreaLeft, m_drawAreaRight );
+	const int32_t clipY1 = std::clamp<int32_t>( p1.y, m_drawAreaTop, m_drawAreaBottom );
+	const int32_t clipX2 = std::clamp<int32_t>( p2.x, m_drawAreaLeft, m_drawAreaRight );
+	const int32_t clipY2 = std::clamp<int32_t>( p2.y, m_drawAreaTop, m_drawAreaBottom );
+
+	const int32_t clipWidth = std::abs( clipX2 - clipX1 ) + 1;
+	const int32_t clipHeight = std::abs( clipY2 - clipY1 ) + 1;
+	AddLineCommandCycles( clipWidth, clipHeight );
+
+	if ( dx == 0 && dy == 0 )
+	{
+		// render a point with first color
+
+		vertices[ 0 ].position = p1;
+		vertices[ 1 ].position = Position( p1.x + 1,	p1.y );
+		vertices[ 2 ].position = Position( p1.x,		p1.y + 1 );
+		vertices[ 3 ].position = Position( p1.x + 1,	p1.y + 1 );
+
+		vertices[ 0 ].color = c1;
+		vertices[ 1 ].color = c1;
+		vertices[ 2 ].color = c1;
+		vertices[ 3 ].color = c1;
+	}
+	else
+	{
+		int16_t padX1 = 0;
+		int16_t padY1 = 0;
+		int16_t padX2 = 0;
+		int16_t padY2 = 0;
+
+		int16_t fillDx = 0;
+		int16_t fillDy = 0;
+
+		// align ends of line depending on if it's more horizontal or vertical
+		if ( absDx > absDy )
+		{
+			fillDx = 0;
+			fillDy = 1;
+
+			if ( dx > 0 )
+			{
+				// left to right
+				padX2 = 1;
+			}
+			else
+			{
+				// right to left
+				padX1 = 1;
+			}
+		}
+		else
+		{
+			fillDx = 1;
+			fillDy = 0;
+
+			if ( dy > 0 )
+			{
+				// top to bottom
+				padY2 = 1;
+			}
+			else
+			{
+				padY1 = 1;
+			}
+		}
+
+		const int16_t x1 = p1.x + padX1;
+		const int16_t y1 = p1.y + padY1;
+		const int16_t x2 = p2.x + padX2;
+		const int16_t y2 = p2.y + padY2;
+
+		vertices[ 0 ].position = Position( x1,				y1 );
+		vertices[ 1 ].position = Position( x1 + fillDx,		y1 + fillDy );
+		vertices[ 2 ].position = Position( x2,				y2 );
+		vertices[ 3 ].position = Position( x2 + fillDx,		y2 + fillDy );
+
+		vertices[ 0 ].color = c1;
+		vertices[ 1 ].color = c1;
+		vertices[ 2 ].color = c2;
+		vertices[ 3 ].color = c2;
+	}
+
+	for ( auto& v : vertices )
+		v.texPage = texPage;
+
+	m_renderer.PushQuad( vertices, semiTransparent );
 }
 
 void Gpu::Command_RenderRectangle() noexcept
@@ -1182,14 +1353,13 @@ void Gpu::Command_RenderRectangle() noexcept
 
 	TexPage texPage = m_status.GetTexPage();
 	ClutAttribute clut;
-
 	if ( command.textureMapping )
 	{
 		const uint32_t value = m_commandBuffer.Pop();
 
 		texcoord = TexCoord{ value };
 
-		clut = static_cast<uint16_t>( value >> 16 );
+		clut = ClutAttribute{ static_cast<uint16_t>( value >> 16 ) };
 		for ( auto& v : vertices )
 		{
 			v.clut = clut;
@@ -1250,10 +1420,8 @@ void Gpu::Command_RenderRectangle() noexcept
 
 	AddRectangleCommandCycles( width, height, command.textureMapping, command.semiTransparency );
 
-#if GPU_RENDER_RECTANGLES
 	m_renderer.SetDrawMode( texPage, clut, false );
 	m_renderer.PushQuad( vertices, command.semiTransparency );
-#endif
 
 	EndCommand();
 }
