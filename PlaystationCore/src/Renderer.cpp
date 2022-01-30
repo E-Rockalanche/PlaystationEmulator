@@ -543,7 +543,7 @@ void Renderer::UpdateBlendMode()
 		}
 
 		glBlendEquationSeparate( rgbEquation, GL_FUNC_ADD );
-		glBlendFuncSeparate( GL_ONE, GL_SRC1_ALPHA, GL_ONE, GL_ZERO );
+		glBlendFuncSeparate( GL_SRC1_ALPHA, GL_SRC1_COLOR, GL_ONE, GL_ZERO );
 
 		m_uniform.srcBlend = srcBlend;
 		m_uniform.destBlend = destBlend;
