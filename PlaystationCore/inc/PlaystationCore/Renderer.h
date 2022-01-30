@@ -74,8 +74,8 @@ public:
 
 	void CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height );
 
-	void PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent );
-	void PushQuad( const Vertex vertices[ 4 ], bool semiTransparent );
+	void PushTriangle( Vertex vertices[ 3 ], bool semiTransparent );
+	void PushQuad( Vertex vertices[ 4 ], bool semiTransparent );
 
 	void DisplayFrame();
 
@@ -100,6 +100,8 @@ private:
 	void EnableSemiTransparency( bool enabled );
 
 	void DrawBatch();
+
+	void ResetDepthBuffer();
 
 private:
 	SDL_Window* m_window = nullptr;
@@ -141,6 +143,8 @@ private:
 	GLint m_srcRect16Loc = -1;
 
 	VRamCopyShader m_vramCopyShader;
+
+	Render::Shader m_resetDepthShader;
 
 	Render::Shader m_displayShader;
 
@@ -188,6 +192,8 @@ private:
 
 	using DirtyArea = Math::Rectangle<int32_t>;
 	DirtyArea m_dirtyArea;
+
+	int16_t m_currentDepth = 0;
 };
 
 }

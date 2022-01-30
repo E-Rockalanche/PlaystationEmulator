@@ -5,6 +5,7 @@
 #include "VRamViewShader.h"
 #include "Output16bitShader.h"
 #include "Output24bitShader.h"
+#include "ResetDepthShader.h"
 
 #include <Render/Types.h>
 
@@ -65,6 +66,9 @@ bool Renderer::Initialize( SDL_Window* window )
 
 	m_vramCopyShader.Initialize();
 
+	m_resetDepthShader = Render::Shader::Compile( ResetDepthVertexShader, ResetDepthFragmentShader );
+	dbAssert( m_resetDepthShader.Valid() );
+
 	// create display shader
 	m_displayShader = Render::Shader::Compile( DisplayVertexShader, DisplayFragmentShader );
 	dbAssert( m_displayShader.Valid() );
@@ -73,7 +77,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	constexpr auto Stride = sizeof( Vertex );
 
 	m_clutShader.Bind();
-	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_pos" ), 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
+	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_pos" ), 4, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
@@ -85,7 +89,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramDrawFramebuffer = Render::Framebuffer::Create();
 	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
 	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
-	m_vramDrawDepthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::UByte );
+	m_vramDrawDepthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::Short );
 	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Depth, m_vramDrawDepthBuffer );
 	dbAssert( m_vramDrawFramebuffer.IsComplete() );
 	m_vramDrawFramebuffer.Unbind();
@@ -118,12 +122,17 @@ bool Renderer::Initialize( SDL_Window* window )
 
 void Renderer::Reset()
 {
-	// TODO: clear vram
-
-	// GPU will reset uniforms
+	// clear VRAM
+	glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
+	glClearDepth( 1.0 );
+	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
 	m_vertices.clear();
 	ResetDirtyArea();
+
+	m_currentDepth = std::numeric_limits<int16_t>::max() - 1;
+
+	// GPU will reset uniforms
 }
 
 void Renderer::EnableVRamView( bool enable )
@@ -230,6 +239,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	{
 		m_dirtyArea.Grow( DirtyArea::FromExtents( left, top, width, height ) );
 		m_vramDrawTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
+		ResetDepthBuffer();
 	}
 	else
 	{
@@ -561,10 +571,10 @@ void Renderer::UpdateBlendMode()
 
 void Renderer::UpdateDepthTest()
 {
-	glDepthFunc( m_checkMaskBit ? GL_GEQUAL : GL_ALWAYS );
+	glDepthFunc( m_checkMaskBit ? GL_LESS : GL_ALWAYS );
 }
 
-void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
+void Renderer::PushTriangle( Vertex vertices[ 3 ], bool semiTransparent )
 {
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
@@ -572,12 +582,21 @@ void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
 	if ( m_drawArea.left >= m_drawArea.right || m_drawArea.top >= m_drawArea.bottom )
 		return;
 
+	if ( m_checkMaskBit )
+	{
+		if ( m_currentDepth == 0 )
+			ResetDepthBuffer();
+
+		std::for_each_n( vertices, 3, [this]( auto& v ) { v.position.z = m_currentDepth; } );
+		--m_currentDepth;
+	}
+
 	EnableSemiTransparency( semiTransparent );
 
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
 }
 
-void Renderer::PushQuad( const Vertex vertices[ 4 ], bool semiTransparent )
+void Renderer::PushQuad( Vertex vertices[ 4 ], bool semiTransparent )
 {
 	PushTriangle( vertices, semiTransparent );
 	PushTriangle( vertices + 1, semiTransparent );
@@ -615,6 +634,26 @@ void Renderer::DrawBatch()
 	dbCheckRenderErrors();
 
 	m_vertices.clear();
+}
+
+void Renderer::ResetDepthBuffer()
+{
+	m_currentDepth = std::numeric_limits<int16_t>::max() - 1;
+
+	glDisable( GL_SCISSOR_TEST );
+	glDisable( GL_BLEND );
+	glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+	glDepthFunc( GL_ALWAYS );
+
+	m_vramDrawTexture.Bind();
+	m_resetDepthShader.Bind();
+	m_noAttributeVAO.Bind();
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+
+	dbCheckRenderErrors();
+
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	RestoreRenderState();
 }
 
 void Renderer::UpdateReadTexture()
