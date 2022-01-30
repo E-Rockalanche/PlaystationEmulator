@@ -228,14 +228,21 @@ void main()
 	}
 
 	if ( u_realColor )
+	{
 		color.rgb /= 255.0;
+	}
 	else if ( u_dither )
 	{
 		ivec2 pos = ivec2( int( floor( Position.x ) ), int( floor( Position.y ) ) );
 		color.rgb = Dither24bitTo15Bit( pos, color.rgb ) / 31.0;
 	}
 	else
+	{
 		color.rgb = FloorVec3( color.rgb / 8.0 ) / 31.0;
+	}
+
+	// pre-multiply alpha
+	color.rgb *= srcBlend;
 
 	if ( u_setMaskBit )
 		color.a = 1.0;
@@ -243,8 +250,8 @@ void main()
 	// output color
 	FragColor = color;
 
-	// use alpha for src blend, rgb for dest blend
-	ParamColor = vec4( destBlend, destBlend, destBlend, srcBlend );
+	// configure dest blend per pixel using dual blending
+	ParamColor = vec4( 0.0, 0.0, 0.0, destBlend );
 
 	// set depth buffer output
 	gl_FragDepth = color.a;

@@ -169,7 +169,7 @@ static_assert( sizeof( ClutAttribute ) == 2 );
 
 union TexPage
 {
-	static constexpr uint16_t WriteMask = 0x01ff; // ignore texture disable
+	static constexpr uint16_t WriteMask = 0x09ff;
 
 	TexPage() = default;
 	explicit TexPage( uint16_t v ) : value{ static_cast<uint16_t>( v & WriteMask ) } {}
