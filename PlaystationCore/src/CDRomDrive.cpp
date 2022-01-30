@@ -608,7 +608,11 @@ void CDRomDrive::BeginSeeking() noexcept
 		seekCycles = m_driveEvent->GetRemainingCycles();
 
 	if ( !m_driveStatus.motorOn )
+	{
 		seekCycles += ( m_driveState == DriveState::StartingMotor ) ? m_driveEvent->GetRemainingCycles() : CpuCyclesPerSecond;
+		m_driveStatus.motorOn = true;
+		m_driveState = DriveState::Idle; // suppress override state warning
+	}
 
 	if ( !m_pendingSeek )
 		dbLogWarning( "CDRomDrive::BeginSeeking -- no seek location set" );
