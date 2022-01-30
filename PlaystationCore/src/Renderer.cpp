@@ -80,7 +80,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_clutShader.Bind();
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_pos" ), 4, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
-	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
+	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_texPage" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::texPage ) );
 	
@@ -98,6 +98,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	// VRAM read texture
 	m_vramReadFramebuffer = Render::Framebuffer::Create();
 	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
+	m_vramReadTexture.SetTextureWrap( true );
 	m_vramReadFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
 	dbAssert( m_vramReadFramebuffer.IsComplete() );
 	m_vramReadFramebuffer.Unbind();

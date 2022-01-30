@@ -160,7 +160,6 @@ void Gpu::SoftReset() noexcept
 	// reset GPUSTAT
 	m_status.value = 0x14802000;
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
-	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 }, false );
 	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
 	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
 	m_renderer.SetDisplayEnable( !m_status.displayDisable );
@@ -1375,6 +1374,7 @@ void Gpu::Command_RenderRectangle() noexcept
 	}
 	else
 	{
+		// still need semitransparency mode
 		texPage.textureDisable = true;
 		for ( auto& v : vertices )
 			v.texPage = texPage;
@@ -1387,10 +1387,10 @@ void Gpu::Command_RenderRectangle() noexcept
 		case RectangleSize::Variable:
 		{
 			const uint32_t sizeParam = m_commandBuffer.Pop();
-			width = static_cast<int16_t>( sizeParam & VRamWidthMask );
-			height = static_cast<int16_t>( ( sizeParam >> 16 ) & VRamHeightMask );
+			width = static_cast<int16_t>( sizeParam & 0xffff );
+			height = static_cast<int16_t>( sizeParam >> 16 );
 
-			if ( width == 0 || height == 0 )
+			if ( width == 0 || height == 0 || width > MaxPrimitiveWidth || height > MaxPrimitiveHeight )
 			{
 				// size is the last param. Safe to end command here
 				EndCommand();
@@ -1412,17 +1412,42 @@ void Gpu::Command_RenderRectangle() noexcept
 			break;
 	}
 
+	const int16_t x2 = pos.x + width;
+	const int16_t y2 = pos.y + height;
 	vertices[ 0 ].position = pos;
-	vertices[ 1 ].position = Position{ pos.x,									static_cast<int16_t>( pos.y + height ) };
-	vertices[ 2 ].position = Position{ static_cast<int16_t>( pos.x + width ),	pos.y };
-	vertices[ 3 ].position = Position{ static_cast<int16_t>( pos.x + width ),	static_cast<int16_t>( pos.y + height ) };
+	vertices[ 1 ].position = Position{ x2,		pos.y };
+	vertices[ 2 ].position = Position{ pos.x,	y2 };
+	vertices[ 3 ].position = Position{ x2,		y2 };
 
 	if ( command.textureMapping )
 	{
-		vertices[ 0 ].texCoord = texcoord;
-		vertices[ 1 ].texCoord = TexCoord{ texcoord.u,										static_cast<uint16_t>( texcoord.v + height - 1 ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	texcoord.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	static_cast<uint16_t>( texcoord.v + height - 1 ) };
+		int16_t u1, v1, u2, v2;
+		if ( m_texturedRectFlipX )
+		{
+			u1 = texcoord.u + 1;
+			u2 = u1 - width + 1;
+		}
+		else
+		{
+			u1 = texcoord.u;
+			u2 = u1 + width - 1;
+		}
+
+		if ( m_texturedRectFlipY )
+		{
+			v1 = texcoord.v + 1;
+			v2 = v1 - height + 1;
+		}
+		else
+		{
+			v1 = texcoord.v;
+			v2 = v1 + height - 1;
+		}
+
+		vertices[ 0 ].texCoord = TexCoord{ u1, v1 };
+		vertices[ 1 ].texCoord = TexCoord{ u2, v1 };
+		vertices[ 2 ].texCoord = TexCoord{ u1, v2 };
+		vertices[ 3 ].texCoord = TexCoord{ u2, v2 };
 	}
 
 	AddRectangleCommandCycles( width, height, command.textureMapping, command.semiTransparency );

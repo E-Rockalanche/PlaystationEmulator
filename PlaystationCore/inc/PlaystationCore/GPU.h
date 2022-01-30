@@ -141,7 +141,7 @@ private:
 		};
 		uint32_t value = 0;
 
-		static constexpr uint32_t TexPageMask = 0x00009ff;
+		static constexpr uint32_t TexPageMask = 0x00001ff; // ignore texture disable bit. It's a dev debug feature
 
 		void SetTexPage( TexPage texPage ) noexcept
 		{
