@@ -84,7 +84,7 @@ void CDRom::AddLeadOutIndex()
 	m_indices.push_back( leadOut );
 }
 
-bool CDRom::ReadSector( Sector& sector )
+bool CDRom::ReadSector( Sector& sector, SubQ& subq )
 {
 	dbAssert( m_currentIndex );
 
@@ -108,12 +108,51 @@ bool CDRom::ReadSector( Sector& sector )
 		return false;
 	}
 
-	// TODO: read sub channel Q
+	subq = GetSubQFromIndex( *m_currentIndex, m_position );
 
 	++m_position;
 	++m_positionInIndex;
 	++m_positionInTrack;
 	return true;
+}
+
+bool CDRom::ReadSubQ( SubQ& subq )
+{
+	if ( !m_currentIndex )
+		return false;
+
+	subq = GetSubQFromIndex( *m_currentIndex, m_position );
+	return true;
+}
+
+bool CDRom::ReadSubQFromPosition( LogicalSector position, SubQ& subq )
+{
+	const Index* index = FindIndex( position );
+	if ( !index )
+		return false;
+	
+	subq = GetSubQFromIndex( *index, position );
+	return true;
+}
+
+CDRom::SubQ CDRom::GetSubQFromIndex( const Index& index, LogicalSector position ) noexcept
+{
+	const uint8_t trackNumberBCD = ( index.trackNumber == CDRom::LeadOutTrackNumber ) ? CDRom::LeadOutTrackNumber : BinaryToBCD( static_cast<uint8_t>( index.trackNumber ) );
+	const Location trackLocation = Location::FromLogicalSector( position - index.position + index.positionInTrack );
+	const Location diskLocation = Location::FromLogicalSector( position );
+
+	SubQ subq;
+	subq.control.adr = 1;
+	subq.control.dataSector = index.trackType != Track::Type::Audio;
+	subq.trackNumberBCD = trackNumberBCD;
+	subq.trackIndexBCD = BinaryToBCD( static_cast<uint8_t>( index.indexNumber ) );
+	subq.trackMinuteBCD = BinaryToBCD( trackLocation.minute );
+	subq.trackSecondBCD = BinaryToBCD( trackLocation.second );
+	subq.trackSectorBCD = BinaryToBCD( trackLocation.sector );
+	subq.absoluteMinuteBCD = BinaryToBCD( diskLocation.minute );
+	subq.absoluteSecondBCD = BinaryToBCD( diskLocation.second );
+	subq.absoluteSectorBCD = BinaryToBCD( diskLocation.sector );
+	return subq;
 }
 
 std::unique_ptr<CDRom> CDRom::Open( const fs::path& filename )

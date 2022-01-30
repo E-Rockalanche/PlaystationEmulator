@@ -251,7 +251,7 @@ uint32_t Timers::Read( uint32_t offset ) noexcept
 		case TimerRegister::Counter:
 			UpdateEventsEarly( timerIndex );
 			value = timer.GetCounter();
-			dbLogDebug( "Timers::Read -- timer %u counter [%X]", timerIndex, value );
+			// counter gets read too often to log
 			break;
 
 		case TimerRegister::Mode:
