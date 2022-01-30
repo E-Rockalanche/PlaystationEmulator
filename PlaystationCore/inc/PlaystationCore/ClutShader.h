@@ -26,7 +26,7 @@ void main()
 	float y = 2.0 * ( v_pos.y / 512.0 ) - 1.0;
 	float z = v_pos.z / 32767.0;
 	Position = vec3( v_pos.xy, z );
-	gl_Position = vec4( x, y, 0.0, 1.0 );
+	gl_Position = vec4( x, y, 0.0, 1.0 ); // depth is set per pixel
 
 	// calculate texture page offset
 	TexPageBase = ivec2( ( v_texPage & 0xf ) * 64, ( ( v_texPage >> 4 ) & 0x1 ) * 256 );

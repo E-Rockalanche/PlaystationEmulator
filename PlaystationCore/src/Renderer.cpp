@@ -47,12 +47,13 @@ bool Renderer::Initialize( SDL_Window* window )
 	dbAssert( m_clutShader.Valid() );
 	m_srcBlendLoc = m_clutShader.GetUniformLocation( "u_srcBlend" );
 	m_destBlendLoc = m_clutShader.GetUniformLocation( "u_destBlend" );
-	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
-	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
+	m_setMaskBitLoc = m_clutShader.GetUniformLocation( "u_setMaskBit" );
 	m_drawOpaquePixelsLoc = m_clutShader.GetUniformLocation( "u_drawOpaquePixels" );
 	m_drawTransparentPixelsLoc = m_clutShader.GetUniformLocation( "u_drawTransparentPixels" );
 	m_ditherLoc = m_clutShader.GetUniformLocation( "u_dither" );
 	m_realColorLoc = m_clutShader.GetUniformLocation( "u_realColor" );
+	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
+	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 
 	// create output 24bpp shader
 	m_output24bppShader = Render::Shader::Compile( Output24bitVertexShader, Output24bitFragmentShader );
@@ -203,8 +204,7 @@ void Renderer::SetMaskBits( bool setMask, bool checkMask )
 
 		m_forceMaskBit = setMask;
 		m_checkMaskBit = checkMask;
-		UpdateBlendMode();
-		UpdateDepthTest();
+		UpdateMaskBits();
 	}
 }
 
@@ -569,8 +569,9 @@ void Renderer::UpdateBlendMode()
 	dbCheckRenderErrors();
 }
 
-void Renderer::UpdateDepthTest()
+void Renderer::UpdateMaskBits()
 {
+	glUniform1i( m_setMaskBitLoc, m_forceMaskBit );
 	glDepthFunc( m_checkMaskBit ? GL_LESS : GL_ALWAYS );
 }
 
@@ -644,15 +645,16 @@ void Renderer::ResetDepthBuffer()
 	glDisable( GL_BLEND );
 	glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
 	glDepthFunc( GL_ALWAYS );
+	glViewport( 0, 0, VRamWidth, VRamHeight );
 
 	m_vramDrawTexture.Bind();
 	m_resetDepthShader.Bind();
 	m_noAttributeVAO.Bind();
 	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	dbCheckRenderErrors();
 
-	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	RestoreRenderState();
 }
 
@@ -690,18 +692,18 @@ void Renderer::RestoreRenderState()
 
 	UpdateScissorRect();
 	UpdateBlendMode();
-	UpdateDepthTest();
+	UpdateMaskBits();
 
 	// restore uniforms
 	// TODO: use uniform buffer?
 	glUniform1f( m_srcBlendLoc, m_uniform.srcBlend );
 	glUniform1f( m_destBlendLoc, m_uniform.destBlend );
-	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
-	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
 	glUniform1i( m_drawOpaquePixelsLoc, true );
 	glUniform1i( m_drawTransparentPixelsLoc, true );
 	glUniform1i( m_ditherLoc, m_dither );
 	glUniform1i( m_realColorLoc, m_realColor );
+	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
+	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
 
 	glViewport( 0, 0, VRamWidth, VRamHeight );
 

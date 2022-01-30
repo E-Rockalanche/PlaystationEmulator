@@ -95,7 +95,7 @@ private:
 
 	void UpdateScissorRect();
 	void UpdateBlendMode();
-	void UpdateDepthTest();
+	void UpdateMaskBits();
 
 	void EnableSemiTransparency( bool enabled );
 
@@ -127,12 +127,13 @@ private:
 	Render::Shader m_clutShader;
 	GLint m_srcBlendLoc = -1;
 	GLint m_destBlendLoc = -1;
-	GLint m_texWindowMask = -1;
-	GLint m_texWindowOffset = -1;
+	GLint m_setMaskBitLoc = -1;
 	GLint m_drawOpaquePixelsLoc = -1;
 	GLint m_drawTransparentPixelsLoc = -1;
 	GLint m_ditherLoc = -1;
 	GLint m_realColorLoc = -1;
+	GLint m_texWindowMask = -1;
+	GLint m_texWindowOffset = -1;
 
 	Render::Shader m_vramViewShader;
 

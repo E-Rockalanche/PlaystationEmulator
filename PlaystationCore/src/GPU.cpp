@@ -744,7 +744,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 	{
 		case 0x00: // soft reset GPU
 		{
-			dbLog( "Gpu::WriteGP1() -- soft reset" );
+			dbLogDebug( "Gpu::WriteGP1() -- soft reset" );
 			m_crtEvent->UpdateEarly();
 			SoftReset();
 			break;
