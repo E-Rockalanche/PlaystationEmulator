@@ -123,15 +123,19 @@ bool Renderer::Initialize( SDL_Window* window )
 
 void Renderer::Reset()
 {
-	// clear VRAM
 	glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
 	glClearDepth( 1.0 );
+
+	m_vramReadFramebuffer.Bind();
+	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+
+	m_vramDrawFramebuffer.Bind();
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
 	m_vertices.clear();
 	ResetDirtyArea();
 
-	m_currentDepth = std::numeric_limits<int16_t>::max() - 1;
+	m_currentDepth = ResetDepthValue;
 
 	// GPU will reset uniforms
 }
@@ -230,7 +234,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 
 	DrawBatch();
 
-	glPixelStorei( GL_UNPACK_ALIGNMENT, ( width % 2 ) ? 2 : 4 );
+	glPixelStorei( GL_UNPACK_ALIGNMENT, ( width % 2 || left % 2 ) ? 2 : 4 );
 
 	const bool wrapX = left + width > VRamWidth;
 	const bool wrapY = top + height > VRamHeight;
@@ -262,7 +266,8 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		glDisable( GL_SCISSOR_TEST );
 
 		m_noAttributeVAO.Bind();
-		m_vramCopyShader.Use( 0, 0, width1f, height1f, m_forceMaskBit );
+		const float depth = m_checkMaskBit ? ( m_currentDepth / 32767.0f ) : 1.0f;
+		m_vramCopyShader.Use( 0, 0, width1f, height1f, depth, m_forceMaskBit );
 		m_vramTransferTexture.Bind();
 
 		// bottom right
@@ -347,15 +352,33 @@ void Renderer::ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 	dbCheckRenderErrors();
 }
 
-void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a )
+void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint8_t r, uint8_t g, uint8_t b )
 {
 	if ( width == 0 || height == 0 )
 		return;
 
 	DrawBatch();
 
-	glClearColor( r, g, b, a );
-	glClearDepth( a );
+	// Fills the area in the frame buffer with the value in RGB. Horizontally the filling is done in 16-pixel (32-bytes) units (see below masking/rounding).
+	// The "Color" parameter is a 24bit RGB value, however, the actual fill data is 16bit: The hardware automatically converts the 24bit RGB value to 15bit RGB (with bit15=0).
+	// Fill is NOT affected by the Mask settings (acts as if Mask.Bit0,1 are both zero).
+
+	float rF, gF, bF;
+	if ( m_realColor )
+	{
+		rF = r / 255.0f;
+		gF = g / 255.0f;
+		bF = b / 255.0f;
+	}
+	else
+	{
+		rF = ( r >> 3 ) / 31.0f;
+		gF = ( g >> 3 ) / 31.0f;
+		bF = ( b >> 3 ) / 31.0f;
+	}
+
+	glClearColor( rF, gF, bF, 0.0f );
+	glClearDepth( 1.0 );
 
 	const bool wrapX = left + width > VRamWidth;
 	const bool wrapY = top + height > VRamHeight;
@@ -413,9 +436,8 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 		glViewport( destX, destY, width, height );
 
 		m_noAttributeVAO.Bind();
-		m_vramCopyShader.Use(
-			srcX / VRamWidthF, srcY / VRamHeightF, width / VRamWidthF, height / VRamHeightF,
-			m_forceMaskBit );
+		const float depth = m_checkMaskBit ? ( m_currentDepth / 32767.0f ) : 1.0f;
+		m_vramCopyShader.Use( srcX / VRamWidthF, srcY / VRamHeightF, width / VRamWidthF, height / VRamHeightF, depth, m_forceMaskBit );
 
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
@@ -586,7 +608,10 @@ void Renderer::PushTriangle( Vertex vertices[ 3 ], bool semiTransparent )
 	if ( m_checkMaskBit )
 	{
 		if ( m_currentDepth == 0 )
+		{
+			DrawBatch();
 			ResetDepthBuffer();
+		}
 
 		std::for_each_n( vertices, 3, [this]( auto& v ) { v.position.z = m_currentDepth; } );
 		--m_currentDepth;
@@ -639,22 +664,20 @@ void Renderer::DrawBatch()
 
 void Renderer::ResetDepthBuffer()
 {
-	m_currentDepth = std::numeric_limits<int16_t>::max() - 1;
+	m_currentDepth = ResetDepthValue;
 
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
 	glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
 	glDepthFunc( GL_ALWAYS );
-	glViewport( 0, 0, VRamWidth, VRamHeight );
 
 	m_vramDrawTexture.Bind();
 	m_resetDepthShader.Bind();
 	m_noAttributeVAO.Bind();
 	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-
-	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	dbCheckRenderErrors();
 
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	RestoreRenderState();
 }
 
@@ -698,6 +721,7 @@ void Renderer::RestoreRenderState()
 	// TODO: use uniform buffer?
 	glUniform1f( m_srcBlendLoc, m_uniform.srcBlend );
 	glUniform1f( m_destBlendLoc, m_uniform.destBlend );
+	// setMask set in UpdateMaskBits()
 	glUniform1i( m_drawOpaquePixelsLoc, true );
 	glUniform1i( m_drawTransparentPixelsLoc, true );
 	glUniform1i( m_ditherLoc, m_dither );
@@ -725,7 +749,7 @@ void Renderer::DisplayFrame()
 	int winHeight = 0;
 	SDL_GetWindowSize( m_window, &winWidth, &winHeight );
 	glViewport( 0, 0, winWidth, winHeight );
-	glClearColor( 0, 0, 0, 1 );
+	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
 	glClear( GL_COLOR_BUFFER_BIT );
 
 	if ( m_viewVRam )

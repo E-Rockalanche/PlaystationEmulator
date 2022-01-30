@@ -136,7 +136,7 @@ vec4 SampleColor( ivec2 pos )
 {
 	vec4 color = texelFetch( u_vram, pos, 0 );
 	color.rgb = ConvertColorTo15bit( color.rgb );
-	color.a = ceil( color.a );
+	color.a = floor( color.a + 0.5 ); // ensure alpha is 0 or 1
 	return color;
 }
 
@@ -210,10 +210,7 @@ void main()
 		if ( color == vec4( 0.0 ) )
 			discard;
 
-		// blend color, result is 8bit
-		color.rgb = ( color.rgb * blendColor.rgb ) / 16.0;
-
-		if ( color.a == 0 )
+		if ( color.a == 0.0 )
 		{
 			if ( !u_drawOpaquePixels )
 				discard;
@@ -226,6 +223,9 @@ void main()
 		{
 			discard;
 		}
+
+		// blend color, result is 8bit
+		color.rgb = ( color.rgb * blendColor.rgb ) / 16.0;
 	}
 
 	if ( u_realColor )

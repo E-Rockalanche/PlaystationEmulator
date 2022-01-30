@@ -70,7 +70,7 @@ public:
 	// read entire vram from frame buffer
 	void ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t hieght, uint16_t* vram );
 
-	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a );
+	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint8_t r, uint8_t g, uint8_t b );
 
 	void CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height );
 
@@ -78,6 +78,9 @@ public:
 	void PushQuad( Vertex vertices[ 4 ], bool semiTransparent );
 
 	void DisplayFrame();
+
+private:
+	static constexpr int16_t ResetDepthValue = std::numeric_limits<int16_t>::max() - 1;
 
 private:
 	// update read texture with dirty area of draw texture

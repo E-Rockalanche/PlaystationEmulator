@@ -208,6 +208,7 @@ void Gpu::Reset()
 {
 	m_crtEvent->Reset();
 	m_commandEvent->Reset();
+	m_renderer.Reset();
 
 	m_pendingCommandCycles = 0;
 	m_processingCommandBuffer = false;
@@ -219,7 +220,6 @@ void Gpu::Reset()
 
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
-	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
 	// reset buffers
 	m_commandBuffer.Reset();
@@ -273,7 +273,10 @@ void Gpu::ProcessCommandBuffer() noexcept
 
 	for ( ;; )
 	{
-		if ( !m_commandBuffer.Empty() && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
+		// if ( !m_commandBuffer.Empty() && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
+
+		// TEMP
+		if ( !m_commandBuffer.Empty() )
 		{
 			switch ( m_state )
 			{
@@ -352,7 +355,13 @@ void Gpu::ProcessCommandBuffer() noexcept
 					break;
 				}
 			}
+
+			// TEMP
+			m_pendingCommandCycles = 0;
 		}
+
+		// TEMP
+		m_pendingCommandCycles = 0;
 
 		// try to request more data
 		const auto sizeBefore = m_commandBuffer.Size();
@@ -364,8 +373,8 @@ void Gpu::ProcessCommandBuffer() noexcept
 	}
 
 	// schedule end of command execution
-	if ( m_pendingCommandCycles > oldPendingCommandCycles )
-		m_commandEvent->Schedule( ConvertCommandToCpuCycles( m_pendingCommandCycles ) );
+	// if ( m_pendingCommandCycles > oldPendingCommandCycles )
+	//	m_commandEvent->Schedule( ConvertCommandToCpuCycles( m_pendingCommandCycles ) );
 
 	m_processingCommandBuffer = false;
 }
@@ -981,13 +990,7 @@ void Gpu::Command_FillRectangle() noexcept
 
 	dbLogDebug( "Gpu::Command_FillRectangle() -- pos: %u,%u size: %u,%u", x, y, width, height );
 
-	if ( width > 0 && height > 0 )
-	{
-		const float r = static_cast<float>( color.r ) / 255.0f;
-		const float g = static_cast<float>( color.g ) / 255.0f;
-		const float b = static_cast<float>( color.b ) / 255.0f;
-		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
-	}
+	m_renderer.FillVRam( x, y, width, height, color.r, color.g, color.b );
 
 	m_pendingCommandCycles += 46 + ( width / 8 + 9 ) * height; // formula from Duckstation
 	EndCommand();
