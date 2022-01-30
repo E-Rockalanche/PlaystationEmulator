@@ -152,13 +152,18 @@ int main( int argc, char** argv )
 		{ SDL_CONTROLLER_BUTTON_Y, PSX::Button::Square },
 	};
 
+	bool paused = true;
 	if ( romFilename.has_value() && playstationCore->LoadRom( *romFilename ) )
+	{
 		windowTitle = *romFilename;
+		paused = false;
+	}
 
 	if ( exeFilename.has_value() )
 	{
 		playstationCore->HookExe( *exeFilename );
 		windowTitle = *exeFilename;
+		paused = false;
 	}
 
 	// set memory cards
@@ -198,7 +203,6 @@ int main( int argc, char** argv )
 	playstationCore->Reset();
 
 	bool quit = false;
-	bool paused = true;
 	bool stepFrame = false;
 	bool fullscreen = false;
 
