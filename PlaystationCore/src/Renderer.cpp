@@ -548,12 +548,12 @@ void Renderer::UpdateBlendMode()
 				break;
 
 			case SemiTransparencyMode::AddQuarter:
-				srcBlend = 0.25;
+				srcBlend = 0.25f;
 				break;
 		}
 
 		glBlendEquationSeparate( rgbEquation, GL_FUNC_ADD );
-		glBlendFuncSeparate( GL_SRC1_ALPHA, GL_SRC1_COLOR, GL_ONE, GL_ZERO );
+		glBlendFuncSeparate( GL_ONE, GL_SRC1_ALPHA, GL_ONE, GL_ZERO );
 
 		m_uniform.srcBlend = srcBlend;
 		m_uniform.destBlend = destBlend;

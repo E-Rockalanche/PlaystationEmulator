@@ -242,14 +242,17 @@ void main()
 		color.rgb = FloorVec3( color.rgb / 8.0 ) / 31.0;
 	}
 
+	// pre-multiply alpha
+	color.rgb *= srcBlend;
+
 	if ( u_setMaskBit )
 		color.a = 1.0;
 
 	// output color
 	FragColor = color;
 
-	// use alpha for src blend, rgb for dest blend
-	ParamColor = vec4( destBlend, destBlend, destBlend, srcBlend );
+	// configure dest blend per pixel using dual blending
+	ParamColor = vec4( 0.0, 0.0, 0.0, destBlend );
 
 	// set depth from mask bit
 	if ( color.a == 0.0 )

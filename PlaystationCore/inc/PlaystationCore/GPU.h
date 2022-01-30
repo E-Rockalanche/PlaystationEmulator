@@ -141,7 +141,7 @@ private:
 		};
 		uint32_t value = 0;
 
-		static constexpr uint32_t TexPageMask = 0x000001ff;
+		static constexpr uint32_t TexPageMask = 0x00009ff;
 
 		void SetTexPage( TexPage texPage ) noexcept
 		{
@@ -151,7 +151,7 @@ private:
 
 		TexPage GetTexPage() const noexcept
 		{
-			return TexPage{ static_cast<uint16_t>( value & TexPageMask ) }; // ignore texture disable
+			return TexPage{ static_cast<uint16_t>( value & TexPageMask ) };
 		}
 
 		uint16_t GetCheckMask() const noexcept { return static_cast<uint16_t>( checkMaskOnDraw << 15 ); }

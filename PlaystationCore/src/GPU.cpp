@@ -1110,8 +1110,6 @@ void Gpu::Command_RenderPolygon() noexcept
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
 
-	// TODO: check for large polygons
-
 	for ( size_t i = 0; i < numVertices; ++i )
 	{
 		vertices[ i ].position.x += m_drawOffsetX;
