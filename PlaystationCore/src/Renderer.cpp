@@ -136,7 +136,7 @@ void Renderer::Reset()
 	m_vertices.clear();
 	ResetDirtyArea();
 
-	m_currentDepth = ResetDepthValue;
+	m_currentDepth = 0;
 
 	// GPU will reset uniforms
 }
@@ -250,6 +250,8 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	{
 		dbLogDebug( "\tvram update wrapping" );
 
+		UpdateCurrentDepth();
+
 		m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
 
 		// calculate width and height segments for wrapping vram upload
@@ -267,8 +269,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		glDisable( GL_SCISSOR_TEST );
 
 		m_noAttributeVAO.Bind();
-		const float depth = m_checkMaskBit ? ( m_currentDepth / 32767.0f ) : 1.0f;
-		m_vramCopyShader.Use( 0, 0, width1f, height1f, depth, m_forceMaskBit );
+		m_vramCopyShader.Use( 0, 0, width1f, height1f, GetNormalizedDepth(), m_forceMaskBit );
 		m_vramTransferTexture.Bind();
 
 		// bottom right
@@ -430,37 +431,19 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 	if ( m_dirtyArea.Intersects( DirtyArea::FromExtents( srcX, srcY, width, height ) ) )
 		UpdateReadTexture();
 
-	if ( m_checkMaskBit || m_forceMaskBit )
-	{
-		glDisable( GL_BLEND );
-		glDisable( GL_SCISSOR_TEST );
-		glViewport( destX, destY, width, height );
+	UpdateCurrentDepth();
 
-		m_noAttributeVAO.Bind();
-		const float depth = m_checkMaskBit ? ( m_currentDepth / 32767.0f ) : 1.0f;
-		m_vramCopyShader.Use( srcX / VRamWidthF, srcY / VRamHeightF, width / VRamWidthF, height / VRamHeightF, depth, m_forceMaskBit );
+	glDisable( GL_BLEND );
+	glDisable( GL_SCISSOR_TEST );
+	glViewport( destX, destY, width, height );
 
-		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	m_noAttributeVAO.Bind();
+	m_vramCopyShader.Use( srcX / VRamWidthF, srcY / VRamHeightF, width / VRamWidthF, height / VRamHeightF, GetNormalizedDepth(), m_forceMaskBit );
 
-		dbCheckRenderErrors();
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	dbCheckRenderErrors();
 
-		RestoreRenderState();
-	}
-	else
-	{
-		m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Read );
-		glDisable( GL_SCISSOR_TEST );
-
-		glBlitFramebuffer(
-			srcX, srcY, srcX + width, srcY + height,
-			destX, destY, destX + width, destY + height,
-			GL_COLOR_BUFFER_BIT, GL_NEAREST );
-
-		m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Read );
-		glEnable( GL_SCISSOR_TEST );
-
-		dbCheckRenderErrors();
-	}
+	RestoreRenderState();
 
 	m_dirtyArea.Grow( DirtyArea::FromExtents( destX, destY, width, height ) );
 }
@@ -595,7 +578,7 @@ void Renderer::UpdateBlendMode()
 void Renderer::UpdateMaskBits()
 {
 	glUniform1i( m_setMaskBitLoc, m_forceMaskBit );
-	glDepthFunc( m_checkMaskBit ? GL_LESS : GL_ALWAYS );
+	glDepthFunc( m_checkMaskBit ? GL_LEQUAL : GL_ALWAYS );
 }
 
 void Renderer::PushTriangle( Vertex vertices[ 3 ], bool semiTransparent )
@@ -606,17 +589,8 @@ void Renderer::PushTriangle( Vertex vertices[ 3 ], bool semiTransparent )
 	if ( m_drawArea.left >= m_drawArea.right || m_drawArea.top >= m_drawArea.bottom )
 		return;
 
-	if ( m_checkMaskBit )
-	{
-		if ( m_currentDepth == 0 )
-		{
-			DrawBatch();
-			ResetDepthBuffer();
-		}
-
-		std::for_each_n( vertices, 3, [this]( auto& v ) { v.position.z = m_currentDepth; } );
-		--m_currentDepth;
-	}
+	UpdateCurrentDepth();
+	std::for_each_n( vertices, 3, [this]( auto& v ) { v.position.z = m_currentDepth; } );
 
 	EnableSemiTransparency( semiTransparent );
 
@@ -665,7 +639,7 @@ void Renderer::DrawBatch()
 
 void Renderer::ResetDepthBuffer()
 {
-	m_currentDepth = ResetDepthValue;
+	m_currentDepth = 0;
 
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
@@ -680,6 +654,20 @@ void Renderer::ResetDepthBuffer()
 
 	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
 	RestoreRenderState();
+}
+
+void Renderer::UpdateCurrentDepth()
+{
+	if ( m_checkMaskBit )
+	{
+		if ( m_currentDepth == std::numeric_limits<int16_t>::max() )
+		{
+			DrawBatch();
+			ResetDepthBuffer();
+		}
+
+		++m_currentDepth;
+	}
 }
 
 void Renderer::UpdateReadTexture()

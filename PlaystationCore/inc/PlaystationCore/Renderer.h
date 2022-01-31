@@ -80,9 +80,6 @@ public:
 	void DisplayFrame();
 
 private:
-	static constexpr int16_t ResetDepthValue = std::numeric_limits<int16_t>::max() - 1;
-
-private:
 	// update read texture with dirty area of draw texture
 	void UpdateReadTexture();
 
@@ -105,6 +102,13 @@ private:
 	void DrawBatch();
 
 	void ResetDepthBuffer();
+
+	void UpdateCurrentDepth();
+
+	float GetNormalizedDepth() const noexcept
+	{
+		return static_cast<float>( m_currentDepth ) / std::numeric_limits<int16_t>::max();
+	}
 
 private:
 	SDL_Window* m_window = nullptr;
@@ -197,6 +201,7 @@ private:
 	using DirtyArea = Math::Rectangle<int32_t>;
 	DirtyArea m_dirtyArea;
 
+	// depth to use when bit15 is set
 	int16_t m_currentDepth = 0;
 };
 

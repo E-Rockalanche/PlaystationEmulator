@@ -35,7 +35,7 @@ in vec2 TexCoord;
 out vec4 FragColor;
 
 uniform bool u_forceMaskBit;
-uniform float u_currentDepth;
+uniform float u_maskedDepth;
 
 uniform sampler2D u_vram;
 
@@ -50,9 +50,9 @@ void main()
 
 	// set depth from mask bit
 	if ( color.a == 0.0 )
-		gl_FragDepth = u_currentDepth;
+		gl_FragDepth = 1.0;
 	else
-		gl_FragDepth = -1.0;
+		gl_FragDepth = u_maskedDepth;
 }
 
 )glsl";
@@ -64,7 +64,7 @@ void VRamCopyShader::Initialize()
 	m_program = Render::Shader::Compile( VertexShader, FragmentShader );
 	m_srcRectLoc = m_program.GetUniformLocation( "u_srcRect" );
 	m_forceMaskBitLoc = m_program.GetUniformLocation( "u_forceMaskBit" );
-	m_depthLoc = m_program.GetUniformLocation( "u_currentDepth" );
+	m_depthLoc = m_program.GetUniformLocation( "u_maskedDepth" );
 }
 
 void VRamCopyShader::Use( float srcX, float srcY, float srcW, float srcH, float depth, bool forceMaskBit )
