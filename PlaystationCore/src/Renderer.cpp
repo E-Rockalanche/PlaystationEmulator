@@ -181,9 +181,6 @@ void Renderer::SetDrawArea( GLint left, GLint top, GLint right, GLint bottom )
 		m_drawArea = Math::Rectangle{ left, top, right, bottom };
 
 		UpdateScissorRect();
-
-		// grow dirty area once instead of for each render primitive
-		m_dirtyArea.Grow( DirtyArea( left, top, right + 1, bottom + 1 ) );
 	}
 }
 
@@ -193,6 +190,8 @@ void Renderer::SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMod
 	{
 		if ( m_semiTransparencyEnabled )
 			DrawBatch();
+
+		dbLogDebug( "Renderer::SetSemiTransparencyMode -- [%i]\n\tenabled: %s", (int)semiTransparencyMode, m_semiTransparencyEnabled ? "true" : "false" );
 
 		m_semiTransparencyMode = semiTransparencyMode;
 
@@ -218,6 +217,10 @@ void Renderer::EnableSemiTransparency( bool enabled )
 	if ( m_semiTransparencyEnabled != enabled )
 	{
 		DrawBatch();
+
+		dbLogDebug( "Renderer::EnableSemiTransparency -- [%s]", enabled ? "true" : "false" );
+		if ( enabled )
+			dbLogDebug( "\tsemiTransparencyMode: %u", (int)m_semiTransparencyMode );
 
 		m_semiTransparencyEnabled = enabled;
 		UpdateBlendMode();
@@ -583,11 +586,15 @@ void Renderer::PushTriangle( Vertex vertices[ 3 ], bool semiTransparent )
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
 
-	if ( m_drawArea.left >= m_drawArea.right || m_drawArea.top >= m_drawArea.bottom )
+	if ( m_drawArea.left > m_drawArea.right || m_drawArea.top > m_drawArea.bottom )
 		return;
 
 	UpdateCurrentDepth();
-	std::for_each_n( vertices, 3, [this]( auto& v ) { v.position.z = m_currentDepth; } );
+	std::for_each_n( vertices, 3, [this]( auto& v )
+		{
+			m_dirtyArea.Grow( v.position.x, v.position.y );
+			v.position.z = m_currentDepth;
+		} );
 
 	EnableSemiTransparency( semiTransparent );
 
@@ -721,21 +728,6 @@ void Renderer::RestoreRenderState()
 
 void Renderer::DisplayFrame()
 {
-	auto setupMaskBitDebugging = [this]
-	{
-		if ( !RenderMaskBitAsAlpha )
-			return;
-
-		// clear frame buffer with magenta
-		glClearColor( 1.0f, 0.0f, 1.0f, 1.0f );
-		glClear( GL_COLOR_BUFFER_BIT );
-
-		// enable alpha blending
-		glEnable( GL_BLEND );
-		glBlendEquation( GL_FUNC_ADD );
-		glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-	};
-
 	DrawBatch();
 
 	// reset render state
@@ -752,8 +744,6 @@ void Renderer::DisplayFrame()
 	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
 	glClear( GL_COLOR_BUFFER_BIT );
 
-	setupMaskBitDebugging();
-
 	m_noAttributeVAO.Bind();
 
 	if ( m_viewVRam )
@@ -761,8 +751,6 @@ void Renderer::DisplayFrame()
 		m_vramViewShader.Bind();
 		m_vramDrawTexture.Bind();
 		glViewport( 0, 0, VRamWidth, VRamHeight );
-
-		setupMaskBitDebugging();
 
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
@@ -782,8 +770,6 @@ void Renderer::DisplayFrame()
 		m_vramDrawTexture.Bind();
 		m_displayFramebuffer.Bind();
 		glViewport( m_targetDisplayArea.x, m_targetDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
-
-		setupMaskBitDebugging();
 
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		m_displayFramebuffer.Unbind();
@@ -805,8 +791,6 @@ void Renderer::DisplayFrame()
 		const int renderY = ( winHeight - renderHeight ) / 2;
 
 		glViewport( renderX, renderY, renderWidth, renderHeight );
-
-		setupMaskBitDebugging();
 
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}

@@ -35,8 +35,6 @@ public:
 		uint32_t height = 0;
 	};
 
-	bool RenderMaskBitAsAlpha = false;
-
 public:
 	bool Initialize( SDL_Window* window );
 
