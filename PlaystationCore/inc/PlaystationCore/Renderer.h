@@ -35,6 +35,8 @@ public:
 		uint32_t height = 0;
 	};
 
+	bool RenderMaskBitAsAlpha = false;
+
 public:
 	bool Initialize( SDL_Window* window );
 
@@ -190,9 +192,6 @@ private:
 		uint32_t texWindowMaskY = 0;
 		uint32_t texWindowOffsetX = 0;
 		uint32_t texWindowOffsetY = 0;
-
-		float srcBlend = 1.0f;
-		float destBlend = 0.0f;
 	};
 	Uniform m_uniform;
 

@@ -561,9 +561,6 @@ void Renderer::UpdateBlendMode()
 		glBlendEquationSeparate( rgbEquation, GL_FUNC_ADD );
 		glBlendFuncSeparate( GL_SRC1_ALPHA, GL_SRC1_COLOR, GL_ONE, GL_ZERO );
 
-		m_uniform.srcBlend = srcBlend;
-		m_uniform.destBlend = destBlend;
-
 		glUniform1f( m_srcBlendLoc, srcBlend );
 		glUniform1f( m_destBlendLoc, destBlend );
 	}
@@ -708,8 +705,7 @@ void Renderer::RestoreRenderState()
 
 	// restore uniforms
 	// TODO: use uniform buffer?
-	glUniform1f( m_srcBlendLoc, m_uniform.srcBlend );
-	glUniform1f( m_destBlendLoc, m_uniform.destBlend );
+	// src and dest blend set by UpdateBlendMode()
 	// setMask set in UpdateMaskBits()
 	glUniform1i( m_drawOpaquePixelsLoc, true );
 	glUniform1i( m_drawTransparentPixelsLoc, true );
@@ -725,6 +721,21 @@ void Renderer::RestoreRenderState()
 
 void Renderer::DisplayFrame()
 {
+	auto setupMaskBitDebugging = [this]
+	{
+		if ( !RenderMaskBitAsAlpha )
+			return;
+
+		// clear frame buffer with magenta
+		glClearColor( 1.0f, 0.0f, 1.0f, 1.0f );
+		glClear( GL_COLOR_BUFFER_BIT );
+
+		// enable alpha blending
+		glEnable( GL_BLEND );
+		glBlendEquation( GL_FUNC_ADD );
+		glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	};
+
 	DrawBatch();
 
 	// reset render state
@@ -741,19 +752,22 @@ void Renderer::DisplayFrame()
 	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
 	glClear( GL_COLOR_BUFFER_BIT );
 
+	setupMaskBitDebugging();
+
+	m_noAttributeVAO.Bind();
+
 	if ( m_viewVRam )
 	{
-		m_noAttributeVAO.Bind();
 		m_vramViewShader.Bind();
 		m_vramDrawTexture.Bind();
 		glViewport( 0, 0, VRamWidth, VRamHeight );
+
+		setupMaskBitDebugging();
+
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
 	else if ( m_displayEnable )
 	{
-		// render to display texture
-		m_noAttributeVAO.Bind();
-
 		if ( m_colorDepth == DisplayAreaColorDepth::B24 )
 		{
 			m_output24bppShader.Bind();
@@ -768,6 +782,9 @@ void Renderer::DisplayFrame()
 		m_vramDrawTexture.Bind();
 		m_displayFramebuffer.Bind();
 		glViewport( m_targetDisplayArea.x, m_targetDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
+
+		setupMaskBitDebugging();
+
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		m_displayFramebuffer.Unbind();
 
@@ -788,6 +805,9 @@ void Renderer::DisplayFrame()
 		const int renderY = ( winHeight - renderHeight ) / 2;
 
 		glViewport( renderX, renderY, renderWidth, renderHeight );
+
+		setupMaskBitDebugging();
+
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
 
