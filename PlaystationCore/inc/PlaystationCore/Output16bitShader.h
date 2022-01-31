@@ -35,7 +35,8 @@ uniform sampler2D u_vram;
 void main()
 {
 	ivec2 texCoord = u_srcRect.xy + ivec2( TexCoord * u_srcRect.zw );
-	FragColor = vec4( texelFetch( u_vram, texCoord, 0 ).rgb, 1.0 );
+	vec4 texel = texelFetch( u_vram, texCoord, 0 );
+	FragColor = texel;
 }
 
 )glsl";
