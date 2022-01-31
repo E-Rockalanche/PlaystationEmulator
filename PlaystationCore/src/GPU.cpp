@@ -9,6 +9,10 @@
 #include <stdx/assert.h>
 #include <stdx/bit.h>
 
+#define GPU_DRAW_POLYGONS true
+#define GPU_DRAW_LINES true
+#define GPU_DRAW_RECTANGLES true
+
 namespace PSX
 {
 
@@ -272,10 +276,7 @@ void Gpu::ProcessCommandBuffer() noexcept
 
 	for ( ;; )
 	{
-		// if ( !m_commandBuffer.Empty() && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
-
-		// TEMP
-		if ( !m_commandBuffer.Empty() )
+		if ( !m_commandBuffer.Empty() && m_pendingCommandCycles <= MaxRunAheadCommandCycles )
 		{
 			switch ( m_state )
 			{
@@ -354,13 +355,7 @@ void Gpu::ProcessCommandBuffer() noexcept
 					break;
 				}
 			}
-
-			// TEMP
-			m_pendingCommandCycles = 0;
 		}
-
-		// TEMP
-		m_pendingCommandCycles = 0;
 
 		// try to request more data
 		const auto sizeBefore = m_commandBuffer.Size();
@@ -372,8 +367,8 @@ void Gpu::ProcessCommandBuffer() noexcept
 	}
 
 	// schedule end of command execution
-	// if ( m_pendingCommandCycles > oldPendingCommandCycles )
-	//	m_commandEvent->Schedule( ConvertCommandToCpuCycles( m_pendingCommandCycles ) );
+	if ( m_pendingCommandCycles > oldPendingCommandCycles )
+		m_commandEvent->Schedule( ConvertCommandToCpuCycles( m_pendingCommandCycles ) );
 
 	m_processingCommandBuffer = false;
 }
@@ -701,7 +696,7 @@ void Gpu::ExecuteCommand() noexcept
 
 				default:
 				{
-					dbLogWarning( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
+					dbBreakMessage( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
 					m_commandBuffer.Pop();
 					break;
 				}
@@ -1138,7 +1133,9 @@ void Gpu::Command_RenderPolygon() noexcept
 			command.textureMapping,
 			command.semiTransparency );
 
+#if GPU_DRAW_POLYGONS
 		m_renderer.PushTriangle( vertices, command.semiTransparency );
+#endif
 	}
 	else
 	{
@@ -1165,7 +1162,9 @@ void Gpu::Command_RenderPolygon() noexcept
 				command.textureMapping,
 				command.semiTransparency );
 
+#if GPU_DRAW_POLYGONS
 			m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
+#endif
 		}
 		else
 		{
@@ -1332,7 +1331,9 @@ void Gpu::Command_RenderLineInternal( Position p1, Color c1, Position p2, Color 
 	for ( auto& v : vertices )
 		v.texPage = texPage;
 
+#if GPU_DRAW_LINES
 	m_renderer.PushQuad( vertices, semiTransparent );
+#endif
 }
 
 void Gpu::Command_RenderRectangle() noexcept
@@ -1452,8 +1453,10 @@ void Gpu::Command_RenderRectangle() noexcept
 
 	AddRectangleCommandCycles( width, height, command.textureMapping, command.semiTransparency );
 
+#if GPU_DRAW_RECTANGLES
 	m_renderer.SetDrawMode( texPage, clut, false );
 	m_renderer.PushQuad( vertices, command.semiTransparency );
+#endif
 
 	EndCommand();
 }
