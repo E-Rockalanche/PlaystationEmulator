@@ -277,10 +277,7 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 	dbLogDebug( "Renderer::UpdateVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
 
 	const auto updateBounds = GetWrappedBounds( left, top, width, height );
-	if ( m_dirtyArea.Intersects( updateBounds ) )
-		DrawBatch();
-
-	m_dirtyArea.Grow( updateBounds );
+	CheckDrawBounds( updateBounds );
 
 	glPixelStorei( GL_UNPACK_ALIGNMENT, GetPixelStoreAlignment( left, width ) );
 
@@ -402,10 +399,7 @@ void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 
 	// draw batch if we are going to fill over pending polygons
 	const auto fillBounds = GetWrappedBounds( left, top, width, height );
-	if ( m_dirtyArea.Intersects( fillBounds ) )
-		DrawBatch();
-
-	m_dirtyArea.Grow( fillBounds );
+	CheckDrawBounds( fillBounds );
 
 	// Fills the area in the frame buffer with the value in RGB. Horizontally the filling is done in 16-pixel (32-bytes) units (see below masking/rounding).
 	// The "Color" parameter is a 24bit RGB value, however, the actual fill data is 16bit: The hardware automatically converts the 24bit RGB value to 15bit RGB (with bit15=0).
@@ -478,16 +472,13 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 
 	if ( m_dirtyArea.Intersects( srcBounds ) )
 	{
-		DrawBatch();
 		UpdateReadTexture();
+		m_dirtyArea.Grow( destBounds );
 	}
-	else if ( m_dirtyArea.Intersects( destBounds ) )
+	else
 	{
-		// draw batch before copying over polygons
-		DrawBatch();
+		CheckDrawBounds( destBounds );
 	}
-
-	m_dirtyArea.Grow( destBounds );
 
 	UpdateCurrentDepth();
 
@@ -697,6 +688,8 @@ void Renderer::DrawBatch()
 
 void Renderer::ResetDepthBuffer()
 {
+	DrawBatch();
+
 	m_currentDepth = ResetDepth;
 
 	glDisable( GL_SCISSOR_TEST );
@@ -719,10 +712,7 @@ void Renderer::UpdateCurrentDepth()
 	if ( m_checkMaskBit )
 	{
 		if ( m_currentDepth == MaxDepth )
-		{
-			DrawBatch();
 			ResetDepthBuffer();
-		}
 
 		++m_currentDepth;
 	}
@@ -732,6 +722,8 @@ void Renderer::UpdateReadTexture()
 {
 	if ( m_dirtyArea.GetWidth() == 0 || m_dirtyArea.GetHeight() == 0 )
 		return;
+
+	DrawBatch();
 
 	m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Draw );
 	glDisable( GL_SCISSOR_TEST );

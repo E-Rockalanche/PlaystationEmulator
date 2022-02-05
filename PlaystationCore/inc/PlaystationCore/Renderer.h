@@ -124,6 +124,15 @@ private:
 
 	static constexpr DirtyArea GetWrappedBounds( uint32_t left, uint32_t top, uint32_t width, uint32_t height ) noexcept;
 
+	void CheckDrawBounds( const DirtyArea& bounds ) noexcept
+	{
+		// draw batch if we will copy/fill onto texture data or dirty area
+		if ( !m_texPage.textureDisable || m_dirtyArea.Intersects( bounds ) )
+			DrawBatch();
+
+		m_dirtyArea.Grow( bounds );
+	}
+
 private:
 	SDL_Window* m_window = nullptr;
 
