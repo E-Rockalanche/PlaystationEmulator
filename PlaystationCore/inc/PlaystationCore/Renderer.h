@@ -80,6 +80,13 @@ public:
 	void DisplayFrame();
 
 private:
+	// Signed int to float mapping by OpenGL is version specific, but it will likely map [-MAX, MAX] to [-1.0, 1.0]. -MIN will also map to -1.0
+	static constexpr int16_t MaxDepth = std::numeric_limits<int16_t>::max();
+	static constexpr int16_t ResetDepth = -MaxDepth + 1; // 1 unit after -1.0
+
+	using DirtyArea = Math::Rectangle<int32_t>;
+
+private:
 	// update read texture with dirty area of draw texture
 	void UpdateReadTexture();
 
@@ -107,8 +114,15 @@ private:
 
 	float GetNormalizedDepth() const noexcept
 	{
-		return static_cast<float>( m_currentDepth ) / std::numeric_limits<int16_t>::max();
+		return static_cast<float>( m_currentDepth ) / static_cast<float>( MaxDepth );
 	}
+
+	bool IsDrawAreaValid() const
+	{
+		return m_drawArea.left <= m_drawArea.right && m_drawArea.top <= m_drawArea.bottom;
+	}
+
+	static constexpr DirtyArea GetWrappedBounds( uint32_t left, uint32_t top, uint32_t width, uint32_t height ) noexcept;
 
 private:
 	SDL_Window* m_window = nullptr;
@@ -195,7 +209,6 @@ private:
 
 	std::vector<Vertex> m_vertices;
 
-	using DirtyArea = Math::Rectangle<int32_t>;
 	DirtyArea m_dirtyArea;
 
 	// depth to use when bit15 is set

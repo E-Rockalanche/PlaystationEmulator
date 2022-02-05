@@ -257,10 +257,6 @@ int main( int argc, char** argv )
 							playstationCore->GetRenderer().EnableVRamView( !playstationCore->GetRenderer().IsVRamViewEnabled() );
 							break;
 
-						case SDLK_F7:
-							playstationCore->GetRenderer().RenderMaskBitAsAlpha ^= 1;
-							break;
-
 						case SDLK_F9:
 							// load state
 							break;
