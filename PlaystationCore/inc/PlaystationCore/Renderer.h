@@ -10,8 +10,6 @@
 #include <Render/Shader.h>
 #include <Render/Texture.h>
 
-#include <Render/Error.h> // temp
-
 #include <Math/Rectangle.h>
 
 #include <stdx/assert.h>
@@ -84,7 +82,7 @@ private:
 	static constexpr int16_t MaxDepth = std::numeric_limits<int16_t>::max();
 	static constexpr int16_t ResetDepth = -MaxDepth + 1; // 1 unit after -1.0
 
-	using DirtyArea = Math::Rectangle<int32_t>;
+	using Rect = Math::Rectangle<int32_t>;
 
 private:
 	// update read texture with dirty area of draw texture
@@ -122,15 +120,16 @@ private:
 		return m_drawArea.left <= m_drawArea.right && m_drawArea.top <= m_drawArea.bottom;
 	}
 
-	static constexpr DirtyArea GetWrappedBounds( uint32_t left, uint32_t top, uint32_t width, uint32_t height ) noexcept;
+	static constexpr Rect GetWrappedBounds( uint32_t left, uint32_t top, uint32_t width, uint32_t height ) noexcept;
 
-	void CheckDrawBounds( const DirtyArea& bounds ) noexcept
+	void GrowDirtyArea( const Rect& bounds ) noexcept;
+
+	bool UsingTexture() const noexcept	{ return !m_texPage.textureDisable; }
+	bool UsingClut() const noexcept		{ return m_texPage.texturePageColors < 2; }
+
+	bool IntersectsTextureData( const Rect& bounds )
 	{
-		// draw batch if we will copy/fill onto texture data or dirty area
-		if ( !m_texPage.textureDisable || m_dirtyArea.Intersects( bounds ) )
-			DrawBatch();
-
-		m_dirtyArea.Grow( bounds );
+		return UsingTexture() && ( m_textureArea.Intersects( bounds ) || ( UsingClut() && m_clutArea.Intersects( bounds ) ) );
 	}
 
 private:
@@ -218,7 +217,9 @@ private:
 
 	std::vector<Vertex> m_vertices;
 
-	DirtyArea m_dirtyArea;
+	Rect m_dirtyArea;
+	Rect m_textureArea;
+	Rect m_clutArea;
 
 	// depth to use when bit15 is set
 	int16_t m_currentDepth = 0;
