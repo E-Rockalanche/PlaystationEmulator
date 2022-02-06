@@ -449,7 +449,7 @@ int main( int argc, char** argv )
 		stopwatch.Start( std::chrono::duration_cast<System::Stopwatch::Duration>( compensation ) );
 
 		if ( coreElapsed > targetMilliseconds )
-			LogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", targetMilliseconds.count(), totalElapsed.count(), coreElapsed.count(), compensation.count() );
+			dbLogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", targetMilliseconds.count(), totalElapsed.count(), coreElapsed.count(), compensation.count() );
 
 		// calculate FPS
 		const float curFps = 1000.0f / totalElapsed.count();
