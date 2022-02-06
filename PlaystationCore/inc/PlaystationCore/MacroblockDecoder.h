@@ -139,26 +139,24 @@ private:
 
 	bool m_enableDataOut = false;
 	bool m_enableDataIn = false;
-
 	bool m_color = false;
 
-	State m_state{};
+	State m_state = State::Idle;
 
 	FifoBuffer<uint16_t, 512> m_dataInBuffer; // unsure of max size
 	FifoBuffer<uint32_t, ( 16 * 16 * 3 ) / 4> m_dataOutBuffer; // at most 16x16 24bit packed pixels
 
 	std::array<uint8_t, 64> m_luminanceTable{}; // used for Y1-Y4
 	std::array<uint8_t, 64> m_colorTable{}; // used for Cr and Cb
-
 	Block m_scaleTable{}; // should be the same as the standard JPEG constants
 
 	size_t m_currentK = 0;
 	int16_t m_currentQ = 0;
 
-	std::array<Block, BlockIndex::Count> m_blocks;
+	std::array<Block, BlockIndex::Count> m_blocks{};
 	uint32_t m_currentBlock = 0;
 
-	std::array<uint32_t, 256> m_dest;
+	std::array<uint32_t, 256> m_dest{};
 };
 
 }
