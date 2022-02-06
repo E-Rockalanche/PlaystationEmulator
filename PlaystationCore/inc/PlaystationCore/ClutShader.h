@@ -6,7 +6,7 @@ namespace PSX
 const char* const ClutVertexShader = R"glsl(
 #version 330 core
 
-in vec2 v_pos;
+in vec4 v_pos;
 in vec2 v_texCoord;
 in vec3 v_color;
 in int v_clut;
@@ -14,7 +14,7 @@ in int v_texPage;
 
 out vec3 BlendColor;
 out vec2 TexCoord;
-out vec2 Position;
+out vec3 Position;
 flat out ivec2 TexPageBase;
 flat out ivec2 ClutBase;
 flat out int TexPage;
@@ -24,8 +24,11 @@ void main()
 	// calculate normalized screen coordinate
 	float x = 2.0 * ( v_pos.x / 1024.0 ) - 1.0;
 	float y = 2.0 * ( v_pos.y / 512.0 ) - 1.0;
-	Position = v_pos;
-	gl_Position = vec4( x, y, 0.0, 1.0 );
+	float z = v_pos.z / 32767.0;
+
+	Position = vec3( v_pos.xy, z );
+
+	gl_Position = vec4( x, y, 0.0, 1.0 ); // depth is set in fragment shader
 
 	// calculate texture page offset
 	TexPageBase = ivec2( ( v_texPage & 0xf ) * 64, ( ( v_texPage >> 4 ) & 0x1 ) * 256 );
@@ -46,7 +49,7 @@ const char* const ClutFragmentShader = R"glsl(
 
 in vec3 BlendColor;
 in vec2 TexCoord;
-in vec2 Position;
+in vec3 Position;
 flat in ivec2 TexPageBase;
 flat in ivec2 ClutBase;
 flat in int TexPage;
@@ -135,7 +138,7 @@ vec4 SampleColor( ivec2 pos )
 {
 	vec4 color = texelFetch( u_vram, pos, 0 );
 	color.rgb = ConvertColorTo15bit( color.rgb );
-	color.a = ceil( color.a );
+	color.a = floor( color.a + 0.5 ); // ensure alpha is 0 or 1
 	return color;
 }
 
@@ -209,10 +212,7 @@ void main()
 		if ( color == vec4( 0.0 ) )
 			discard;
 
-		// blend color, result is 8bit
-		color.rgb = ( color.rgb * blendColor.rgb ) / 16.0;
-
-		if ( color.a == 0 )
+		if ( color.a == 0.0 )
 		{
 			if ( !u_drawOpaquePixels )
 				discard;
@@ -225,17 +225,24 @@ void main()
 		{
 			discard;
 		}
+
+		// blend color, result is 8bit
+		color.rgb = ( color.rgb * blendColor.rgb ) / 16.0;
 	}
 
 	if ( u_realColor )
+	{
 		color.rgb /= 255.0;
+	}
 	else if ( u_dither )
 	{
 		ivec2 pos = ivec2( int( floor( Position.x ) ), int( floor( Position.y ) ) );
 		color.rgb = Dither24bitTo15Bit( pos, color.rgb ) / 31.0;
 	}
 	else
+	{
 		color.rgb = FloorVec3( color.rgb / 8.0 ) / 31.0;
+	}
 
 	if ( u_setMaskBit )
 		color.a = 1.0;
@@ -246,8 +253,11 @@ void main()
 	// use alpha for src blend, rgb for dest blend
 	ParamColor = vec4( destBlend, destBlend, destBlend, srcBlend );
 
-	// set depth buffer output
-	gl_FragDepth = color.a;
+	// set depth from mask bit
+	if ( color.a == 0.0 )
+		gl_FragDepth = 1.0;
+	else
+		gl_FragDepth = Position.z;
 }
 )glsl";
 

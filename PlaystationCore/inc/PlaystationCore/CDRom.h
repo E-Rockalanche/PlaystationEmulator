@@ -56,7 +56,8 @@ public:
 
 	static constexpr uint32_t PregapLength = 2 * SectorsPerSecond;
 	static constexpr uint32_t LeadOutLength = 6750;
-	static constexpr uint8_t LeadOutTrackNumber = 0xaa;
+	static constexpr uint8_t LeadInTrackNumber = 0x00;
+	static constexpr uint8_t LeadOutTrackNumber = 0xa2;
 
 	static constexpr uint32_t BytesPerSector = 0x930; // (2352)
 	static constexpr uint32_t RawDataBytesPerSector = 0x924; // (2340) includes headers
@@ -126,6 +127,37 @@ public:
 		};
 	};
 	static_assert( sizeof( Sector ) == BytesPerSector );
+
+	union SubQControl
+	{
+		SubQControl() = default;
+		SubQControl( const SubQControl& other ) : value{ other.value } {}
+
+		struct
+		{
+			uint8_t adr : 4;
+			uint8_t audioPreemphasis : 1;
+			uint8_t digitialCopyAllowed : 1;
+			uint8_t dataSector : 1;
+			uint8_t fourChannelAudio : 1;
+		};
+		uint8_t value = 0;
+	};
+
+	struct SubQ
+	{
+		SubQControl control;
+		uint8_t trackNumberBCD = 0;
+		uint8_t trackIndexBCD = 0;
+		uint8_t trackMinuteBCD = 0;
+		uint8_t trackSecondBCD = 0;
+		uint8_t trackSectorBCD = 0;
+		uint8_t reserved = 0;
+		uint8_t absoluteMinuteBCD = 0;
+		uint8_t absoluteSecondBCD = 0;
+		uint8_t absoluteSectorBCD = 0;
+	};
+	static_assert( sizeof( SubQ ) == 10 );
 
 	struct Location
 	{
@@ -215,7 +247,13 @@ public:
 	bool SeekTrack1() { return Seek( 1, Location{} ); }
 
 	// read sector from current seek position
-	bool ReadSector( Sector& sector );
+	bool ReadSector( Sector& sector, SubQ& subq );
+
+	// read subq from current position
+	bool ReadSubQ( SubQ& subq );
+
+	// read subq data from given position
+	bool ReadSubQFromPosition( LogicalSector position, SubQ& subq );
 
 	uint32_t GetTrackCount() const noexcept
 	{
@@ -276,6 +314,8 @@ public:
 protected:
 	// best API for single or multi file formats with pregaps
 	virtual bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) = 0;
+
+	static SubQ GetSubQFromIndex( const Index& index, LogicalSector position ) noexcept;
 
 	const Index* FindIndex( LogicalSector position ) const;
 

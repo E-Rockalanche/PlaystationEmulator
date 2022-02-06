@@ -152,13 +152,18 @@ int main( int argc, char** argv )
 		{ SDL_CONTROLLER_BUTTON_Y, PSX::Button::Square },
 	};
 
+	bool paused = true;
 	if ( romFilename.has_value() && playstationCore->LoadRom( *romFilename ) )
+	{
 		windowTitle = *romFilename;
+		paused = false;
+	}
 
 	if ( exeFilename.has_value() )
 	{
 		playstationCore->HookExe( *exeFilename );
 		windowTitle = *exeFilename;
+		paused = false;
 	}
 
 	// set memory cards
@@ -198,7 +203,6 @@ int main( int argc, char** argv )
 	playstationCore->Reset();
 
 	bool quit = false;
-	bool paused = true;
 	bool stepFrame = false;
 	bool fullscreen = false;
 
@@ -445,7 +449,7 @@ int main( int argc, char** argv )
 		stopwatch.Start( std::chrono::duration_cast<System::Stopwatch::Duration>( compensation ) );
 
 		if ( coreElapsed > targetMilliseconds )
-			LogWarning( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", targetMilliseconds.count(), totalElapsed.count(), coreElapsed.count(), compensation.count() );
+			dbLogDebug( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", targetMilliseconds.count(), totalElapsed.count(), coreElapsed.count(), compensation.count() );
 
 		// calculate FPS
 		const float curFps = 1000.0f / totalElapsed.count();

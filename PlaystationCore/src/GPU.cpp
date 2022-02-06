@@ -9,6 +9,12 @@
 #include <stdx/assert.h>
 #include <stdx/bit.h>
 
+#define GPU_DRAW_POLYGONS true
+#define GPU_DRAW_LINES true
+#define GPU_DRAW_RECTANGLES true
+
+#define GpuLog( ... ) dbLogDebug( __VA_ARGS__ )
+
 namespace PSX
 {
 
@@ -42,31 +48,29 @@ inline constexpr std::pair<T, T> MinMax( T lhs, T rhs ) noexcept
 
 inline constexpr std::pair<uint16_t, uint16_t> DecodeFillPosition( uint32_t gpuParam ) noexcept
 {
-	// Horizontally the filling is done in 16-pixel (32-bytes) units
-	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0;
-	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
+	const uint16_t x = static_cast<uint16_t>( gpuParam ) & 0x3f0;					// [0, 0x3f0] in steps of 0x10
+	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;	// [0, 0x1ff]
 	return { x, y };
 }
 
 inline constexpr std::pair<uint16_t, uint16_t> DecodeFillSize( uint32_t gpuParam ) noexcept
 {
-	// Horizontally the filling is done in 16-pixel (32-bytes) units
-	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & VRamWidthMask ) + 0x0f ) & ~0x0f;
-	const uint16_t h = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
+	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) & VRamWidthMask ) + 0x0f ) & ~0x0f;	// [0, 0x400] in steps of 0x10, rounded up
+	const uint16_t h = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;					// [0, 0x1ff]
 	return { w, h };
 }
 
 inline constexpr std::pair<uint16_t, uint16_t> DecodeCopyPosition( uint32_t gpuParam ) noexcept
 {
-	const uint16_t x = static_cast<uint16_t>( gpuParam ) & VRamWidthMask;
-	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;
+	const uint16_t x = static_cast<uint16_t>( gpuParam ) & VRamWidthMask;			// [0, 0x3ff]
+	const uint16_t y = static_cast<uint16_t>( gpuParam >> 16 ) & VRamHeightMask;	// [0, 0x1ff]
 	return { x, y };
 }
 
 inline constexpr std::pair<uint16_t, uint16_t> DecodeCopySize( uint32_t gpuParam ) noexcept
 {
-	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) - 1 ) & VRamWidthMask ) + 1;
-	const uint16_t h = ( ( static_cast<uint16_t>( gpuParam >> 16 ) - 1 ) & VRamHeightMask ) + 1;
+	const uint16_t w = ( ( static_cast<uint16_t>( gpuParam ) - 1 ) & VRamWidthMask ) + 1;			// [1, 0x400]
+	const uint16_t h = ( ( static_cast<uint16_t>( gpuParam >> 16 ) - 1 ) & VRamHeightMask ) + 1;	// [1, 0x200]
 	return { w, h };
 }
 
@@ -160,7 +164,6 @@ void Gpu::SoftReset() noexcept
 	// reset GPUSTAT
 	m_status.value = 0x14802000;
 	m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
-	m_renderer.SetDrawMode( m_status.GetTexPage(), ClutAttribute{ 0 }, false );
 	m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
 	m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
 	m_renderer.SetDisplayEnable( !m_status.displayDisable );
@@ -208,6 +211,7 @@ void Gpu::Reset()
 {
 	m_crtEvent->Reset();
 	m_commandEvent->Reset();
+	m_renderer.Reset();
 
 	m_pendingCommandCycles = 0;
 	m_processingCommandBuffer = false;
@@ -219,7 +223,6 @@ void Gpu::Reset()
 
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
-	m_renderer.FillVRam( 0, 0, VRamWidth, VRamHeight, 0, 0, 0, 0 );
 
 	// reset buffers
 	m_commandBuffer.Reset();
@@ -310,7 +313,7 @@ void Gpu::ProcessCommandBuffer() noexcept
 					m_remainingParamaters -= available;
 					if ( m_remainingParamaters == 0 )
 					{
-						dbLogDebug( "Gpu::GP0_Image -- transfer finished" );
+						GpuLog( "Gpu::GP0_Image -- transfer finished" );
 						FinishVRamWrite();
 						continue;
 					}
@@ -507,7 +510,7 @@ void Gpu::ExecuteCommand() noexcept
 	{
 		case 0xe1: // draw mode setting
 		{
-			dbLogDebug( "Gpu::ExecuteCommand() -- set draw mode [%X]", value );
+			GpuLog( "Gpu::ExecuteCommand() -- set draw mode [%X]", value );
 			/*
 			0 - 3	Texture page X Base( N * 64 ) ( ie.in 64 - halfword steps ); GPUSTAT.0 - 3
 			4		Texture page Y Base( N * 256 ) ( ie. 0 or 256 ); GPUSTAT.4
@@ -534,7 +537,7 @@ void Gpu::ExecuteCommand() noexcept
 
 		case 0xe2: // texture window setting
 		{
-			dbLogDebug( "Gpu::ExecuteCommand() -- set texture window [%X]", value );
+			GpuLog( "Gpu::ExecuteCommand() -- set texture window [%X]", value );
 
 			m_textureWindowMaskX = value & 0x1f;
 			m_textureWindowMaskY = ( value >> 5 ) & 0x1f;
@@ -552,7 +555,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_drawAreaLeft = value & 0x3ff;
 			m_drawAreaTop = ( value >> 10 ) & 0x1ff;
 
-			dbLogDebug( "Gpu::ExecuteCommand() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
+			GpuLog( "Gpu::ExecuteCommand() -- set draw area top-left [%u, %u]", m_drawAreaLeft, m_drawAreaTop );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
@@ -565,7 +568,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_drawAreaRight = value & 0x3ff;
 			m_drawAreaBottom = ( value >> 10 ) & 0x1ff;
 
-			dbLogDebug( "Gpu::ExecuteCommand() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
+			GpuLog( "Gpu::ExecuteCommand() -- set draw area bottom-right [%u, %u]", m_drawAreaRight, m_drawAreaBottom );
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
@@ -583,7 +586,7 @@ void Gpu::ExecuteCommand() noexcept
 
 			m_drawOffsetX = signExtend( value & 0x7ff );
 			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
-			dbLogDebug( "Gpu::ExecuteCommand() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
+			GpuLog( "Gpu::ExecuteCommand() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
 
 			m_commandBuffer.Pop();
 			break;
@@ -593,7 +596,7 @@ void Gpu::ExecuteCommand() noexcept
 		{
 			const bool setMask = value & 0x01;
 			const bool checkMask = value & 0x02;
-			dbLogDebug( "Gpu::ExecuteCommand() -- set mask bits [set:%i check:%i]", setMask, checkMask );
+			GpuLog( "Gpu::ExecuteCommand() -- set mask bits [set:%i check:%i]", setMask, checkMask );
 
 			m_status.setMaskOnDraw = setMask;
 			m_status.checkMaskOnDraw = checkMask;
@@ -604,34 +607,30 @@ void Gpu::ExecuteCommand() noexcept
 		}
 
 		case 0x01: // clear cache
-			dbLogDebug( "Gpu::ExecuteCommand() -- clear GPU cache" );
+			GpuLog( "Gpu::ExecuteCommand() -- clear GPU cache" );
 
 			m_commandBuffer.Pop();
 			break;
 
 		case 0x02: // fill rectangle in VRAM
-			dbLogDebug( "Gpu::ExecuteCommand() -- fill rectangle in VRAM" );
 			InitCommand( 2, &Gpu::Command_FillRectangle );
 			break;
 
 		case 0x80: // copy rectangle (VRAM to VRAM)
-			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (VRAM to VRAM)" );
 			InitCommand( 3, &Gpu::Command_CopyRectangle );
 			break;
 
 		case 0xa0: // copy rectangle (CPU to VRAM)
-			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (CPU to VRAM)" );
 			InitCommand( 2, &Gpu::Command_WriteToVRam );
 			break;
 
 		case 0xc0: // copy rectangle (VRAM to CPU)
-			dbLogDebug( "Gpu::ExecuteCommand() -- copy rectangle (VRAM to CPU)" );
 			InitCommand( 2, &Gpu::Command_ReadFromVRam );
 			break;
 
 		case 0x1f: // interrupt request
 		{
-			dbLogDebug( "Gpu::ExecuteCommand() -- request interrupt" );
+			GpuLog( "Gpu::ExecuteCommand() -- request interrupt" );
 			if ( !m_status.interruptRequest ) // edge triggered
 			{
 				m_status.interruptRequest = true;
@@ -693,7 +692,7 @@ void Gpu::ExecuteCommand() noexcept
 
 				default:
 				{
-					dbLogWarning( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
+					dbBreakMessage( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
 					m_commandBuffer.Pop();
 					break;
 				}
@@ -726,7 +725,7 @@ uint32_t Gpu::GpuRead() noexcept
 
 	if ( m_vramTransferState->IsFinished() )
 	{
-		dbLogDebug( "Gpu::GpuRead_Image -- finished transfer" );
+		GpuLog( "Gpu::GpuRead_Image -- finished transfer" );
 		m_vramTransferState.reset();
 		m_state = State::Idle;
 		UpdateDmaRequest();
@@ -744,21 +743,21 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 	{
 		case 0x00: // soft reset GPU
 		{
-			dbLog( "Gpu::WriteGP1() -- soft reset" );
+			GpuLog( "Gpu::WriteGP1() -- soft reset" );
 			m_crtEvent->UpdateEarly();
 			SoftReset();
 			break;
 		}
 
 		case 0x01: // reset command buffer
-			dbLogDebug( "Gpu::WriteGP1() -- clear command buffer" );
+			GpuLog( "Gpu::WriteGP1() -- clear command buffer" );
 			m_crtEvent->UpdateEarly();
 			ClearCommandBuffer();
 			UpdateDmaRequest();
 			break;
 
 		case 0x02: // ack GPU interrupt
-			dbLogDebug( "Gpu::WriteGP1() -- acknowledge interrupt" );
+			GpuLog( "Gpu::WriteGP1() -- acknowledge interrupt" );
 			m_status.interruptRequest = false;
 			break;
 
@@ -766,7 +765,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			m_crtEvent->UpdateEarly();
 			const bool disableDisplay = value & 0x1;
-			dbLogDebug( "Gpu::WriteGP1() -- enable display: %s", disableDisplay ? "false" : "true" );
+			GpuLog( "Gpu::WriteGP1() -- enable display: %s", disableDisplay ? "false" : "true" );
 			m_status.displayDisable = disableDisplay;
 			m_renderer.SetDisplayEnable( !disableDisplay );
 			break;
@@ -775,7 +774,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		case 0x04: // DMA direction / data request
 		{
 			uint32_t newDirection = value & 0x3;
-			dbLogDebug( "Gpu::WriteGP1() -- set DMA direction: %u", newDirection );
+			GpuLog( "Gpu::WriteGP1() -- set DMA direction: %u", newDirection );
 
 			if ( m_status.dmaDirection != newDirection )
 			{
@@ -791,7 +790,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			const uint16_t displayAreaStartY = ( value >> 10 ) & 0x1ff;
 			if ( m_displayAreaStartX != displayAreaStartX || m_displayAreaStartY != displayAreaStartY )
 			{
-				dbLogDebug( "Gpu::WriteGP1() -- set display area start [%u, %u]", displayAreaStartX, displayAreaStartY );
+				GpuLog( "Gpu::WriteGP1() -- set display area start [%u, %u]", displayAreaStartX, displayAreaStartY );
 				m_displayAreaStartX = displayAreaStartX;
 				m_displayAreaStartY = displayAreaStartY;
 				UpdateCrtDisplay();
@@ -807,7 +806,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			if ( horStart != m_horDisplayRangeStart || horEnd != m_horDisplayRangeEnd )
 			{
 				m_crtEvent->UpdateEarly();
-				dbLogDebug( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", horStart, horEnd );
+				GpuLog( "Gpu::WriteGP1() -- set horizontal display range [%u, %u]", horStart, horEnd );
 				m_horDisplayRangeStart = horStart;
 				m_horDisplayRangeEnd = horEnd;
 				UpdateCrtDisplay();
@@ -824,7 +823,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 			if ( verStart != m_verDisplayRangeStart || verEnd != m_verDisplayRangeEnd )
 			{
 				m_crtEvent->UpdateEarly();
-				dbLogDebug( "Gpu::WriteGP1() -- set vertical display range [%u, %u]", verStart, verEnd );
+				GpuLog( "Gpu::WriteGP1() -- set vertical display range [%u, %u]", verStart, verEnd );
 				m_verDisplayRangeStart = verStart;
 				m_verDisplayRangeEnd = verEnd;
 				UpdateCrtDisplay();
@@ -837,7 +836,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 		{
 			// set resolution, video mode, color depth, interlacing, reverse flag
 
-			dbLogDebug( "Gpu::WriteGP1() -- set display mode [%X]", value );
+			GpuLog( "Gpu::WriteGP1() -- set display mode [%X]", value );
 
 			const Status oldStatus = m_status;
 
@@ -870,7 +869,7 @@ void Gpu::WriteGP1( uint32_t value ) noexcept
 
 		case 0x09: // new texture disable
 		{
-			dbLogDebug( "Gpu::WriteGP1() -- set texture disable [%X]", value );
+			GpuLog( "Gpu::WriteGP1() -- set texture disable [%X]", value );
 			m_status.textureDisable = value & 0x01;
 			break;
 		}
@@ -979,15 +978,10 @@ void Gpu::Command_FillRectangle() noexcept
 	auto[ x, y ] = DecodeFillPosition( m_commandBuffer.Pop() );
 	auto[ width, height ] = DecodeFillSize( m_commandBuffer.Pop() );
 
-	dbLogDebug( "Gpu::Command_FillRectangle() -- pos: %u,%u size: %u,%u", x, y, width, height );
+	GpuLog( "Gpu::Command_FillRectangle() -- pos: %u,%u size: %u,%u color: $%02x%02x%02x", x, y, width, height, color.r, color.g, color.b );
 
 	if ( width > 0 && height > 0 )
-	{
-		const float r = static_cast<float>( color.r ) / 255.0f;
-		const float g = static_cast<float>( color.g ) / 255.0f;
-		const float b = static_cast<float>( color.b ) / 255.0f;
-		m_renderer.FillVRam( x, y, width, height, r, g, b, 0.0f );
-	}
+		m_renderer.FillVRam( x, y, width, height, color.r, color.g, color.b );
 
 	m_pendingCommandCycles += 46 + ( width / 8 + 9 ) * height; // formula from Duckstation
 	EndCommand();
@@ -1002,7 +996,7 @@ void Gpu::Command_CopyRectangle() noexcept
 	auto[ destX, destY ] = DecodeCopyPosition( m_commandBuffer.Pop() );
 	auto[ width, height ] = DecodeCopySize( m_commandBuffer.Pop() );
 
-	dbLogDebug( "Gpu::Command_CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
+	GpuLog( "Gpu::Command_CopyRectangle() -- srcPos: %u,%u destPos: %u,%u size: %u,%u", srcX, srcY, destX, destY, width, height );
 
 	m_renderer.CopyVRam( srcX, srcY, destX, destY, width, height );
 
@@ -1018,7 +1012,7 @@ void Gpu::Command_WriteToVRam() noexcept
 	SetupVRamCopy();
 	auto& state = *m_vramTransferState;
 
-	dbLogDebug( "Gpu::Command_WriteToVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
+	GpuLog( "Gpu::Command_WriteToVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
 
 	m_remainingParamaters = ( state.width * state.height + 1 ) / 2; // convert number of pixels to words (rounded up)
 	m_transferBuffer.reserve( m_remainingParamaters );
@@ -1030,7 +1024,7 @@ void Gpu::Command_ReadFromVRam() noexcept
 	SetupVRamCopy();
 	auto& state = *m_vramTransferState;
 
-	dbLogDebug( "Gpu::Command_ReadFromVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
+	GpuLog( "Gpu::Command_ReadFromVram() -- pos: %u,%u size: %u,%u", state.left, state.top, state.width, state.height );
 
 	m_renderer.ReadVRam( state.left, state.top, state.width, state.height, m_vram.get() );
 	m_state = State::ReadingVRam;
@@ -1110,8 +1104,6 @@ void Gpu::Command_RenderPolygon() noexcept
 			vertices[ i ].texCoord = TexCoord{ m_commandBuffer.Pop() };
 	}
 
-	// TODO: check for large polygons
-
 	for ( size_t i = 0; i < numVertices; ++i )
 	{
 		vertices[ i ].position.x += m_drawOffsetX;
@@ -1138,11 +1130,18 @@ void Gpu::Command_RenderPolygon() noexcept
 			command.textureMapping,
 			command.semiTransparency );
 
+		GpuLog( "Gpu::Command_RenderPolygon -- (%i, %i), (%i, %i), (%i, %i)",
+			vertices[ 0 ].position.x, vertices[ 0 ].position.y,
+			vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+			vertices[ 2 ].position.x, vertices[ 2 ].position.y );
+
+#if GPU_DRAW_POLYGONS
 		m_renderer.PushTriangle( vertices, command.semiTransparency );
+#endif
 	}
 	else
 	{
-		dbLogDebug( "Gpu::Command_RenderPolygon -- culling triangle (%i, %i), (%i, %i), (%i, %i)",
+		GpuLog( "Gpu::Command_RenderPolygon -- culling triangle (%i, %i), (%i, %i), (%i, %i)",
 			vertices[ 0 ].position.x, vertices[ 0 ].position.y,
 			vertices[ 1 ].position.x, vertices[ 1 ].position.y,
 			vertices[ 2 ].position.x, vertices[ 2 ].position.y );
@@ -1165,11 +1164,18 @@ void Gpu::Command_RenderPolygon() noexcept
 				command.textureMapping,
 				command.semiTransparency );
 
+			GpuLog( "Gpu::Command_RenderPolygon -- (%i, %i), (%i, %i), (%i, %i)",
+				vertices[ 0 ].position.x, vertices[ 0 ].position.y,
+				vertices[ 1 ].position.x, vertices[ 1 ].position.y,
+				vertices[ 2 ].position.x, vertices[ 2 ].position.y );
+
+#if GPU_DRAW_POLYGONS
 			m_renderer.PushTriangle( vertices + 1, command.semiTransparency );
+#endif
 		}
 		else
 		{
-			dbLogDebug( "Gpu::Command_RenderPolygon -- culling triangle 2 (%i, %i), (%i, %i), (%i, %i)",
+			GpuLog( "Gpu::Command_RenderPolygon -- culling triangle (%i, %i), (%i, %i), (%i, %i)",
 				vertices[ 1 ].position.x, vertices[ 1 ].position.y,
 				vertices[ 2 ].position.x, vertices[ 2 ].position.y,
 				vertices[ 3 ].position.x, vertices[ 3 ].position.y );
@@ -1241,6 +1247,8 @@ void Gpu::Command_RenderLineInternal( Position p1, Color c1, Position p2, Color 
 	// cull lines that are too long
 	if ( absDx > MaxPrimitiveWidth || absDy > MaxPrimitiveHeight )
 		return;
+
+	GpuLog( "Gpu::Command_RenderLineInternal -- (%i, %i), (%i, %i)", p1.x, p1.y, p2.x, p2.y );
 
 	p1.x += m_drawOffsetX;
 	p1.y += m_drawOffsetY;
@@ -1332,7 +1340,9 @@ void Gpu::Command_RenderLineInternal( Position p1, Color c1, Position p2, Color 
 	for ( auto& v : vertices )
 		v.texPage = texPage;
 
+#if GPU_DRAW_LINES
 	m_renderer.PushQuad( vertices, semiTransparent );
+#endif
 }
 
 void Gpu::Command_RenderRectangle() noexcept
@@ -1374,6 +1384,7 @@ void Gpu::Command_RenderRectangle() noexcept
 	}
 	else
 	{
+		// still need semitransparency mode
 		texPage.textureDisable = true;
 		for ( auto& v : vertices )
 			v.texPage = texPage;
@@ -1386,10 +1397,10 @@ void Gpu::Command_RenderRectangle() noexcept
 		case RectangleSize::Variable:
 		{
 			const uint32_t sizeParam = m_commandBuffer.Pop();
-			width = static_cast<int16_t>( sizeParam & VRamWidthMask );
-			height = static_cast<int16_t>( ( sizeParam >> 16 ) & VRamHeightMask );
+			width = static_cast<int16_t>( sizeParam & 0xffff );
+			height = static_cast<int16_t>( sizeParam >> 16 );
 
-			if ( width == 0 || height == 0 )
+			if ( width == 0 || height == 0 || width > MaxPrimitiveWidth || height > MaxPrimitiveHeight )
 			{
 				// size is the last param. Safe to end command here
 				EndCommand();
@@ -1411,23 +1422,52 @@ void Gpu::Command_RenderRectangle() noexcept
 			break;
 	}
 
+	const int16_t x2 = pos.x + width;
+	const int16_t y2 = pos.y + height;
 	vertices[ 0 ].position = pos;
-	vertices[ 1 ].position = Position{ pos.x,									static_cast<int16_t>( pos.y + height ) };
-	vertices[ 2 ].position = Position{ static_cast<int16_t>( pos.x + width ),	pos.y };
-	vertices[ 3 ].position = Position{ static_cast<int16_t>( pos.x + width ),	static_cast<int16_t>( pos.y + height ) };
+	vertices[ 1 ].position = Position{ x2,		pos.y };
+	vertices[ 2 ].position = Position{ pos.x,	y2 };
+	vertices[ 3 ].position = Position{ x2,		y2 };
 
 	if ( command.textureMapping )
 	{
-		vertices[ 0 ].texCoord = texcoord;
-		vertices[ 1 ].texCoord = TexCoord{ texcoord.u,										static_cast<uint16_t>( texcoord.v + height - 1 ) };
-		vertices[ 2 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	texcoord.v };
-		vertices[ 3 ].texCoord = TexCoord{ static_cast<uint16_t>( texcoord.u + width - 1 ),	static_cast<uint16_t>( texcoord.v + height - 1 ) };
+		int16_t u1, v1, u2, v2;
+		if ( m_texturedRectFlipX )
+		{
+			u1 = texcoord.u + 1;
+			u2 = u1 - width + 1;
+		}
+		else
+		{
+			u1 = texcoord.u;
+			u2 = u1 + width - 1;
+		}
+
+		if ( m_texturedRectFlipY )
+		{
+			v1 = texcoord.v + 1;
+			v2 = v1 - height + 1;
+		}
+		else
+		{
+			v1 = texcoord.v;
+			v2 = v1 + height - 1;
+		}
+
+		vertices[ 0 ].texCoord = TexCoord{ u1, v1 };
+		vertices[ 1 ].texCoord = TexCoord{ u2, v1 };
+		vertices[ 2 ].texCoord = TexCoord{ u1, v2 };
+		vertices[ 3 ].texCoord = TexCoord{ u2, v2 };
 	}
 
 	AddRectangleCommandCycles( width, height, command.textureMapping, command.semiTransparency );
 
+	GpuLog( "Gpu::Command_RenderRectangle -- (%i, %i), (%i x %i) $%02x%02x%02x", pos.x, pos.y, width, height, color.r, color.g, color.b );
+
+#if GPU_DRAW_RECTANGLES
 	m_renderer.SetDrawMode( texPage, clut, false );
 	m_renderer.PushQuad( vertices, command.semiTransparency );
+#endif
 
 	EndCommand();
 }
@@ -1612,7 +1652,7 @@ void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 
 			if ( vblank )
 			{
-				dbLogDebug( "VBlank start" );
+				GpuLog( "VBLANK START\n\n\n" );
 				m_interruptControl.SetInterrupt( Interrupt::VBlank );
 				m_crtState.displayFrame = true;
 
@@ -1620,7 +1660,7 @@ void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 			}
 			else
 			{
-				dbLogDebug( "VBlank end" );
+				GpuLog( "VBLANK END\n\n\n" );
 			}
 		}
 

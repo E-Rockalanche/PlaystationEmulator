@@ -5,6 +5,7 @@
 #include "VRamViewShader.h"
 #include "Output16bitShader.h"
 #include "Output24bitShader.h"
+#include "ResetDepthShader.h"
 
 #include <Render/Types.h>
 
@@ -12,13 +13,22 @@
 #include <stdx/bit.h>
 
 #include <algorithm>
+#include <array>
 
 namespace PSX
 {
 
 namespace
 {
+
 constexpr size_t VertexBufferSize = 1024;
+
+constexpr GLint GetPixelStoreAlignment( uint32_t x, uint32_t w ) noexcept
+{
+	const bool odd = ( x % 2 != 0 ) || ( w % 2 != 0 );
+	return odd ? 2 : 4;
+}
+
 }
 
 bool Renderer::Initialize( SDL_Window* window )
@@ -46,12 +56,13 @@ bool Renderer::Initialize( SDL_Window* window )
 	dbAssert( m_clutShader.Valid() );
 	m_srcBlendLoc = m_clutShader.GetUniformLocation( "u_srcBlend" );
 	m_destBlendLoc = m_clutShader.GetUniformLocation( "u_destBlend" );
-	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
-	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
+	m_setMaskBitLoc = m_clutShader.GetUniformLocation( "u_setMaskBit" );
 	m_drawOpaquePixelsLoc = m_clutShader.GetUniformLocation( "u_drawOpaquePixels" );
 	m_drawTransparentPixelsLoc = m_clutShader.GetUniformLocation( "u_drawTransparentPixels" );
 	m_ditherLoc = m_clutShader.GetUniformLocation( "u_dither" );
 	m_realColorLoc = m_clutShader.GetUniformLocation( "u_realColor" );
+	m_texWindowMask = m_clutShader.GetUniformLocation( "u_texWindowMask" );
+	m_texWindowOffset = m_clutShader.GetUniformLocation( "u_texWindowOffset" );
 
 	// create output 24bpp shader
 	m_output24bppShader = Render::Shader::Compile( Output24bitVertexShader, Output24bitFragmentShader );
@@ -65,6 +76,9 @@ bool Renderer::Initialize( SDL_Window* window )
 
 	m_vramCopyShader.Initialize();
 
+	m_resetDepthShader = Render::Shader::Compile( ResetDepthVertexShader, ResetDepthFragmentShader );
+	dbAssert( m_resetDepthShader.Valid() );
+
 	// create display shader
 	m_displayShader = Render::Shader::Compile( DisplayVertexShader, DisplayFragmentShader );
 	dbAssert( m_displayShader.Valid() );
@@ -73,9 +87,9 @@ bool Renderer::Initialize( SDL_Window* window )
 	constexpr auto Stride = sizeof( Vertex );
 
 	m_clutShader.Bind();
-	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_pos" ), 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
+	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_pos" ), 4, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
-	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::UShort, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
+	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_texCoord" ), 2, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::texCoord ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_texPage" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::texPage ) );
 	
@@ -85,7 +99,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramDrawFramebuffer = Render::Framebuffer::Create();
 	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
 	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
-	m_vramDrawDepthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::UByte );
+	m_vramDrawDepthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth16, VRamWidth, VRamHeight, Render::PixelFormat::Depth, Render::PixelType::Short );
 	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Depth, m_vramDrawDepthBuffer );
 	dbAssert( m_vramDrawFramebuffer.IsComplete() );
 	m_vramDrawFramebuffer.Unbind();
@@ -93,6 +107,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	// VRAM read texture
 	m_vramReadFramebuffer = Render::Framebuffer::Create();
 	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, VRamWidth, VRamHeight, Render::PixelFormat::RGBA, Render::PixelType::UByte );
+	m_vramReadTexture.SetTextureWrap( true );
 	m_vramReadFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
 	dbAssert( m_vramReadFramebuffer.IsComplete() );
 	m_vramReadFramebuffer.Unbind();
@@ -116,14 +131,40 @@ bool Renderer::Initialize( SDL_Window* window )
 	return true;
 }
 
+constexpr Renderer::Rect Renderer::GetWrappedBounds( uint32_t left, uint32_t top, uint32_t width, uint32_t height ) noexcept
+{
+	if ( left + width > VRamWidth )
+	{
+		left = 0;
+		width = VRamWidth;
+	}
+
+	if ( top + height > VRamHeight )
+	{
+		top = 0;
+		height = VRamHeight;
+	}
+
+	return Rect::FromExtents( left, top, width, height );
+}
+
 void Renderer::Reset()
 {
-	// TODO: clear vram
+	glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
+	glClearDepth( 1.0 );
 
-	// GPU will reset uniforms
+	m_vramReadFramebuffer.Bind();
+	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+
+	m_vramDrawFramebuffer.Bind();
+	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
 	m_vertices.clear();
 	ResetDirtyArea();
+
+	m_currentDepth = 0;
+
+	// GPU will reset uniforms
 }
 
 void Renderer::EnableVRamView( bool enable )
@@ -131,10 +172,12 @@ void Renderer::EnableVRamView( bool enable )
 	if ( !m_viewVRam && enable )
 	{
 		SDL_SetWindowSize( m_window, VRamWidth, VRamHeight );
+		SDL_SetWindowResizable( m_window, SDL_FALSE );
 	}
 	else if ( m_viewVRam && !enable )
 	{
 		SDL_SetWindowSize( m_window, 640, 480 );
+		SDL_SetWindowResizable( m_window, SDL_TRUE );
 	}
 
 	m_viewVRam = enable;
@@ -159,16 +202,13 @@ void Renderer::SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offset
 
 void Renderer::SetDrawArea( GLint left, GLint top, GLint right, GLint bottom )
 {
-	if ( m_drawArea.left != left || m_drawArea.top != top || m_drawArea.right != right || m_drawArea.bottom != bottom )
+	const Rect newDrawArea( left, top, right, bottom );
+	if ( m_drawArea != newDrawArea )
 	{
 		DrawBatch();
 
-		m_drawArea = Math::Rectangle{ left, top, right, bottom };
-
+		m_drawArea = newDrawArea;
 		UpdateScissorRect();
-
-		// grow dirty area once instead of for each render primitive
-		m_dirtyArea.Grow( DirtyArea( left, top, right + 1, bottom + 1 ) );
 	}
 }
 
@@ -178,6 +218,9 @@ void Renderer::SetSemiTransparencyMode( SemiTransparencyMode semiTransparencyMod
 	{
 		if ( m_semiTransparencyEnabled )
 			DrawBatch();
+
+		dbLogDebug( "Renderer::SetSemiTransparencyMode -- [%i]", (int)semiTransparencyMode );
+		dbLogDebug( "\tenabled: %s", m_semiTransparencyEnabled ? "true" : "false" );
 
 		m_semiTransparencyMode = semiTransparencyMode;
 
@@ -194,8 +237,7 @@ void Renderer::SetMaskBits( bool setMask, bool checkMask )
 
 		m_forceMaskBit = setMask;
 		m_checkMaskBit = checkMask;
-		UpdateBlendMode();
-		UpdateDepthTest();
+		UpdateMaskBits();
 	}
 }
 
@@ -205,35 +247,55 @@ void Renderer::EnableSemiTransparency( bool enabled )
 	{
 		DrawBatch();
 
+		dbLogDebug( "Renderer::EnableSemiTransparency -- [%s]", enabled ? "true" : "false" );
+		if ( enabled )
+			dbLogDebug( "\tsemiTransparencyMode: %u", (int)m_semiTransparencyMode );
+
 		m_semiTransparencyEnabled = enabled;
 		UpdateBlendMode();
 	}
+}
+
+void Renderer::GrowDirtyArea( const Rect& bounds ) noexcept
+{
+	// check if bounds should cover pending batched polygons
+	if ( m_dirtyArea.Intersects( bounds ) )
+		DrawBatch();
+
+	m_dirtyArea.Grow( bounds );
+
+	// check if bounds will overwrite current texture data
+	if ( IntersectsTextureData( bounds ) )
+		DrawBatch();
 }
 
 void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels )
 {
 	dbExpects( left < VRamWidth );
 	dbExpects( top < VRamHeight );
-	dbExpects( width <= VRamWidth );
-	dbExpects( height <= VRamHeight );
+	dbExpects( width > 0 );
+	dbExpects( height > 0 );
 
 	dbLogDebug( "Renderer::UpdateVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
 
-	DrawBatch();
+	const auto updateBounds = GetWrappedBounds( left, top, width, height );
+	GrowDirtyArea( updateBounds );
 
-	glPixelStorei( GL_UNPACK_ALIGNMENT, ( width % 2 ) ? 2 : 4 );
+	glPixelStorei( GL_UNPACK_ALIGNMENT, GetPixelStoreAlignment( left, width ) );
 
-	const bool wrapX = left + width > VRamWidth;
-	const bool wrapY = top + height > VRamHeight;
+	const bool wrapX = ( left + width ) > VRamWidth;
+	const bool wrapY = ( top + height ) > VRamHeight;
 
 	if ( !wrapX && !wrapY && !m_checkMaskBit && !m_forceMaskBit )
 	{
-		m_dirtyArea.Grow( DirtyArea::FromExtents( left, top, width, height ) );
 		m_vramDrawTexture.SubImage( left, top, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
+		ResetDepthBuffer();
 	}
 	else
 	{
 		dbLogDebug( "\tvram update wrapping" );
+
+		UpdateCurrentDepth();
 
 		m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev, pixels );
 
@@ -252,11 +314,10 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		glDisable( GL_SCISSOR_TEST );
 
 		m_noAttributeVAO.Bind();
-		m_vramCopyShader.Use( 0, 0, width1f, height1f, m_forceMaskBit );
+		m_vramCopyShader.Use( 0, 0, width1f, height1f, GetNormalizedDepth(), m_forceMaskBit );
 		m_vramTransferTexture.Bind();
 
 		// bottom right
-		m_dirtyArea.Grow( DirtyArea::FromExtents( left, top, width1, height1 ) );
 		glViewport( left, top, width1, height1 );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
@@ -264,7 +325,6 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		if ( wrapX )
 		{
 			m_vramCopyShader.SetSourceArea( width1f, 0, width2f, height1f );
-			m_dirtyArea.Grow( 0, top );
 			glViewport( 0, top, width2, height1 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		}
@@ -273,7 +333,6 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 		if ( wrapY )
 		{
 			m_vramCopyShader.SetSourceArea( 0, height1f, width1f, height2f );
-			m_dirtyArea.Grow( left, 0 );
 			glViewport( left, 0, width1, height2 );
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		}
@@ -296,56 +355,76 @@ void Renderer::UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t
 
 void Renderer::ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint16_t* vram )
 {
+	dbExpects( left < VRamWidth );
+	dbExpects( top < VRamHeight );
+	dbExpects( width > 0 );
+	dbExpects( height > 0 );
+
 	dbLogDebug( "Renderer::ReadVRam -- pos: %u, %u, size: %u, %u", left, top, width, height );
 
-	DrawBatch();
+	const auto readBounds = GetWrappedBounds( left, top, width, height );
+	if ( m_dirtyArea.Intersects( readBounds ) )
+		DrawBatch();
 
-	// handle wrapping
-	if ( left + width > VRamWidth )
-	{
-		left = 0;
-		width = VRamWidth;
-	}
+	const GLint readWidth = readBounds.GetWidth();
+	const GLint readHeight = readBounds.GetHeight();
 
-	if ( top + height > VRamHeight )
-	{
-		top = 0;
-		height = VRamHeight;
-	}
-
-	// copy vram area to new texture
-	m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, width, height, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev );
+	// copy vram area to temp texture
+	m_vramTransferTexture.UpdateImage( Render::InternalFormat::RGBA, readWidth, readHeight, Render::PixelFormat::RGBA, Render::PixelType::UShort_1_5_5_5_Rev );
 	dbAssert( m_vramTransferFramebuffer.IsComplete() );
 	m_vramTransferFramebuffer.Bind( Render::FramebufferBinding::Draw );
 	m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Read );
 	glDisable( GL_SCISSOR_TEST );
-	glBlitFramebuffer( left, top, left + width, top + height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST );
-	dbCheckRenderErrors();
+	glBlitFramebuffer( readBounds.left, readBounds.top, readBounds.right, readBounds.bottom, 0, 0, readWidth, readHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST );
 
 	// unpack pixel data into vram read-back array
 	m_vramTransferFramebuffer.Bind( Render::FramebufferBinding::Read );
-	glPixelStorei( GL_PACK_ALIGNMENT, 2 );
+	glPixelStorei( GL_PACK_ALIGNMENT, GetPixelStoreAlignment( left, width ) );
 	glPixelStorei( GL_PACK_ROW_LENGTH, VRamWidth );
-	glReadPixels( 0, 0, width, height, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram + left + top * VRamWidth );
-	dbCheckRenderErrors();
+	glReadPixels( 0, 0, readWidth, readHeight, GL_RGBA, GL_UNSIGNED_SHORT_1_5_5_5_REV, vram + readBounds.left + readBounds.top * VRamWidth );
 
 	// reset render state
 	m_vramDrawFramebuffer.Bind();
 	glEnable( GL_SCISSOR_TEST );
 	glPixelStorei( GL_PACK_ALIGNMENT, 4 );
 	glPixelStorei( GL_PACK_ROW_LENGTH, 0 );
+
 	dbCheckRenderErrors();
 }
 
-void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a )
+void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint8_t r, uint8_t g, uint8_t b )
 {
-	if ( width == 0 || height == 0 )
-		return;
+	dbExpects( left < VRamWidth );
+	dbExpects( top < VRamHeight );
+	dbExpects( width > 0 );
+	dbExpects( height > 0 );
 
-	DrawBatch();
+	// draw batch if we are going to fill over pending polygons
+	GrowDirtyArea( GetWrappedBounds( left, top, width, height ) );
 
-	glClearColor( r, g, b, a );
-	glClearDepth( a );
+	// Fills the area in the frame buffer with the value in RGB. Horizontally the filling is done in 16-pixel (32-bytes) units (see below masking/rounding).
+	// The "Color" parameter is a 24bit RGB value, however, the actual fill data is 16bit: The hardware automatically converts the 24bit RGB value to 15bit RGB (with bit15=0).
+	// Fill is NOT affected by the Mask settings (acts as if Mask.Bit0,1 are both zero).
+
+	float rF, gF, bF;
+	if ( m_realColor )
+	{
+		rF = r / 255.0f;
+		gF = g / 255.0f;
+		bF = b / 255.0f;
+	}
+	else
+	{
+		rF = ( r >> 3 ) / 31.0f;
+		gF = ( g >> 3 ) / 31.0f;
+		bF = ( b >> 3 ) / 31.0f;
+	}
+
+	static constexpr float MaskBitAlpha = 0.0f;
+	static constexpr double MaskBitDepth = 1.0;
+
+	glClearColor( rF, gF, bF, MaskBitAlpha );
+	glClearDepth( MaskBitDepth );
 
 	const bool wrapX = left + width > VRamWidth;
 	const bool wrapY = top + height > VRamHeight;
@@ -355,20 +434,17 @@ void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 	const uint32_t width1 = width - width2;
 	const uint32_t height1 = height - height2;
 
-	m_dirtyArea.Grow( DirtyArea::FromExtents( left, top, width1, height1 ) );
 	glScissor( left, top, width1, height1 );
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
 	if ( wrapX )
 	{
-		m_dirtyArea.Grow( 0, top );
 		glScissor( 0, top, width2, height1 );
 		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 	}
 
 	if ( wrapY )
 	{
-		m_dirtyArea.Grow( left, 0 );
 		glScissor( left, 0, width1, height2 );
 		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 	}
@@ -386,50 +462,38 @@ void Renderer::FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t h
 
 void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height )
 {
+	// TODO: handle wrapped copy
 	dbExpects( srcX + width <= VRamWidth );
 	dbExpects( srcY + height <= VRamHeight );
 	dbExpects( destX + width <= VRamWidth );
 	dbExpects( destY + height <= VRamHeight );
 
-	DrawBatch();
+	const auto srcBounds = Rect::FromExtents( srcX, srcY, width, height );
+	const auto destBounds = Rect::FromExtents( srcX, srcY, width, height );
 
-	if ( m_dirtyArea.Intersects( DirtyArea::FromExtents( srcX, srcY, width, height ) ) )
-		UpdateReadTexture();
-
-	if ( m_checkMaskBit || m_forceMaskBit )
+	if ( m_dirtyArea.Intersects( srcBounds ) )
 	{
-		glDisable( GL_BLEND );
-		glDisable( GL_SCISSOR_TEST );
-		glViewport( destX, destY, width, height );
-
-		m_noAttributeVAO.Bind();
-		m_vramCopyShader.Use(
-			srcX / VRamWidthF, srcY / VRamHeightF, width / VRamWidthF, height / VRamHeightF,
-			m_forceMaskBit );
-
-		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-
-		dbCheckRenderErrors();
-
-		RestoreRenderState();
+		// update read texture if src area is dirty
+		UpdateReadTexture();
+		m_dirtyArea.Grow( destBounds );
 	}
 	else
 	{
-		m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Read );
-		glDisable( GL_SCISSOR_TEST );
-
-		glBlitFramebuffer(
-			srcX, srcY, srcX + width, srcY + height,
-			destX, destY, destX + width, destY + height,
-			GL_COLOR_BUFFER_BIT, GL_NEAREST );
-
-		m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Read );
-		glEnable( GL_SCISSOR_TEST );
-
-		dbCheckRenderErrors();
+		GrowDirtyArea( destBounds );
 	}
 
-	m_dirtyArea.Grow( DirtyArea::FromExtents( destX, destY, width, height ) );
+	// blit src area to dest area
+	UpdateCurrentDepth();
+	m_noAttributeVAO.Bind();
+	m_vramCopyShader.Use( srcX / VRamWidthF, srcY / VRamHeightF, width / VRamWidthF, height / VRamHeightF, GetNormalizedDepth(), m_forceMaskBit );
+	glDisable( GL_BLEND );
+	glDisable( GL_SCISSOR_TEST );
+	glViewport( destX, destY, width, height );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+
+	dbCheckRenderErrors();
+
+	RestoreRenderState();
 }
 
 void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
@@ -437,61 +501,63 @@ void Renderer::SetDrawMode( TexPage texPage, ClutAttribute clut, bool dither )
 	if ( m_realColor )
 		dither = false;
 
-	const bool ditherDiff = m_dither != dither;
-	const bool drawModeDiff = m_texPage.value != texPage.value || m_clut.value != clut.value;
-
-	if ( drawModeDiff || ditherDiff )
+	if ( m_dither != dither )
+	{
 		DrawBatch();
 
-	if ( ditherDiff )
-	{
 		m_dither = dither;
 		glUniform1i( m_ditherLoc, dither );
 	}
 
-	if ( drawModeDiff )
+	static constexpr std::array<int32_t, 4> ColorModeClutWidths{ 16, 256, 0, 0 };
+	static constexpr std::array<int32_t, 4> ColorModeTexturePageWidths{ TexturePageWidth / 4, TexturePageWidth / 2, TexturePageWidth, TexturePageWidth };
+
+	auto updateClut = [&]
 	{
-		m_texPage = texPage;
 		m_clut = clut;
+
+		// must always calculate clut bounds even if texture mapping is currently disabled
+		const int32_t clutBaseX = clut.x * ClutBaseXMult;
+		const int32_t clutBaseY = clut.y * ClutBaseYMult;
+		const int32_t clutWidth = ColorModeClutWidths[ texPage.texturePageColors ];
+		const int32_t clutHeight = 1;
+		m_clutArea = Rect::FromExtents( clutBaseX, clutBaseY, clutWidth, clutHeight );
+	};
+
+	if ( m_texPage.value != texPage.value )
+	{
+		DrawBatch();
+
+		m_texPage = texPage;
 
 		// 5-6   Semi Transparency     (0=B/2+F/2, 1=B+F, 2=B-F, 3=B+F/4)   ;GPUSTAT.5-6
 		SetSemiTransparencyMode( static_cast<SemiTransparencyMode>( texPage.semiTransparencymode ) );
 
-		if ( texPage.textureDisable )
-			return; // textures are disabled
-
-		const auto colorMode = texPage.texturePageColors;
-
-		const int texBaseX = texPage.texturePageBaseX * TexturePageBaseXMult;
-		const int texBaseY = texPage.texturePageBaseY * TexturePageBaseYMult;
-		const int texSize = 64 << colorMode;
-		const DirtyArea texRect( texBaseX, texBaseY, texSize, texSize );
-
-		if ( m_dirtyArea.Intersects( texRect ) )
+		if ( UsingTexture() )
 		{
-			UpdateReadTexture();
-		}
-		else if ( colorMode < 2 )
-		{
-			const int clutBaseX = clut.x * ClutBaseXMult;
-			const int clutBaseY = clut.y * ClutBaseYMult;
-			const DirtyArea clutRect( clutBaseX, clutBaseY, 32 << colorMode, ClutHeight );
+			const int32_t texBaseX = texPage.texturePageBaseX * TexturePageBaseXMult;
+			const int32_t texBaseY = texPage.texturePageBaseY * TexturePageBaseYMult;
+			const int32_t texSize = ColorModeTexturePageWidths[ texPage.texturePageColors ];
+			m_textureArea = Rect::FromExtents( texBaseX, texBaseY, texSize, texSize );
 
-			if ( m_dirtyArea.Intersects( clutRect ) )
-				UpdateReadTexture();
+			if ( UsingClut() )
+				updateClut();
 		}
 	}
+	else if ( m_clut.value != clut.value && UsingTexture() && UsingClut() )
+	{
+		DrawBatch();
+
+		updateClut();
+	}
+
+	// update read texture if texpage or clut area is dirty
+	if ( IntersectsTextureData( m_dirtyArea ) )
+		UpdateReadTexture();
 }
 
 void Renderer::SetDisplayArea( const DisplayArea& vramDisplayArea, const DisplayArea& targetDisplayArea, float aspectRatio )
 {
-	if ( m_displayTexture.GetWidth() != static_cast<GLsizei>( targetDisplayArea.width ) ||
-		m_displayTexture.GetHeight() != static_cast<GLsizei>( targetDisplayArea.height ) )
-	{
-		// update display texture size (usually when switching between NTSC and PAL)
-		m_displayTexture.UpdateImage( Render::InternalFormat::RGB, targetDisplayArea.width, targetDisplayArea.height, Render::PixelFormat::RGB, Render::PixelType::UByte );
-	}
-
 	m_vramDisplayArea = vramDisplayArea;
 	m_targetDisplayArea = targetDisplayArea;
 	m_aspectRatio = aspectRatio;
@@ -538,15 +604,12 @@ void Renderer::UpdateBlendMode()
 				break;
 
 			case SemiTransparencyMode::AddQuarter:
-				srcBlend = 0.25;
+				srcBlend = 0.25f;
 				break;
 		}
 
 		glBlendEquationSeparate( rgbEquation, GL_FUNC_ADD );
 		glBlendFuncSeparate( GL_SRC1_ALPHA, GL_SRC1_COLOR, GL_ONE, GL_ZERO );
-
-		m_uniform.srcBlend = srcBlend;
-		m_uniform.destBlend = destBlend;
 
 		glUniform1f( m_srcBlendLoc, srcBlend );
 		glUniform1f( m_destBlendLoc, destBlend );
@@ -559,25 +622,35 @@ void Renderer::UpdateBlendMode()
 	dbCheckRenderErrors();
 }
 
-void Renderer::UpdateDepthTest()
+void Renderer::UpdateMaskBits()
 {
-	glDepthFunc( m_checkMaskBit ? GL_GEQUAL : GL_ALWAYS );
+	glUniform1i( m_setMaskBitLoc, m_forceMaskBit );
+	glDepthFunc( m_checkMaskBit ? GL_LEQUAL : GL_ALWAYS );
 }
 
-void Renderer::PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent )
+void Renderer::PushTriangle( Vertex vertices[ 3 ], bool semiTransparent )
 {
+	if ( !IsDrawAreaValid() )
+		return;
+
+	// check if vertices will fit buffer
 	if ( m_vertices.size() + 3 > VertexBufferSize )
 		DrawBatch();
 
-	if ( m_drawArea.left >= m_drawArea.right || m_drawArea.top >= m_drawArea.bottom )
-		return;
-
 	EnableSemiTransparency( semiTransparent );
+
+	// set triangle depth
+	UpdateCurrentDepth();
+	std::for_each_n( vertices, 3, [this]( auto& v )
+		{ 
+			m_dirtyArea.Grow( v.position.x, v.position.y );
+			v.position.z = m_currentDepth;
+		} );
 
 	m_vertices.insert( m_vertices.end(), vertices, vertices + 3 );
 }
 
-void Renderer::PushQuad( const Vertex vertices[ 4 ], bool semiTransparent )
+void Renderer::PushQuad( Vertex vertices[ 4 ], bool semiTransparent )
 {
 	PushTriangle( vertices, semiTransparent );
 	PushTriangle( vertices + 1, semiTransparent );
@@ -617,10 +690,44 @@ void Renderer::DrawBatch()
 	m_vertices.clear();
 }
 
+void Renderer::ResetDepthBuffer()
+{
+	DrawBatch();
+
+	m_currentDepth = 0;
+
+	glDisable( GL_SCISSOR_TEST );
+	glDisable( GL_BLEND );
+	glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+	glDepthFunc( GL_ALWAYS );
+
+	m_vramDrawTexture.Bind();
+	m_resetDepthShader.Bind();
+	m_noAttributeVAO.Bind();
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	dbCheckRenderErrors();
+
+	glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	RestoreRenderState();
+}
+
+void Renderer::UpdateCurrentDepth()
+{
+	if ( m_checkMaskBit )
+	{
+		if ( m_currentDepth == MaxDepth )
+			ResetDepthBuffer();
+
+		++m_currentDepth;
+	}
+}
+
 void Renderer::UpdateReadTexture()
 {
-	if ( m_dirtyArea.GetWidth() == 0 || m_dirtyArea.GetHeight() == 0 )
+	if ( m_dirtyArea.Empty() )
 		return;
+
+	DrawBatch();
 
 	m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Draw );
 	glDisable( GL_SCISSOR_TEST );
@@ -651,18 +758,18 @@ void Renderer::RestoreRenderState()
 
 	UpdateScissorRect();
 	UpdateBlendMode();
-	UpdateDepthTest();
+	UpdateMaskBits();
 
 	// restore uniforms
 	// TODO: use uniform buffer?
-	glUniform1f( m_srcBlendLoc, m_uniform.srcBlend );
-	glUniform1f( m_destBlendLoc, m_uniform.destBlend );
-	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
-	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
+	// src and dest blend set by UpdateBlendMode()
+	// setMask set in UpdateMaskBits()
 	glUniform1i( m_drawOpaquePixelsLoc, true );
 	glUniform1i( m_drawTransparentPixelsLoc, true );
 	glUniform1i( m_ditherLoc, m_dither );
 	glUniform1i( m_realColorLoc, m_realColor );
+	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
+	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
 
 	glViewport( 0, 0, VRamWidth, VRamHeight );
 
@@ -684,37 +791,51 @@ void Renderer::DisplayFrame()
 	int winHeight = 0;
 	SDL_GetWindowSize( m_window, &winWidth, &winHeight );
 	glViewport( 0, 0, winWidth, winHeight );
-	glClearColor( 0, 0, 0, 1 );
+	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
 	glClear( GL_COLOR_BUFFER_BIT );
+
+	m_noAttributeVAO.Bind();
 
 	if ( m_viewVRam )
 	{
-		m_noAttributeVAO.Bind();
+		// render entire vram to window
 		m_vramViewShader.Bind();
 		m_vramDrawTexture.Bind();
 		glViewport( 0, 0, VRamWidth, VRamHeight );
+
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
-	else if ( m_displayEnable )
+	else
 	{
-		// render to display texture
-		m_noAttributeVAO.Bind();
-
-		if ( m_colorDepth == DisplayAreaColorDepth::B24 )
+		// update target display texture size
+		if ( m_targetDisplayArea.width != (uint32_t)m_displayTexture.GetWidth() || m_targetDisplayArea.height != (uint32_t)m_displayTexture.GetHeight() )
 		{
-			m_output24bppShader.Bind();
-			glUniform4i( m_srcRect24Loc, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
-		}
-		else
-		{
-			m_output16bppShader.Bind();
-			glUniform4i( m_srcRect16Loc, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
+			m_displayTexture.UpdateImage( Render::InternalFormat::RGB, m_targetDisplayArea.width, m_targetDisplayArea.height, Render::PixelFormat::RGB, Render::PixelType::UByte );
 		}
 
-		m_vramDrawTexture.Bind();
+		// clear display texture
 		m_displayFramebuffer.Bind();
-		glViewport( m_targetDisplayArea.x, m_targetDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
-		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+		glViewport( 0, 0, m_targetDisplayArea.width, m_targetDisplayArea.height );
+		glClear( GL_COLOR_BUFFER_BIT );
+
+		// render to display texture
+		if ( m_displayEnable )
+		{
+			if ( m_colorDepth == DisplayAreaColorDepth::B24 )
+			{
+				m_output24bppShader.Bind();
+				glUniform4i( m_srcRect24Loc, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
+			}
+			else
+			{
+				m_output16bppShader.Bind();
+				glUniform4i( m_srcRect16Loc, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
+			}
+
+			m_vramDrawTexture.Bind();
+			glViewport( m_targetDisplayArea.x, m_targetDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
+			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+		}
 		m_displayFramebuffer.Unbind();
 
 		// render to window
@@ -734,6 +855,7 @@ void Renderer::DisplayFrame()
 		const int renderY = ( winHeight - renderHeight ) / 2;
 
 		glViewport( renderX, renderY, renderWidth, renderHeight );
+
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
 

@@ -215,5 +215,8 @@
     <ClInclude Include="inc\PlaystationCore\DisplayShader.h">
       <Filter>inc\shaders</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\ResetDepthShader.h">
+      <Filter>inc\shaders</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -269,6 +269,7 @@
     <ClInclude Include="inc\PlaystationCore\FifoBuffer.h" />
     <ClInclude Include="inc\PlaystationCore\File.h" />
     <ClInclude Include="inc\PlaystationCore\DisplayShader.h" />
+    <ClInclude Include="inc\PlaystationCore\ResetDepthShader.h" />
     <ClInclude Include="inc\PlaystationCore\VRamViewShader.h" />
     <ClInclude Include="inc\PlaystationCore\GPU.h" />
     <ClInclude Include="inc\PlaystationCore\GpuDefs.h" />

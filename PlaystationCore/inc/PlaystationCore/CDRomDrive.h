@@ -262,7 +262,10 @@ private:
 	bool IsReading() const noexcept { return m_driveState == DriveState::Reading; }
 	bool IsPlaying() const noexcept { return m_driveState == DriveState::Playing; }
 
-	void SendDataEndResponse();
+	// returns true if seek was successful
+	bool CompleteSeek() noexcept;
+
+	void SendDataEndResponse() noexcept;
 
 	void ProcessDataSector( const CDRom::Sector& sector );
 	void ProcessCDDASector( const CDRom::Sector& sector );
@@ -322,18 +325,7 @@ private:
 	};
 	XaFilter m_xaFilter;
 
-	struct SubQ
-	{
-		uint8_t trackNumberBCD = 0;
-		uint8_t trackIndexBCD = 0;
-		uint8_t trackMinuteBCD = 0;
-		uint8_t trackSecondBCD = 0;
-		uint8_t trackSectorBCD = 0;
-		uint8_t absoluteMinuteBCD = 0;
-		uint8_t absoluteSecondBCD = 0;
-		uint8_t absoluteSectorBCD = 0;
-	};
-	SubQ m_lastSubQ;
+	CDRom::SubQ m_lastSubQ;
 
 	uint8_t m_playingTrackNumberBCD = 0;
 

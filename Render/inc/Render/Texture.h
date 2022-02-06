@@ -36,6 +36,9 @@ enum class InternalFormat : GLenum
 	RGBA = GL_RGBA,
 
 	// sized internal formats
+	Depth16 = GL_DEPTH_COMPONENT16,
+	Depth24 = GL_DEPTH_COMPONENT24,
+	Depth32 = GL_DEPTH_COMPONENT32,
 	R8 = GL_R8,
 	SR8 = GL_R8_SNORM,
 	R16 = GL_R16,

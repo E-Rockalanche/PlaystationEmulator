@@ -10,8 +10,6 @@
 #include <Render/Shader.h>
 #include <Render/Texture.h>
 
-#include <Render/Error.h> // temp
-
 #include <Math/Rectangle.h>
 
 #include <stdx/assert.h>
@@ -70,14 +68,19 @@ public:
 	// read entire vram from frame buffer
 	void ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t hieght, uint16_t* vram );
 
-	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, float r, float g, float b, float a );
+	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint8_t r, uint8_t g, uint8_t b );
 
 	void CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height );
 
-	void PushTriangle( const Vertex vertices[ 3 ], bool semiTransparent );
-	void PushQuad( const Vertex vertices[ 4 ], bool semiTransparent );
+	void PushTriangle( Vertex vertices[ 3 ], bool semiTransparent );
+	void PushQuad( Vertex vertices[ 4 ], bool semiTransparent );
 
 	void DisplayFrame();
+
+private:
+	static constexpr int16_t MaxDepth = std::numeric_limits<int16_t>::max();
+
+	using Rect = Math::Rectangle<int32_t>;
 
 private:
 	// update read texture with dirty area of draw texture
@@ -95,11 +98,37 @@ private:
 
 	void UpdateScissorRect();
 	void UpdateBlendMode();
-	void UpdateDepthTest();
+	void UpdateMaskBits();
 
 	void EnableSemiTransparency( bool enabled );
 
 	void DrawBatch();
+
+	void ResetDepthBuffer();
+
+	void UpdateCurrentDepth();
+
+	float GetNormalizedDepth() const noexcept
+	{
+		return static_cast<float>( m_currentDepth ) / static_cast<float>( MaxDepth );
+	}
+
+	bool IsDrawAreaValid() const
+	{
+		return m_drawArea.left <= m_drawArea.right && m_drawArea.top <= m_drawArea.bottom;
+	}
+
+	static constexpr Rect GetWrappedBounds( uint32_t left, uint32_t top, uint32_t width, uint32_t height ) noexcept;
+
+	void GrowDirtyArea( const Rect& bounds ) noexcept;
+
+	bool UsingTexture() const noexcept	{ return !m_texPage.textureDisable; }
+	bool UsingClut() const noexcept		{ return m_texPage.texturePageColors < 2; }
+
+	bool IntersectsTextureData( const Rect& bounds )
+	{
+		return UsingTexture() && ( m_textureArea.Intersects( bounds ) || ( UsingClut() && m_clutArea.Intersects( bounds ) ) );
+	}
 
 private:
 	SDL_Window* m_window = nullptr;
@@ -125,12 +154,13 @@ private:
 	Render::Shader m_clutShader;
 	GLint m_srcBlendLoc = -1;
 	GLint m_destBlendLoc = -1;
-	GLint m_texWindowMask = -1;
-	GLint m_texWindowOffset = -1;
+	GLint m_setMaskBitLoc = -1;
 	GLint m_drawOpaquePixelsLoc = -1;
 	GLint m_drawTransparentPixelsLoc = -1;
 	GLint m_ditherLoc = -1;
 	GLint m_realColorLoc = -1;
+	GLint m_texWindowMask = -1;
+	GLint m_texWindowOffset = -1;
 
 	Render::Shader m_vramViewShader;
 
@@ -141,6 +171,8 @@ private:
 	GLint m_srcRect16Loc = -1;
 
 	VRamCopyShader m_vramCopyShader;
+
+	Render::Shader m_resetDepthShader;
 
 	Render::Shader m_displayShader;
 
@@ -178,16 +210,17 @@ private:
 		uint32_t texWindowMaskY = 0;
 		uint32_t texWindowOffsetX = 0;
 		uint32_t texWindowOffsetY = 0;
-
-		float srcBlend = 1.0f;
-		float destBlend = 0.0f;
 	};
 	Uniform m_uniform;
 
 	std::vector<Vertex> m_vertices;
 
-	using DirtyArea = Math::Rectangle<int32_t>;
-	DirtyArea m_dirtyArea;
+	Rect m_dirtyArea;
+	Rect m_textureArea;
+	Rect m_clutArea;
+
+	// depth to use when bit15 is set
+	int16_t m_currentDepth = 0;
 };
 
 }

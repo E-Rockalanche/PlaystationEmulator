@@ -170,7 +170,7 @@ void CDRomDrive::Reset()
 
 	m_xaFilter = XaFilter{};
 
-	m_lastSubQ = SubQ{};
+	m_lastSubQ = CDRom::SubQ{};
 
 	m_playingTrackNumberBCD = 0;
 
@@ -216,7 +216,7 @@ uint8_t CDRomDrive::Read( uint32_t registerIndex ) noexcept
 	{
 		case 0:
 		{
-			dbLogDebug( "CDRomDrive::Read() -- status [%X]", m_status.value );
+			// status is read too much to log
 			return m_status.value;
 		}
 
@@ -608,7 +608,11 @@ void CDRomDrive::BeginSeeking() noexcept
 		seekCycles = m_driveEvent->GetRemainingCycles();
 
 	if ( !m_driveStatus.motorOn )
+	{
 		seekCycles += ( m_driveState == DriveState::StartingMotor ) ? m_driveEvent->GetRemainingCycles() : CpuCyclesPerSecond;
+		m_driveStatus.motorOn = true;
+		m_driveState = DriveState::Idle; // suppress override state warning
+	}
 
 	if ( !m_pendingSeek )
 		dbLogWarning( "CDRomDrive::BeginSeeking -- no seek location set" );
@@ -623,10 +627,12 @@ void CDRomDrive::BeginSeeking() noexcept
 
 	ScheduleDriveEvent( DriveState::Seeking, seekCycles );
 
+	dbLogDebug( "CDRomDrive::BeginSeeking -- seeking to %u:%u:%u", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
+
 	dbAssert( m_cdrom );
 	if ( !m_cdrom->Seek( m_seekLocation.ToLogicalSector() ) )
 	{
-		dbLogWarning( "CDRomDrive::BeginSeeking -- failed seek [%u:%u:%u]", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
+		dbLogWarning( "CDRomDrive::BeginSeeking -- failed seek to %u:%u:%u", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
 	}
 }
 
@@ -703,6 +709,33 @@ void CDRomDrive::BeginPlaying( uint8_t trackBCD ) noexcept
 	m_currentSectorHeaders.reset();
 
 	ScheduleDriveEvent( DriveState::Playing, GetReadCycles() );
+}
+
+bool CDRomDrive::CompleteSeek() noexcept
+{
+	bool ok = m_cdrom->ReadSubQ( m_lastSubQ );
+
+	if ( ok )
+	{
+		if ( !m_lastSubQ.control.dataSector )
+		{
+			// From Duckstation:
+			// If CDDA mode isn't enabled and we're reading an audio sector, we need to fail the seek.
+			// Test cases:
+			//  - Wizard's Harmony does a logical seek to an audio sector, and expects it to succeed.
+			//  - Vib-ribbon starts a read at an audio sector, and expects it to fail.
+			if ( m_pendingRead )
+				ok = m_mode.cdda;
+		}
+
+		if ( m_lastSubQ.trackNumberBCD == CDRom::LeadOutTrackNumber )
+		{
+			dbLogWarning( "CDRomDrive::CompleteSeek -- seeked to lead out track" );
+			ok = false;
+		}
+	}
+
+	return ok;
 }
 
 cycles_t CDRomDrive::GetFirstResponseCycles( Command command ) const noexcept
@@ -891,14 +924,27 @@ void CDRomDrive::ExecuteCommand() noexcept
 			// send first response before clearing status bits
 			SendStatusAndInterrupt();
 
+			// numbers taken from Duckstation
+			const cycles_t pauseCycles = ( IsReading() || IsPlaying() ) ? ( m_mode.doubleSpeed ? 2000000 : 1000000 ) : 7000;
+
+			if ( IsSeeking() )
+			{
+				// Duckstation says this is supposed to produce an error, but it completes the seek instead
+				m_pendingRead = false;
+				m_pendingPlay = false;
+				CompleteSeek();
+			}
+
 			m_driveState = DriveState::Idle;
 			m_driveEvent->Cancel();
 
 			m_driveStatus.read = false;
 			m_driveStatus.play = false;
 			m_driveStatus.seek = false;
+
+			// TODO: reset audio decoder
 			
-			QueueSecondResponse( Command::Pause );
+			QueueSecondResponse( Command::Pause, pauseCycles );
 			break;
 		}
 
@@ -909,7 +955,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			const uint8_t mm = m_parameterBuffer.Pop();
 			const uint8_t ss = m_parameterBuffer.Pop();
 			const uint8_t sect = m_parameterBuffer.Pop();
-			dbLogDebug( "CDRomDrive::SetLoc -- amm: %X, ass: %X, asect: %X", mm, ss, sect );
+			dbLogDebug( "CDRomDrive::SetLoc -- %X:%X:%X", mm, ss, sect );
 
 			if ( IsValidBCDAndLess( mm, CDRom::MinutesPerDiskBCD ) &&
 				IsValidBCDAndLess( ss, CDRom::SecondsPerMinuteBCD ) &&
@@ -1373,8 +1419,7 @@ void CDRomDrive::ExecuteCommandSecondResponse() noexcept
 		ShiftQueuedInterrupt();
 }
 
-
-void CDRomDrive::SendDataEndResponse()
+void CDRomDrive::SendDataEndResponse() noexcept
 {
 	SendAsyncStatusAndInterrupt( InterruptResponse::DataEnd );
 	m_driveStatus.play = false;
@@ -1404,26 +1449,37 @@ void CDRomDrive::ExecuteDriveState() noexcept
 
 		case DriveState::Seeking:
 		{
-			dbLogDebug( "CDRomDrive::ExecuteDriveState -- seek complete" );
-
-			// TODO: process sector header
-
-			m_driveStatus.seek = false;
-			m_driveStatus.motorOn = true;
-
-			if ( m_pendingRead )
+			if ( CompleteSeek() )
 			{
-				BeginReading();
-			}
-			else if ( m_pendingPlay )
-			{
-				BeginPlaying( m_playingTrackNumberBCD );
+				dbLogDebug( "CDRomDrive::ExecuteDriveState -- seek complete" );
+
+				if ( m_pendingRead )
+				{
+					BeginReading();
+				}
+				else if ( m_pendingPlay )
+				{
+					BeginPlaying( m_playingTrackNumberBCD );
+				}
+				else
+				{
+					m_driveStatus.seek = false;
+
+					// response only sent if there is no pending play or read
+					SendAsyncStatusAndInterrupt();
+				}
 			}
 			else
 			{
-				// response only sent if there is no pending play or read
-				SendAsyncStatusAndInterrupt(); // TODO: not sure if the response should be sent here or in the second response event
+				dbLogWarning( "CDRomDrive::ExecuteDriveState -- seek failed [%u:%u:%u]", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
+
+				m_driveStatus.seek = false;
+				m_pendingRead = false;
+				m_pendingPlay = false;
+
+				SendAsyncError( ErrorCode::SeekFailed, 0x04 );
 			}
+
 			break;
 		}
 
@@ -1433,55 +1489,39 @@ void CDRomDrive::ExecuteDriveState() noexcept
 		{
 			dbLogDebug( "CDRomDrive::ExecuteDriveState -- read complete" );
 
-			auto* trackIndex = m_cdrom->GetCurrentIndex();
-			dbAssert( trackIndex );
+			CDRom::Sector sector;
+			if ( !m_cdrom->ReadSector( sector, m_lastSubQ ) )
+			{
+				dbBreakMessage( "CDRomDrive::ExecuteDriveState -- Failed to read sector" );
+				break;
+			}
 
-			// sub Q
-			const bool isLeadOut = trackIndex->trackNumber == CDRom::LeadOutTrackNumber;
-			const auto trackLocation = m_cdrom->GetCurrentTrackLocation();
-			const auto seekLocation = m_cdrom->GetCurrentSeekLocation();
-			m_lastSubQ.trackNumberBCD = isLeadOut ? CDRom::LeadOutTrackNumber : BinaryToBCD( static_cast<uint8_t>( trackIndex->trackNumber ) );
-			m_lastSubQ.trackIndexBCD = BinaryToBCD( static_cast<uint8_t>( trackIndex->indexNumber ) );
-			m_lastSubQ.trackMinuteBCD = BinaryToBCD( trackLocation.minute );
-			m_lastSubQ.trackSecondBCD = BinaryToBCD( trackLocation.second );
-			m_lastSubQ.trackSectorBCD = BinaryToBCD( trackLocation.sector );
-			m_lastSubQ.absoluteMinuteBCD = BinaryToBCD( seekLocation.minute );
-			m_lastSubQ.absoluteSecondBCD = BinaryToBCD( seekLocation.second );
-			m_lastSubQ.absoluteSectorBCD = BinaryToBCD( seekLocation.sector );
-
-			if ( trackIndex->trackNumber == CDRom::LeadOutTrackNumber )
+			if ( m_lastSubQ.trackNumberBCD == CDRom::LeadOutTrackNumber )
 			{
 				SendDataEndResponse();
 				StopMotor();
 				break;
 			}
 
-			const bool isAudioSector = ( trackIndex->trackType == CDRom::Track::Type::Audio );
-			if ( isAudioSector )
+			const bool isDataSector = m_lastSubQ.control.dataSector;
+			if ( !isDataSector )
 			{
 				if ( m_playingTrackNumberBCD == 0 )
 				{
 					m_playingTrackNumberBCD = m_lastSubQ.trackNumberBCD;
 				}
-				else if ( m_mode.autoPause && trackIndex->trackNumber != m_playingTrackNumberBCD )
+				else if ( m_mode.autoPause && m_lastSubQ.trackNumberBCD != m_playingTrackNumberBCD )
 				{
 					SendDataEndResponse();
 					break;
 				}
 			}
 
-			CDRom::Sector sector;
-			if ( !m_cdrom->ReadSector( sector ) )
-			{
-				dbBreakMessage( "CDRomDrive::ExecuteDriveState -- Failed to read sector" );
-				break;
-			}
-
-			if ( !isAudioSector && ( state == DriveState::Reading ) )
+			if ( isDataSector && ( state == DriveState::Reading ) )
 			{
 				ProcessDataSector( sector );
 			}
-			else if ( isAudioSector && ( state == DriveState::Playing || ( state == DriveState::Reading && m_mode.cdda ) ) )
+			else if ( !isDataSector && ( state == DriveState::Playing || ( state == DriveState::Reading && m_mode.cdda ) ) )
 			{
 				ProcessCDDASector( sector );
 			}
@@ -1598,7 +1638,6 @@ void CDRomDrive::ProcessCDDASector( const CDRom::Sector& sector )
 
 	if ( m_driveState == DriveState::Playing && m_mode.report )
 	{
-		// TODO
 		m_secondResponseBuffer.Push( m_driveStatus.value );
 		m_secondResponseBuffer.Push( m_lastSubQ.trackNumberBCD ); // track
 		m_secondResponseBuffer.Push( m_lastSubQ.trackIndexBCD ); // index

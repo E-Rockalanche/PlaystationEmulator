@@ -110,6 +110,8 @@ struct Position
 
 	int16_t x = 0;
 	int16_t y = 0;
+	int16_t z = 0;
+	int16_t w = 1;
 };
 
 constexpr Position operator+( const Position& lhs, const Position& rhs ) noexcept
@@ -139,17 +141,17 @@ struct TexCoord
 {
 	constexpr TexCoord() = default;
 
-	constexpr TexCoord( uint16_t u_, uint16_t v_ ) : u{ u_ }, v{ v_ } {}
+	constexpr TexCoord( int16_t u_, int16_t v_ ) : u{ u_ }, v{ v_ } {}
 
 	// tex coords are only 8bit in gpu param
 	explicit constexpr TexCoord( uint32_t gpuParam )
-		: u{ static_cast<uint16_t>( gpuParam & 0xff ) }
-		, v{ static_cast<uint16_t>( ( gpuParam >> 8 ) & 0xff ) }
+		: u{ static_cast<int16_t>( gpuParam & 0xff ) }
+		, v{ static_cast<int16_t>( ( gpuParam >> 8 ) & 0xff ) }
 	{}
 
 	// tex coords need to be larger than 8bit for rectangles
-	uint16_t u = 0;
-	uint16_t v = 0;
+	int16_t u = 0;
+	int16_t v = 0;
 };
 
 union ClutAttribute
@@ -169,7 +171,7 @@ static_assert( sizeof( ClutAttribute ) == 2 );
 
 union TexPage
 {
-	static constexpr uint16_t WriteMask = 0x01ff; // ignore texture disable
+	static constexpr uint16_t WriteMask = 0x09ff;
 
 	TexPage() = default;
 	explicit TexPage( uint16_t v ) : value{ static_cast<uint16_t>( v & WriteMask ) } {}
