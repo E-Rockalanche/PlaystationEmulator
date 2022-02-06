@@ -78,9 +78,7 @@ public:
 	void DisplayFrame();
 
 private:
-	// Signed int to float mapping by OpenGL is version specific, but it will likely map [-MAX, MAX] to [-1.0, 1.0]. -MIN will also map to -1.0
 	static constexpr int16_t MaxDepth = std::numeric_limits<int16_t>::max();
-	static constexpr int16_t ResetDepth = -MaxDepth + 1; // 1 unit after -1.0
 
 	using Rect = Math::Rectangle<int32_t>;
 

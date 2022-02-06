@@ -34,10 +34,7 @@ void main()
 	vec4 color = texture( u_vram, TexCoord );
 
 	// set depth from mask bit
-	if ( color.a == 0.0 )
-		gl_FragDepth = 1.0;
-	else
-		gl_FragDepth = -1.0;
+	gl_FragDepth = 1.0 - color.a;
 }
 
 )glsl";

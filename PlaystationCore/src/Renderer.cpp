@@ -162,7 +162,7 @@ void Renderer::Reset()
 	m_vertices.clear();
 	ResetDirtyArea();
 
-	m_currentDepth = ResetDepth;
+	m_currentDepth = 0;
 
 	// GPU will reset uniforms
 }
@@ -694,7 +694,7 @@ void Renderer::ResetDepthBuffer()
 {
 	DrawBatch();
 
-	m_currentDepth = ResetDepth;
+	m_currentDepth = 0;
 
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
