@@ -89,14 +89,23 @@ void Playstation::Reset()
 
 	m_cdromDrive->Reset();
 	m_controllerPorts->Reset();
-	m_cpu->Reset();
 	m_dma->Reset();
 	m_interruptControl->Reset();
+	m_mdec->Reset();
 	m_memoryControl->Reset();
+	m_memoryMap->Reset();
+	m_cpu->Reset();
+	m_ram->Fill( 0 );
 	m_renderer->Reset();
+	m_scratchpad->Fill( 0 );
 	m_spu->Reset();
 	m_timers->Reset();
-	m_gpu->Reset(); // must go after timers reset so it can schedule event
+
+	// must go after timers reset so it can schedule event
+	m_gpu->Reset();
+
+	if ( m_dualSerialPort )
+		m_dualSerialPort->Reset();
 
 	m_audioQueue->Clear();
 	m_audioQueue->SetPaused( false );
