@@ -978,7 +978,7 @@ void Gpu::Command_FillRectangle() noexcept
 	auto[ x, y ] = DecodeFillPosition( m_commandBuffer.Pop() );
 	auto[ width, height ] = DecodeFillSize( m_commandBuffer.Pop() );
 
-	GpuLog( "Gpu::Command_FillRectangle() -- pos: %u,%u size: %u,%u", x, y, width, height );
+	GpuLog( "Gpu::Command_FillRectangle() -- pos: %u,%u size: %u,%u color: $%02x%02x%02x", x, y, width, height, color.r, color.g, color.b );
 
 	if ( width > 0 && height > 0 )
 		m_renderer.FillVRam( x, y, width, height, color.r, color.g, color.b );
@@ -1462,7 +1462,7 @@ void Gpu::Command_RenderRectangle() noexcept
 
 	AddRectangleCommandCycles( width, height, command.textureMapping, command.semiTransparency );
 
-	GpuLog( "Gpu::Command_RenderRectangle -- (%i, %i), (%i x %i)", pos.x, pos.y, width, height );
+	GpuLog( "Gpu::Command_RenderRectangle -- (%i, %i), (%i x %i) $%02x%02x%02x", pos.x, pos.y, width, height, color.r, color.g, color.b );
 
 #if GPU_DRAW_RECTANGLES
 	m_renderer.SetDrawMode( texPage, clut, false );
