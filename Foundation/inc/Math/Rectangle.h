@@ -22,8 +22,10 @@ struct Rectangle
 		return Rectangle( l, t, l + w, t + h );
 	}
 
-	constexpr T GetWidth() const noexcept { return left <= right ? right - left : 0; }
-	constexpr T GetHeight() const noexcept { return top <= bottom ? bottom - top : 0; }
+	constexpr bool Empty() const noexcept { return left >= right || top >= bottom; }
+
+	constexpr T GetWidth() const noexcept { return left < right ? right - left : 0; }
+	constexpr T GetHeight() const noexcept { return top < bottom ? bottom - top : 0; }
 
 	constexpr void Grow( T x, T y ) noexcept
 	{
@@ -83,6 +85,16 @@ struct Rectangle
 	friend Rectangle operator/( Rectangle lhs, T rhs ) noexcept
 	{
 		return lhs /= rhs;
+	}
+
+	friend bool operator==( const Rectangle& lhs, const Rectangle& rhs ) noexcept
+	{
+		return lhs.left == rhs.left && lhs.top == rhs.top && lhs.right == rhs.right && lhs.bottom == rhs.bottom;
+	}
+
+	friend bool operator!=( const Rectangle& lhs, const Rectangle& rhs ) noexcept
+	{
+		return !( lhs == rhs );
 	}
 };
 
