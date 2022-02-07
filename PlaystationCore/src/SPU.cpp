@@ -11,6 +11,8 @@
 namespace PSX
 {
 
+#define SpuLog( ... ) dbLogDebug( __VA_ARGS__ )
+
 namespace
 {
 
@@ -182,22 +184,23 @@ constexpr ADSRTableEntries ComputeADSRTableEntries() noexcept
 	{
 		for ( uint32_t rate = 0; rate < ADSRTableEntryCount; rate++ )
 		{
+			auto& entry = entries[ direction ][ rate ];
 			if ( rate < 48 )
 			{
-				entries[ direction ][ rate ].ticks = 1;
+				entry.ticks = 1;
 				if ( direction != 0 )
-					entries[ direction ][ rate ].step =
+					entry.step =
 					static_cast<int32_t>( static_cast<uint32_t>( -8 + static_cast<int32_t>( rate & 3 ) ) << ( 11 - ( rate >> 2 ) ) );
 				else
-					entries[ direction ][ rate ].step = ( 7 - static_cast<int32_t>( rate & 3 ) ) << ( 11 - ( rate >> 2 ) );
+					entry.step = ( 7 - static_cast<int32_t>( rate & 3 ) ) << ( 11 - ( rate >> 2 ) );
 			}
 			else
 			{
-				entries[ direction ][ rate ].ticks = 1 << ( static_cast<int32_t>( rate >> 2 ) - 11 );
+				entry.ticks = 1 << ( static_cast<int32_t>( rate >> 2 ) - 11 );
 				if ( direction != 0 )
-					entries[ direction ][ rate ].step = ( -8 + static_cast<int32_t>( rate & 3 ) );
+					entry.step = ( -8 + static_cast<int32_t>( rate & 3 ) );
 				else
-					entries[ direction ][ rate ].step = ( 7 - static_cast<int32_t>( rate & 3 ) );
+					entry.step = ( 7 - static_cast<int32_t>( rate & 3 ) );
 			}
 		}
 	}
@@ -648,90 +651,108 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 	switch ( static_cast<SpuControlRegister>( offset ) )
 	{
 		case SpuControlRegister::MainVolumeLeft:
+			SpuLog( "Spu::Write -- main volume left [%04X]", value );
 			GeneratePendingSamples();
 			m_mainVolumeRegisters[ 0 ].value = static_cast<int16_t>( value );
 			m_mainVolume[ 0 ].Reset( m_mainVolumeRegisters[ 0 ] );
 			break;
 
 		case SpuControlRegister::MainVolumeRight:
+			SpuLog( "Spu::Write -- main volume right [%04X]", value );
 			GeneratePendingSamples();
 			m_mainVolumeRegisters[ 1 ].value = static_cast<int16_t>( value );
 			m_mainVolume[ 1 ].Reset( m_mainVolumeRegisters[ 1 ] );
 			break;
 
 		case SpuControlRegister::ReverbOutVolumeLeft:
+			SpuLog( "Spu::Write -- reverb out volume left [%04X]", value );
 			GeneratePendingSamples();
 			m_reverbOutVolume[ 0 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::ReverbOutVolumeRight:
+			SpuLog( "Spu::Write -- reverb out volume right [%04X]", value );
 			GeneratePendingSamples();
 			m_reverbOutVolume[ 1 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::VoiceKeyOnLow:
+			SpuLog( "Spu::Write -- voice key on low [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, LowMask, value );
 			break;
 
 		case SpuControlRegister::VoiceKeyOnHigh:
+			SpuLog( "Spu::Write -- voice key on high [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.keyOn, HighMask, value << 16 );
 			break;
 
 		case SpuControlRegister::VoiceKeyOffLow:
+			SpuLog( "Spu::Write -- voice key off low [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, LowMask, value );		
 			break;
 
 		case SpuControlRegister::VoiceKeyOffHigh:
+			SpuLog( "Spu::Write -- voice key off high [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.keyOff, HighMask, value << 16 );
 			break;
 
 		case SpuControlRegister::VoicePitchLow:
+			SpuLog( "Spu::Write -- voice pitch enable low [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, LowMask, value );		
 			break;
 
 		case SpuControlRegister::VoicePitchHigh:
+			SpuLog( "Spu::Write -- voice pitch enable high [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.pitchModulationEnable, HighMask, value << 16 );
 			break;
 
 		case SpuControlRegister::VoiceNoiseLow:
+			SpuLog( "Spu::Write -- voice noise enable low [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, LowMask, value );		
 			break;
 
 		case SpuControlRegister::VoiceNoiseHigh:
+			SpuLog( "Spu::Write -- voice noise enable high [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.noiseModeEnable, HighMask, value << 16 );
 			break;
 
 		case SpuControlRegister::VoiceReverbLow:
+			SpuLog( "Spu::Write -- voice reverb enable low [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, LowMask, value );	
 			break;
 
 		case SpuControlRegister::VoiceReverbHigh:
+			SpuLog( "Spu::Write -- voice reverb enable high [%04X]", value );
 			GeneratePendingSamples();
 			stdx::masked_set<uint32_t>( m_voiceFlags.reverbEnable, HighMask, value << 16 );
 			break;
 
 		case SpuControlRegister::VoiceStatusLow:
+			dbLogWarning( "Spu::Write -- voice status low is read-only [%04X]", value );
+			break;
+
 		case SpuControlRegister::VoiceStatusHigh:
-			// read only
-			dbLogWarning( "Spu::Write -- writing to voice status [%X]", value );
+			dbLogWarning( "Spu::Write -- voice status high is read-only [%04X]", value );
 			break;
 
 		case SpuControlRegister::ReverbWorkAreaStartAddress:
+			SpuLog( "Spu::Write -- reverb work area start address [%04X]", value );
 			GeneratePendingSamples();
 			m_reverbBaseAddressRegister = value;
 			m_reverbCurrentAddress = m_reverbBaseAddress = ( value << 2 ) & 0x3ffffu;
 			break;
 
 		case SpuControlRegister::IrqAddress:
+			SpuLog( "Spu::Write -- irq address [%04X]", value );
 			m_transferEvent->UpdateEarly();
 			GeneratePendingSamples();
 			m_irqAddress = value;
@@ -740,6 +761,8 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 
 		case SpuControlRegister::DataTransferAddress:
 		{
+			SpuLog( "Spu::Write -- data transfer address [%04X]", value );
+
 			// Used for manual write and DMA read/write Spu memory. Writing to this registers stores the written value in 1F801DA6h,
 			// and does additional store the value (multiplied by 8) in another internal "current address" register
 			// (that internal register does increment during transfers, whilst the 1F801DA6h value DOESN'T increment).
@@ -766,34 +789,39 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 		}
 
 		case SpuControlRegister::SpuControl:
+			SpuLog( "Spu::Write -- SPUCNT [%04X]", value );
 			SetSpuControl( value );
 			break;
 
 		case SpuControlRegister::DataTransferControl:
+			SpuLog( "Spu::Write -- data transfer control [%04X]", value );
 			m_dataTransferControl.value = value;
 			break;
 
 		case SpuControlRegister::SpuStatus:
-			// read only
-			dbLogWarning( "Spu::Write -- writing to SPUSTAT" );
+			SpuLog( "Spu::Write -- SPUSTAT is read-only [%04X]", value );
 			break;
 
 		case SpuControlRegister::CdVolumeLeft:
+			SpuLog( "Spu::Write -- CD volume left [%04X]", value );
 			GeneratePendingSamples();
 			m_cdAudioInputVolume[ 0 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::CdVolumeRight:
+			SpuLog( "Spu::Write -- CD volume right [%04X]", value );
 			GeneratePendingSamples();
 			m_cdAudioInputVolume[ 1 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::ExternVolumeLeft:
+			SpuLog( "Spu::Write -- external volume left [%04X]", value );
 			// external volume isn't used. Don't need to sync
 			m_externalAudioInputVolume[ 0 ] = static_cast<int16_t>( value );
 			break;
 
 		case SpuControlRegister::ExternVolumeRight:
+			SpuLog( "Spu::Write -- external volume right [%04X]", value );
 			// external volume isn't used. Don't need to sync
 			m_externalAudioInputVolume[ 1 ] = static_cast<int16_t>( value );
 			break;
@@ -806,8 +834,9 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			}
 			else if ( Within( offset, ReverbRegisterOffset, ReverbRegisterCount ) )
 			{
-				GeneratePendingSamples();
 				const uint32_t index = offset - ReverbRegisterOffset;
+				SpuLog( "Spu::Write -- reverb register %u [%04X]", index, value );
+				GeneratePendingSamples();
 				m_reverb.registers[ index ] = value;
 			}
 			else
@@ -844,31 +873,37 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 	auto& voice = m_voices[ voiceIndex ];
 
 	// generate samples before updating register
-	if ( voice.IsOn() || ( m_voiceFlags.keyOn & ( 1 << voiceIndex ) ) )
+	const uint32_t voiceFlag = 1u << voiceIndex;
+	if ( voice.IsOn() || ( m_voiceFlags.keyOn & voiceFlag ) )
 		GeneratePendingSamples();
 
 	switch ( static_cast<VoiceRegister>( registerIndex ) )
 	{
 		case VoiceRegister::VolumeLeft:
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u volume left [%04X]", voiceIndex, value );
 			voice.registers.volumeLeft.value = value;
 			voice.volume[ 0 ].Reset( voice.registers.volumeLeft );
 			break;
 
 		case VoiceRegister::VolumeRight:
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u volume right [%04X]", voiceIndex, value );
 			voice.registers.volumeRight.value = value;
 			voice.volume[ 1 ].Reset( voice.registers.volumeRight );
 			break;
 
 		case VoiceRegister::ADPCMSampleRate:
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u ADPCM sample rate [%04X]", voiceIndex, value );
 			voice.registers.adpcmSampleRate = value;
 			break;
 
 		case VoiceRegister::ADPCMStartAddress:
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u ADPCM start address [%04X]", voiceIndex, value );
 			voice.registers.adpcmStartAddress = value;
 			break;
 
 		case VoiceRegister::ADSRLow:
 		{
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u ADSR low [%04X]", voiceIndex, value );
 			voice.registers.adsr.valueLow = value;
 			if ( voice.IsOn() )
 				voice.UpdateADSREnvelope();
@@ -878,6 +913,7 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 
 		case VoiceRegister::ADSRHigh:
 		{
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u ADSR high [%04X]", voiceIndex, value );
 			voice.registers.adsr.valueHigh = value;
 			if ( voice.IsOn() )
 				voice.UpdateADSREnvelope();
@@ -886,11 +922,14 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 		}
 
 		case VoiceRegister::CurrentADSRVolume:
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u current ADSR volume [%04X]", voiceIndex, value );
 			voice.registers.currentADSRVolume = static_cast<int16_t>( value );
 			break;
 
 		case VoiceRegister::ADPCMRepeatAddress:
 		{
+			SpuLog( "Spu::WriteVoiceRegister -- voice %u ADPCM repeat address [%04X]", voiceIndex, value );
+
 			// From Duckstation:
 			// There is a short window of time here between the voice being keyed on and the first block finishing decoding
 			// where setting the repeat address will *NOT* ignore the block/loop start flag. Games sensitive to this are:
@@ -956,6 +995,7 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 
 	if ( !newControl.enable && m_control.enable )
 	{
+		SpuLog( "Spu::SetSpuControl -- forcing all voices off" );
 		for ( auto& voice : m_voices )
 			voice.ForceOff();
 	}
@@ -966,6 +1006,7 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 	if ( !newControl.irqEnable )
 	{
 		// acknowledge IRQ
+		SpuLog( "Spu::SetSpuControl -- acknowledge IRQ" );
 		m_status.irq = false;
 	}
 	else
@@ -982,6 +1023,7 @@ void Spu::SetSpuControl( uint16_t value ) noexcept
 inline void Spu::TriggerInterrupt() noexcept
 {
 	dbExpects( CanTriggerInterrupt() );
+	SpuLog( "Spu::TriggerInterrupt" );
 	m_status.irq = true;
 	m_interruptControl.SetInterrupt( Interrupt::Spu );
 }
@@ -1269,7 +1311,7 @@ std::pair<int32_t, int32_t> Spu::SampleVoice( uint32_t voiceIndex ) noexcept
 	uint16_t step = voice.registers.adpcmSampleRate;
 	if ( ( voiceIndex > 0 ) && ( m_voiceFlags.pitchModulationEnable & voiceFlag ) )
 	{
-		const int32_t factor = std::clamp<int32_t>( m_voices[ voiceIndex - 1 ].lastVolume, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max() ) + 0x8000;
+		const int32_t factor = std::clamp<int32_t>( m_voices[ voiceIndex - 1 ].lastVolume, -0x8000, 0x7FFF ) + 0x8000;
 		step = static_cast<uint16_t>( ( static_cast<int16_t>( step ) * factor ) >> 15 );
 	}
 	step = std::min<uint16_t>( step, 0x3fff );
@@ -1279,7 +1321,7 @@ std::pair<int32_t, int32_t> Spu::SampleVoice( uint32_t voiceIndex ) noexcept
 	// interpolation index. If there is a carry out, bit 12 will never be 1, so it'll never add more than 4 to
 	// sample_index, which should never be >27.
 	dbAssert( voice.counter.sampleIndex < SamplesPerADPCMBlock );
-	voice.counter.value += static_cast<uint32_t>( step );
+	voice.counter.value += step;
 
 	if ( voice.counter.sampleIndex >= SamplesPerADPCMBlock )
 	{
@@ -1389,7 +1431,7 @@ uint32_t Spu::ReverbMemoryAddress( uint32_t address ) const noexcept
 	// Ensures address does not leave the reverb work area.
 	static constexpr uint32_t ReverbAddressMask = ( SpuRamSize - 1 ) / 2;
 	uint32_t offset = m_reverbCurrentAddress + ( address & ReverbAddressMask );
-	offset += m_reverbBaseAddress & ( static_cast<int32_t>( offset << 13 ) >> 31 );
+	offset += m_reverbBaseAddress & static_cast<uint32_t>( static_cast<int32_t>( offset << 13 ) >> 31 );
 
 	// We address RAM in bytes
 	return ( offset & ReverbAddressMask ) * 2u;
