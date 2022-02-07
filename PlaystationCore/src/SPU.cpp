@@ -356,7 +356,8 @@ void Spu::Voice::KeyOn() noexcept
 	registers.currentADSRVolume = 0;
 	adpcmLastSamples.fill( 0 );
 
-	// previous samples should be 0 to prevent audio clicks
+	// From Duckstation:
+	// Samples from the previous block for interpolation should be zero. Fixes clicks in audio in Breath of Fire III.
 	for ( uint32_t i = 0; i < OldSamplesForInterpolation; ++i )
 		currentBlockSamples[ SamplesPerADPCMBlock + i ] = 0;
 
@@ -820,8 +821,8 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 
 uint16_t Spu::ReadVoiceRegister( uint32_t offset ) noexcept
 {
-	const uint32_t voiceIndex = offset / 8;
-	const uint32_t registerIndex = offset % 8;
+	const uint32_t voiceIndex = offset / VoiceRegisterCount;
+	const uint32_t registerIndex = offset % VoiceRegisterCount;
 
 	const auto& voice = m_voices[ voiceIndex ];
 
@@ -837,8 +838,8 @@ uint16_t Spu::ReadVoiceRegister( uint32_t offset ) noexcept
 
 void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 {
-	const uint32_t voiceIndex = offset / 8;
-	const uint32_t registerIndex = offset % 8;
+	const uint32_t voiceIndex = offset / VoiceRegisterCount;
+	const uint32_t registerIndex = offset % VoiceRegisterCount;
 
 	auto& voice = m_voices[ voiceIndex ];
 
@@ -890,6 +891,7 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 
 		case VoiceRegister::ADPCMRepeatAddress:
 		{
+			// From Duckstation:
 			// There is a short window of time here between the voice being keyed on and the first block finishing decoding
 			// where setting the repeat address will *NOT* ignore the block/loop start flag. Games sensitive to this are:
 			//  - The Misadventures of Tron Bonne
@@ -995,11 +997,9 @@ void Spu::CheckForLateInterrupt() noexcept
 		return;
 	}
 
-	for ( uint32_t i = 0; i < VoiceCount; ++i )
+	for ( auto& voice : m_voices )
 	{
-		const auto& voice = m_voices[ i ];
-
-		// from Duckstation:
+		// From Duckstation:
 		// we skip voices which haven't started this block yet - because they'll check
 		// the next time they're sampled, and the delay might be important.
 		if ( !voice.hasSamples )

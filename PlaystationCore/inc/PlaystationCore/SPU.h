@@ -246,7 +246,7 @@ private:
 			uint16_t irq : 1;
 			uint16_t dmaRequest : 1;
 
-			// duckstation has the read and write request bits backwards?? Maybe games don't care
+			// duckstation has the read and write request bits compared to the nocash docs
 			uint16_t dmaWriteRequest : 1;
 			uint16_t dmaReadRequest : 1;
 			uint16_t transferBusy : 1;
