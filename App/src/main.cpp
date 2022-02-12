@@ -19,6 +19,10 @@
 #include <stdx/flat_unordered_map.h>
 #include <stdx/string.h>
 
+#include <imgui/imgui.h>
+#include <imgui/backends/imgui_impl_sdl.h>
+#include <imgui/backends/imgui_impl_opengl3.h>
+
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -40,6 +44,8 @@ int main( int argc, char** argv )
 	const auto memCard1Filename = CommandLine::Get().FindOption( "memcard1" );
 	const auto memCard2Filename = CommandLine::Get().FindOption( "memcard2" );
 	const std::string_view biosFilename = CommandLine::Get().GetOption( "bios", "bios.bin" );
+
+	// setup SDL and OpenGL
 
 	dbLog( "initializing SDL" );
 	if ( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER ) < 0 )
@@ -84,6 +90,20 @@ int main( int argc, char** argv )
 	glClear( GL_COLOR_BUFFER_BIT );
 
 	dbCheckRenderErrors();
+
+	// setup ImGui
+
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	auto& imguiIO = ImGui::GetIO();
+	(void)imguiIO;
+
+	ImGui::StyleColorsDark();
+
+	ImGui_ImplSDL2_InitForOpenGL( window, glContext );
+	ImGui_ImplOpenGL3_Init();
+
+	// setup playstation core
 
 	auto playstationCore = std::make_unique<PSX::Playstation>();
 	if ( !playstationCore->Initialize( window, biosFilename ) )
@@ -217,6 +237,9 @@ int main( int argc, char** argv )
 		SDL_Event event;
 		while ( SDL_PollEvent( &event ) )
 		{
+			if ( ImGui_ImplSDL2_ProcessEvent( &event ) )
+				continue;
+
 			switch ( event.type )
 			{
 				case SDL_QUIT:
@@ -408,6 +431,11 @@ int main( int argc, char** argv )
 			}
 		}
 
+		// start the ImGui frame
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplSDL2_NewFrame( window );
+		ImGui::NewFrame();
+
 		// add averageFps to window title
 		{
 			static constexpr size_t BufferSize = 1024;
@@ -426,6 +454,12 @@ int main( int argc, char** argv )
 		{
 			playstationCore->GetRenderer().DisplayFrame();
 		}
+
+		// render ImGui
+		ImGui::Render();
+		ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
+
+		SDL_GL_SwapWindow( window );
 
 		using MillisecondsD = std::chrono::duration<float, std::milli>;
 		static const auto SpinDuration = MillisecondsD( 2.0 );
@@ -467,8 +501,15 @@ int main( int argc, char** argv )
 	if ( sdlGameController )
 		SDL_GameControllerClose( sdlGameController );
 
+	// cleanup ImGui
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplSDL2_Shutdown();
+	ImGui::DestroyContext();
+
+	// cleanup SDL and OpenGL
 	SDL_GL_DeleteContext( glContext );
 	SDL_DestroyWindow( window );
 	SDL_Quit();
+
 	return 0;
 }

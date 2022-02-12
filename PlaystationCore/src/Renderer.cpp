@@ -861,8 +861,6 @@ void Renderer::DisplayFrame()
 
 	dbCheckRenderErrors();
 
-	SDL_GL_SwapWindow( m_window );
-
 	RestoreRenderState();
 }
 

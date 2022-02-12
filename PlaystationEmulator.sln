@@ -10,6 +10,11 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PlaystationCore", "PlaystationCore\PlaystationEmulator.vcxproj", "{3F7572D6-2220-42E3-8C9A-463132223454}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "App", "App\App.vcxproj", "{C4B3114E-9364-49CD-AC18-EEB6346EED2C}"
+	ProjectSection(ProjectDependencies) = postProject
+		{1F297A95-2BCE-41DE-B095-ED33DB043103} = {1F297A95-2BCE-41DE-B095-ED33DB043103}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Imgui", "Imgui\Imgui.vcxproj", "{1F297A95-2BCE-41DE-B095-ED33DB043103}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -69,6 +74,18 @@ Global
 		{C4B3114E-9364-49CD-AC18-EEB6346EED2C}.Shipping|x64.Build.0 = Debug|x64
 		{C4B3114E-9364-49CD-AC18-EEB6346EED2C}.Shipping|x86.ActiveCfg = Shipping|Win32
 		{C4B3114E-9364-49CD-AC18-EEB6346EED2C}.Shipping|x86.Build.0 = Shipping|Win32
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Debug|x64.ActiveCfg = Debug|x64
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Debug|x64.Build.0 = Debug|x64
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Debug|x86.ActiveCfg = Debug|Win32
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Debug|x86.Build.0 = Debug|Win32
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Release|x64.ActiveCfg = Release|x64
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Release|x64.Build.0 = Release|x64
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Release|x86.ActiveCfg = Release|Win32
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Release|x86.Build.0 = Release|Win32
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Shipping|x64.ActiveCfg = Debug|x64
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Shipping|x64.Build.0 = Debug|x64
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Shipping|x86.ActiveCfg = Debug|Win32
+		{1F297A95-2BCE-41DE-B095-ED33DB043103}.Shipping|x86.Build.0 = Debug|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
