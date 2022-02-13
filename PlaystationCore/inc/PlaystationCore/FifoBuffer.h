@@ -211,7 +211,7 @@ private:
 	size_type m_first = 0;
 	size_type m_last = 0;
 	size_type m_size = 0;
-	StorageType m_storage;
+	StorageType m_storage{};
 };
 
 }
