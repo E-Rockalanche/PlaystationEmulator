@@ -1,4 +1,4 @@
-#include "Spu.h"
+#include "SPU.h"
 
 #include "AudioQueue.h"
 #include "CDRomDrive.h"
@@ -18,7 +18,6 @@ namespace
 
 constexpr uint32_t SpuBaseAddress = 0x1F801C00;
 
-constexpr uint32_t VoiceRegisterOffset = 0;
 constexpr uint32_t ControlRegisterOffset = ( 0x1F801D80 - SpuBaseAddress ) / 2;
 constexpr uint32_t ReverbRegisterOffset = ( 0x1F801DC0 - SpuBaseAddress ) / 2;
 constexpr uint32_t VolumeRegisterOffset = ( 0x1F801E00 - SpuBaseAddress ) / 2;
@@ -172,8 +171,8 @@ struct ADSRTableEntry
 	int32_t ticks;
 	int32_t step;
 };
-static constexpr uint32_t ADSRTableEntryCount = 128;
-static constexpr uint32_t ADSRDirectionCount = 2;
+constexpr uint32_t ADSRTableEntryCount = 128;
+constexpr uint32_t ADSRDirectionCount = 2;
 
 using ADSRTableEntries = std::array<std::array<ADSRTableEntry, ADSRTableEntryCount>, ADSRDirectionCount>;
 
@@ -286,7 +285,7 @@ void Spu::VolumeEnvelope::Reset( uint8_t rate_, bool decreasing_, bool exponenti
 	rate = rate_;
 	decreasing = decreasing_;
 	exponential = exponential_;
-	counter = ADSRTable[ decreasing_ ][ rate_ ].ticks;
+	counter = ADSRTable[ static_cast<size_t>( decreasing_ ) ][ rate_ ].ticks;
 }
 
 int16_t Spu::VolumeEnvelope::Tick( int16_t currentLevel ) noexcept

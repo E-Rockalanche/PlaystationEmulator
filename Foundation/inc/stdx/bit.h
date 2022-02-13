@@ -70,8 +70,9 @@ inline constexpr size_t bitsizeof() noexcept
 }
 
 template <typename T>
-inline constexpr size_t bitsizeof( const T& ) noexcept
+inline constexpr size_t bitsizeof( const T& obj ) noexcept
 {
+	(void)obj;
 	return bitsizeof<T>();
 }
 

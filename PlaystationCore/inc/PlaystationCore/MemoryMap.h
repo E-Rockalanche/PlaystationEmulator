@@ -190,9 +190,9 @@ private:
 	inline void AccessMemory( MemoryType& memory, uint32_t offset, T& value ) const noexcept
 	{
 		if constexpr ( Read )
-			value = memory.Read<T>( offset );
+			value = memory.template Read<T>( offset );
 		else
-			memory.Write<T>( offset, value );
+			memory.template Write<T>( offset, value );
 	}
 
 	template <typename T, bool Read, typename Component>

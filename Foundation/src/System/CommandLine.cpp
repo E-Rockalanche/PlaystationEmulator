@@ -2,6 +2,7 @@
 
 #include <stdx/assert.h>
 
+#include <algorithm>
 #include <cctype>
 
 namespace CommandLine
@@ -12,7 +13,7 @@ namespace
 
 inline bool IsIdentifierChar( char c )
 {
-	return std::isalnum( c ) || ( c == '_' );
+	return std::isalnum( c ) != 0 || ( c == '_' );
 }
 
 const char* const InvalidArgFormatStr = "Invalid command line argument [%s]";
@@ -78,16 +79,12 @@ void CommandLineOptions::Parse( int argc, char const* const* argv )
 
 bool CommandLineOptions::HasOption( std::string_view name ) const
 {
-	for ( auto& entry : m_entries )
-		if ( entry.key == name )
-			return true;
-
-	return false;
+	return std::any_of( m_entries.begin(), m_entries.end(), [name]( auto& entry ) { return entry.key == name; } );
 }
 
 std::optional<std::string_view> CommandLineOptions::FindOption( std::string_view name ) const
 {
-	for ( auto& entry : m_entries )
+	for ( const auto& entry : m_entries )
 		if ( entry.key == name )
 			return entry.value;
 
@@ -107,6 +104,10 @@ bool CommandLineOptions::FindOption( std::string_view name, std::string_view& va
 
 bool CommandLineOptions::SetupCharConv( std::string_view name, std::string_view& valueStr, int& base ) const
 {
+	static constexpr int Base16 = 16;
+	static constexpr int Base8 = 8;
+	static constexpr int Base2 = 2;
+
 	if ( !FindOption( name, valueStr ) || valueStr.empty() )
 		return false;
 
@@ -115,16 +116,16 @@ bool CommandLineOptions::SetupCharConv( std::string_view name, std::string_view&
 		if ( valueStr[ 1 ] == 'x' || valueStr[ 1 ] == 'X' )
 		{
 			valueStr.remove_prefix( 2 );
-			base = 16;
+			base = Base16;
 		}
 		else if ( valueStr[ 1 ] == 'b' || valueStr[ 1 ] == 'B' )
 		{
 			valueStr.remove_prefix( 2 );
-			base = 2;
+			base = Base2;
 		}
 		else
 		{
-			base = 8;
+			base = Base8;
 		}
 	}
 

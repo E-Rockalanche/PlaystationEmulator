@@ -242,15 +242,15 @@ private:
 
 	cycles_t GetReadCycles() const noexcept
 	{
-		return CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) );
+		return static_cast<cycles_t>( CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) ) );
 	}
 
-	cycles_t GetSeekCycles() const noexcept
+	static cycles_t GetSeekCycles() noexcept
 	{
 		return 20000; // TODO: account for motor spin up time, sector difference, etc
 	}
 
-	cycles_t GetFirstResponseCycles( Command command ) const noexcept;
+	static cycles_t GetFirstResponseCycles( Command command ) noexcept;
 
 	void ClearSectorBuffers() noexcept
 	{
