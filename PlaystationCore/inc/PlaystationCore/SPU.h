@@ -78,7 +78,7 @@ private:
 			uint8_t filter : 3;
 			uint8_t : 1;
 		};
-		uint8_t value = 0;
+		uint8_t value;
 	};
 	static_assert( sizeof( ADPCMHeader ) == 1 );
 
@@ -91,7 +91,7 @@ private:
 			uint8_t loopStart : 1;
 			uint8_t : 5;
 		};
-		uint8_t value = 0;
+		uint8_t value;
 	};
 	static_assert( sizeof( ADPCMFlags ) == 1 );
 
