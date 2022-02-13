@@ -11,7 +11,7 @@ void CheckErrors();
 
 }
 
-#ifdef DEBUG
+#ifdef STDX_DEBUG
 	#define dbCheckRenderErrors() Render::CheckErrors()
 #else
 	#define dbCheckRenderErrors() do{}while(false)

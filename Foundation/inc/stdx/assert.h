@@ -8,9 +8,7 @@
 #define MULTI_LINE_MACRO_BEGIN do{
 #define MULTI_LINE_MACRO_END } while( false )
 
-#ifdef _DEBUG
-
-#define DEBUG true
+#if STDX_DEBUG
 
 #define dbLogDebug( ... )	Log( __VA_ARGS__ )
 
@@ -20,7 +18,19 @@
 
 #endif
 
-#ifndef SHIPPING
+#if STDX_SHIPPING
+
+#define dbLog( ... ) EMPTY_BLOCK
+#define dbLogError( ... ) EMPTY_BLOCK
+#define dbLogWarning( ... ) EMPTY_BLOCK
+#define dbBreak() EMPTY_BLOCK
+#define dbBreakMessage( ... ) EMPTY_BLOCK
+#define dbAssert( condition ) EMPTY_BLOCK
+#define dbAssertMessage( condition, ... ) EMPTY_BLOCK
+#define dbExpects( condition ) EMPTY_BLOCK
+#define dbEnsures( condition ) EMPTY_BLOCK
+
+#else
 
 #define dbLog( ... )		Log( __VA_ARGS__ )
 #define dbLogError( ... )	LogError( __VA_ARGS__ )
@@ -67,18 +77,5 @@
 		dbBreak();	\
 	}	\
 	MULTI_LINE_MACRO_END
-
-#else
-
-#define dbLog( ... ) EMPTY_BLOCK
-#define dbLogError( ... ) EMPTY_BLOCK
-#define dbLogWarning( ... ) EMPTY_BLOCK
-
-#define dbBreak() EMPTY_BLOCK
-#define dbBreakMessage( ... ) EMPTY_BLOCK
-#define dbAssert( condition ) EMPTY_BLOCK
-#define dbAssertMessage( condition, ... ) EMPTY_BLOCK
-#define dbExpects( condition ) EMPTY_BLOCK
-#define dbEnsures( condition ) EMPTY_BLOCK
 
 #endif
