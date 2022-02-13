@@ -21,9 +21,15 @@ flat out int TexPage;
 
 void main()
 {
+	// From duckstation:
+	// Offset the vertex position by 0.5 to ensure correct interpolation of texture coordinates
+	// at 1x resolution scale. This doesn't work at >1x, we adjust the texture coordinates before
+	// uploading there instead.
+	float vertexOffset = 0.5;
+
 	// calculate normalized screen coordinate
-	float x = 2.0 * ( v_pos.x / 1024.0 ) - 1.0;
-	float y = 2.0 * ( v_pos.y / 512.0 ) - 1.0;
+	float x = ( v_pos.x + vertexOffset ) / 512.0 - 1.0;
+	float y = ( v_pos.y + vertexOffset ) / 256.0 - 1.0;
 	float z = v_pos.z / 32767.0;
 
 	Position = vec3( v_pos.xy, z );
@@ -124,7 +130,7 @@ int FloatToInt5( float value )
 	return int( floor( value * 31.0 + 0.5 ) );
 }
 
-int SampleVRam( ivec2 pos )
+int SampleUShort( ivec2 pos )
 {
 	vec4 c = texelFetch( u_vram, pos, 0 );
 	int red = FloatToInt5( c.r );
@@ -138,7 +144,6 @@ vec4 SampleColor( ivec2 pos )
 {
 	vec4 color = texelFetch( u_vram, pos, 0 );
 	color.rgb = ConvertColorTo15bit( color.rgb );
-	color.a = floor( color.a + 0.5 ); // ensure alpha is 0 or 1
 	return color;
 }
 
@@ -150,7 +155,7 @@ vec4 SampleClut( int index )
 // texCoord counted in 4bit steps
 int SampleIndex4( ivec2 texCoord )
 {
-	int sample = SampleVRam( TexPageBase + ivec2( texCoord.x / 4, texCoord.y ) );
+	int sample = SampleUShort( TexPageBase + ivec2( texCoord.x / 4, texCoord.y ) );
 	int shiftAmount = ( texCoord.x & 0x3 ) * 4;
 	return ( sample >> shiftAmount ) & 0xf;
 }
@@ -158,7 +163,7 @@ int SampleIndex4( ivec2 texCoord )
 // texCoord counted in 8bit steps
 int SampleIndex8( ivec2 texCoord )
 {
-	int sample = SampleVRam( TexPageBase + ivec2( texCoord.x / 2, texCoord.y ) );
+	int sample = SampleUShort( TexPageBase + ivec2( texCoord.x / 2, texCoord.y ) );
 	int shiftAmount = ( texCoord.x & 0x1 ) * 8;
 	return ( sample >> shiftAmount ) & 0xff;
 }
