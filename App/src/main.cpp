@@ -96,7 +96,7 @@ int main( int argc, char** argv )
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	auto& imguiIO = ImGui::GetIO();
-	(void)imguiIO;
+	imguiIO.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // enable use of multiple OS windows
 
 	ImGui::StyleColorsDark();
 
@@ -232,13 +232,15 @@ int main( int argc, char** argv )
 	System::Stopwatch stopwatch;
 	stopwatch.Start();
 
+	// TEST
+	bool showImguiDemo = false;
+
 	while ( !quit )
 	{
 		SDL_Event event;
 		while ( SDL_PollEvent( &event ) )
 		{
-			if ( ImGui_ImplSDL2_ProcessEvent( &event ) )
-				continue;
+			ImGui_ImplSDL2_ProcessEvent( &event );
 
 			switch ( event.type )
 			{
@@ -436,6 +438,23 @@ int main( int argc, char** argv )
 		ImGui_ImplSDL2_NewFrame( window );
 		ImGui::NewFrame();
 
+		// TEST MENU BAR
+		if ( ImGui::BeginMainMenuBar() )
+		{
+			if ( ImGui::BeginMenu( "File" ) )
+			{
+				ImGui::EndMenu();
+			}
+
+			if ( ImGui::BeginMenu( "ImGui Demo" ) )
+			{
+				ImGui::Checkbox( "Display", &showImguiDemo );
+				ImGui::EndMenu();
+			}
+
+			ImGui::EndMainMenuBar();
+		}
+
 		// add averageFps to window title
 		{
 			static constexpr size_t BufferSize = 1024;
@@ -454,10 +473,23 @@ int main( int argc, char** argv )
 		{
 			playstationCore->GetRenderer().DisplayFrame();
 		}
+		Render::Framebuffer::Unbind( Render::FramebufferBinding::ReadAndDraw );
+
+		if ( showImguiDemo )
+			ImGui::ShowDemoWindow();
 
 		// render ImGui
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
+
+		if ( imguiIO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable )
+		{
+			SDL_Window* backup_current_window = SDL_GL_GetCurrentWindow();
+			SDL_GLContext backup_current_context = SDL_GL_GetCurrentContext();
+			ImGui::UpdatePlatformWindows();
+			ImGui::RenderPlatformWindowsDefault();
+			SDL_GL_MakeCurrent( backup_current_window, backup_current_context );
+		}
 
 		SDL_GL_SwapWindow( window );
 

@@ -38,6 +38,9 @@ public:
 
 	void Reset();
 
+	void StartFrame();
+	void DisplayFrame();
+
 	void EnableVRamView( bool enable );
 	bool IsVRamViewEnabled() const { return m_viewVRam; }
 
@@ -74,8 +77,6 @@ public:
 
 	void PushTriangle( Vertex vertices[ 3 ], bool semiTransparent );
 	void PushQuad( Vertex vertices[ 4 ], bool semiTransparent );
-
-	void DisplayFrame();
 
 private:
 	using DepthType = int16_t;

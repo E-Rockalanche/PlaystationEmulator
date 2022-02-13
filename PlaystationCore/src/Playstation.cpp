@@ -124,6 +124,8 @@ void Playstation::SetMemoryCard( size_t slot, MemoryCard* memCard )
 
 void Playstation::RunFrame()
 {
+	m_renderer->StartFrame();
+
 	while ( !m_gpu->GetDisplayFrame() )
 		m_cpu->RunUntilEvent();
 

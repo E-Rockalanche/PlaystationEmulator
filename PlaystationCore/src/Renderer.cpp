@@ -776,6 +776,11 @@ void Renderer::RestoreRenderState()
 	dbCheckRenderErrors();
 }
 
+void Renderer::StartFrame()
+{
+	RestoreRenderState();
+}
+
 void Renderer::DisplayFrame()
 {
 	DrawBatch();
@@ -861,6 +866,7 @@ void Renderer::DisplayFrame()
 
 	dbCheckRenderErrors();
 
+	// restore render state in case we continue to make render commands in a scheduled event
 	RestoreRenderState();
 }
 
