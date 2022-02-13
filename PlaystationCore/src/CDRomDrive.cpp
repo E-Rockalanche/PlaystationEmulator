@@ -147,13 +147,16 @@ CDRomDrive::~CDRomDrive() = default;
 
 void CDRomDrive::Reset()
 {
+	if ( m_cdrom )
+		m_cdrom->SeekTrack1();
+
 	m_commandEvent->Reset();
 	m_secondResponseEvent->Reset();
 	m_driveEvent->Reset();
 
 	m_driveState = DriveState::Idle;
 
-	m_status.index = 0;
+	m_status.value = 0;
 	m_interruptEnable = 0;
 	m_interruptFlags = 0;
 	m_queuedInterrupt = 0;
