@@ -234,6 +234,7 @@ int main( int argc, char** argv )
 
 	// TEST
 	bool showImguiDemo = false;
+	bool showPSXDebugWindows = false;
 
 	while ( !quit )
 	{
@@ -247,6 +248,17 @@ int main( int argc, char** argv )
 				case SDL_QUIT:
 					quit = true;
 					break;
+
+				case SDL_WINDOWEVENT:
+				{
+					switch ( event.window.event )
+					{
+						case SDL_WINDOWEVENT_CLOSE:
+							quit = true;
+							break;
+					}
+					break;
+				}
 
 				case SDL_KEYDOWN:
 				{
@@ -446,6 +458,12 @@ int main( int argc, char** argv )
 				ImGui::EndMenu();
 			}
 
+			if ( ImGui::BeginMenu( "Debug" ) )
+			{
+				ImGui::Checkbox( "GPU", &showPSXDebugWindows );
+				ImGui::EndMenu();
+			}
+
 			if ( ImGui::BeginMenu( "ImGui Demo" ) )
 			{
 				ImGui::Checkbox( "Display", &showImguiDemo );
@@ -475,7 +493,8 @@ int main( int argc, char** argv )
 		}
 		Render::Framebuffer::Unbind( Render::FramebufferBinding::ReadAndDraw );
 
-		playstationCore->DisplayDebugWindow();
+		if ( showPSXDebugWindows )
+			playstationCore->DisplayDebugWindow();
 
 		if ( showImguiDemo )
 			ImGui::ShowDemoWindow();
