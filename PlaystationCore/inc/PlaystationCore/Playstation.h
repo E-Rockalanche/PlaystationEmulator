@@ -29,6 +29,8 @@ public:
 
 	float GetRefreshRate() const;
 
+	void DisplayDebugWindow() const;
+
 public:
 	AudioQueue&			GetAudioQueue()			{ dbAssert( m_audioQueue); return *m_audioQueue; }
 	Bios&				GetBios()				{ dbAssert( m_bios ); return *m_bios; }

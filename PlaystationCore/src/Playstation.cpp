@@ -161,4 +161,9 @@ float Playstation::GetRefreshRate() const
 	return m_gpu->GetRefreshRate();
 }
 
+void Playstation::DisplayDebugWindow() const
+{
+	m_gpu->DisplayDebugWindow();
+}
+
 }

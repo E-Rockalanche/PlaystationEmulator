@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdx/compiler.h>
+#include <stdx/array.h>
 
 #include <cstdint>
 
@@ -38,45 +39,12 @@ enum class SemiTransparencyMode
 	ReverseSubtract, // B - F
 	AddQuarter // B + F/4
 };
-
-enum class TexturePageColors : uint8_t
-{
-	B4,
-	B8,
-	B15
-};
-
-enum class DrawPixelMode : uint8_t
-{
-	Always,
-	NotToMaskedAreas
-};
-
-enum class InterlaceField : uint8_t
-{
-	Top,
-	Bottom
-};
-
-enum class HorizontalResolution : uint8_t
-{
-	P256 = 0,
-	P368 = 1, // always if bit 0 is set
-	P320 = 2,
-	P512 = 4,
-	P640 = 6
-};
+inline constexpr auto SemiTransparencyModeStrings = stdx::make_array<const char*>( "Blend", "Add", "ReverseSubtract", "AddQuarter" );
 
 enum class VideoMode
 {
 	NTSC,
 	PAL
-};
-
-enum class VerticalResolution : uint8_t
-{
-	P240,
-	P480
 };
 
 enum class DisplayAreaColorDepth : uint8_t
@@ -92,12 +60,14 @@ enum class DmaDirection
 	CpuToGP0,
 	GpuReadToCpu
 };
+static constexpr auto DmaDirectionStrings = stdx::make_array<const char*>( "Off", "Fifo", "CpuToGpu", "GpuReadToCpu" );
 
 enum class CropMode
 {
 	None,
 	Fit
 };
+static constexpr auto CropModeStrings = stdx::make_array<const char*>( "None", "Fit" );
 
 struct Position
 {

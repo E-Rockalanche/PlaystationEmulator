@@ -75,6 +75,9 @@
     <ClInclude Include="inc\System\Stopwatch.h">
       <Filter>inc\System</Filter>
     </ClInclude>
+    <ClInclude Include="inc\stdx\array.h">
+      <Filter>inc\stdx</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp">

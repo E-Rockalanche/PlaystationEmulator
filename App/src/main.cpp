@@ -475,6 +475,8 @@ int main( int argc, char** argv )
 		}
 		Render::Framebuffer::Unbind( Render::FramebufferBinding::ReadAndDraw );
 
+		playstationCore->DisplayDebugWindow();
+
 		if ( showImguiDemo )
 			ImGui::ShowDemoWindow();
 

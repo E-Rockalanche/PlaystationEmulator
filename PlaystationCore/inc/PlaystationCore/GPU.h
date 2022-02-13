@@ -7,6 +7,7 @@
 
 #include <Math/Rectangle.h>
 
+#include <stdx/array.h>
 #include <stdx/bit.h>
 
 #include <memory>
@@ -62,6 +63,8 @@ public:
 	void UpdateCrtEventEarly();
 	void ScheduleCrtEvent() noexcept;
 
+	void DisplayDebugWindow() const;
+
 private:
 	struct CrtConstants
 	{
@@ -90,6 +93,7 @@ private:
 		ReadingVRam,
 		PolyLine
 	};
+	static constexpr auto StateStrings = stdx::make_array<const char*>( "Idle", "Parameters", "WritingVRam", "ReadingVRam", "PolyLine" );
 
 	enum class DmaDirection
 	{

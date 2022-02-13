@@ -9,6 +9,8 @@
 #include <stdx/assert.h>
 #include <stdx/bit.h>
 
+#include <imgui/imgui.h>
+
 #define GPU_DRAW_POLYGONS true
 #define GPU_DRAW_LINES true
 #define GPU_DRAW_RECTANGLES true
@@ -1724,6 +1726,60 @@ void Gpu::ScheduleCrtEvent() noexcept
 	const cycles_t cpuCycles = ConvertGpuToCpuCycles( gpuCycles, m_crtState.fractionalCycles );
 	m_cachedCyclesUntilNextEvent = cpuCycles;
 	m_crtEvent->Schedule( cpuCycles );
+}
+
+void Gpu::DisplayDebugWindow() const
+{
+	ImGui::Begin( "GPU" );
+
+	ImGui::Text( "State: %s", StateStrings[ (size_t)m_state ] );
+
+	ImGui::Separator();
+	ImGui::Text( "GPUREAD: %u", m_gpuRead );
+
+	ImGui::Separator();
+	ImGui::Text( "GPUSTAT: %04X", m_status.value );
+	if ( ImGui::CollapsingHeader( "Status details" ) )
+	{
+		static constexpr std::array<uint32_t, 4> ColorModeBitDepths{ 4, 8, 15, 15 };
+
+		ImGui::Text( "Texpage base X: %i", m_status.texturePageBaseX * 64 );
+		ImGui::Text( "Texpage base Y: %i", m_status.texturePageBaseY * 256 );
+		ImGui::Text( "Semitransparency mode: %s", SemiTransparencyModeStrings[ m_status.semiTransparencyMode ] );
+		ImGui::Text( "CLUT mode: %ibit", ColorModeBitDepths[ m_status.texturePageColors ] );
+		ImGui::Text( "Dither: %i", m_status.dither );
+		ImGui::Text( "Draw to display area: %i", m_status.drawToDisplayArea );
+		ImGui::Text( "Set mask: %i", m_status.setMaskOnDraw );
+		ImGui::Text( "Check mask: %i", m_status.checkMaskOnDraw );
+		ImGui::Text( "Interlace field: %i", m_status.interlaceField );
+		ImGui::Text( "Reverse flag: %i", m_status.reverseFlag );
+		ImGui::Text( "Texture disable: %i", m_status.textureDisable );
+		ImGui::Text( "Horizontal resolution: %u", GetHorizontalResolution() );
+		ImGui::Text( "Vertical resolution: %u", GetVerticalResolution() );
+		ImGui::Text( "Video mode: ", m_status.videoMode ? "NTSC" : "PAL" );
+		ImGui::Text( "Color depth: %ibit", m_status.displayAreaColorDepth ? 24 : 15 );
+		ImGui::Text( "Vertical interlace: %i", m_status.verticalInterlace );
+		ImGui::Text( "Display diable: %i", m_status.displayDisable );
+		ImGui::Text( "IRQ1: %i", m_status.interruptRequest );
+		ImGui::Text( "DMA request: %i", m_status.dmaRequest );
+		ImGui::Text( "Ready to receive command: %i", m_status.readyToReceiveCommand );
+		ImGui::Text( "Ready to send VRAM to CPU: %i", m_status.readyToSendVRamToCpu );
+		ImGui::Text( "Ready to receive DMA block: %i", m_status.readyToReceiveDmaBlock );
+		ImGui::Text( "DMA direction: %s", DmaDirectionStrings[ m_status.dmaDirection ] );
+		ImGui::Text( "Even/odd/vblank: %i", m_status.evenOddVblank );
+	}
+
+	ImGui::Separator();
+	ImGui::Text( "Draw area: (%u, %u, %u, %u)", m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
+	ImGui::Text( "Draw offset: (%i, %i)", m_drawOffsetX, m_drawOffsetY );
+	ImGui::Text( "Display area start: (%u, %u)", m_displayAreaStartX, m_displayAreaStartY );
+	ImGui::Text( "Horizontal display range: (%u, %u)", m_horDisplayRangeStart, m_horDisplayRangeEnd );
+	ImGui::Text( "Vertical display range: (%u, %u)", m_verDisplayRangeStart, m_verDisplayRangeEnd );
+
+	ImGui::Separator();
+	ImGui::Text( "Crop mode: %s", CropModeStrings[ (size_t)m_cropMode ] );
+
+	ImGui::End();
 }
 
 } // namespace PSX
