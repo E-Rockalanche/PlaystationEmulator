@@ -333,7 +333,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 				{
 					dbLogDebug( "CDRomDrive::Write() -- data request [%X]", value );
 
-					if ( value & RequestRegister::WantData )
+					if ( (value & RequestRegister::WantData) != 0 )
 						RequestData();
 					else
 						m_dataBuffer.Clear();
@@ -347,7 +347,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 					dbLogDebug( "CDRomDrive::Write() -- interrupt flag [%X]", value );
 					m_interruptFlags &= ~value; // write 1 to ack/reset
 
-					if ( value & InterruptFlag::ResetParameterFifo )
+					if ( (value & InterruptFlag::ResetParameterFifo) != 0 )
 					{
 						m_parameterBuffer.Clear();
 						UpdateStatus();
@@ -371,10 +371,10 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 				case 3: // audio volume apply (write bit5=1)
 				{
 					dbLogDebug( "CDRomDrive::Write() -- audio volume apply" );
-					m_muteADPCM = value & AudioVolumeApply::MuteADPCM;
+					m_muteADPCM = ((value & AudioVolumeApply::MuteADPCM) != 0);
 
 					// TODO: change audio volume
-					if ( value & AudioVolumeApply::ChangeAudioVolume )
+					if ( (value & AudioVolumeApply::ChangeAudioVolume) != 0 )
 						m_volumes = m_nextVolumes;
 
 					break;
@@ -741,7 +741,7 @@ bool CDRomDrive::CompleteSeek() noexcept
 	return ok;
 }
 
-cycles_t CDRomDrive::GetFirstResponseCycles( Command command ) const noexcept
+cycles_t CDRomDrive::GetFirstResponseCycles( Command command ) noexcept
 {
 	/*
 	return ( command == Command::Init )
@@ -978,7 +978,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 		case Command::SeekL:
 		case Command::SeekP:
 		{
-			const bool logical = ( command == Command::SeekL );
+			[[maybe_unused]] const bool logical = ( command == Command::SeekL );
 			dbLogDebug( "CDRomDrive::ExecuteCommand -- %s", logical ? "SeekL" : "SeekP" );
 
 			if ( IsSeeking() )
@@ -1645,7 +1645,7 @@ void CDRomDrive::ProcessCDDASector( const CDRom::Sector& sector )
 		m_secondResponseBuffer.Push( m_lastSubQ.trackNumberBCD ); // track
 		m_secondResponseBuffer.Push( m_lastSubQ.trackIndexBCD ); // index
 
-		if ( m_lastSubQ.absoluteSectorBCD & 0x10 )
+		if ( (m_lastSubQ.absoluteSectorBCD & 0x10) != 0 )
 		{
 			// relative
 			m_secondResponseBuffer.Push( m_lastSubQ.trackMinuteBCD );
@@ -1696,7 +1696,7 @@ void CDRomDrive::ProcessCDDASector( const CDRom::Sector& sector )
 
 void CDRomDrive::DecodeAdpcmSector( const CDRom::Sector& sector )
 {
-	auto& subHeader = sector.mode2.subHeader;
+	const auto& subHeader = sector.mode2.subHeader;
 
 	// check XA filter
 	if ( ( m_xaFilter.set || m_mode.xaFilter ) && ( subHeader.file != m_xaFilter.file || subHeader.channel != m_xaFilter.channel ) )
@@ -1728,19 +1728,19 @@ void CDRomDrive::DecodeAdpcmSector( const CDRom::Sector& sector )
 	if ( m_muted || m_muteADPCM )
 		return;
 
-	const uint32_t sampleCount = ( subHeader.codingInfo.bitsPerSample ? CDXA::AdpcmSamplesPerSector8Bit : CDXA::AdpcmSamplesPerSector4Bit ) /
-		( subHeader.codingInfo.stereo ? 2 : 1 );
+	const uint32_t sampleCount = ( subHeader.codingInfo.bitsPerSample != 0u ? CDXA::AdpcmSamplesPerSector8Bit : CDXA::AdpcmSamplesPerSector4Bit ) /
+		( subHeader.codingInfo.stereo != 0u ? 2 : 1 );
 
-	if ( subHeader.codingInfo.stereo )
+	if ( subHeader.codingInfo.stereo != 0u )
 	{
-		if ( subHeader.codingInfo.sampleRate )
+		if ( subHeader.codingInfo.sampleRate != 0u )
 			ResampleXaAdpcm<true, true>( m_xaAdpcmSampleBuffer.get(), sampleCount );
 		else
 			ResampleXaAdpcm<true, false>( m_xaAdpcmSampleBuffer.get(), sampleCount );
 	}
 	else
 	{
-		if ( subHeader.codingInfo.sampleRate )
+		if ( subHeader.codingInfo.sampleRate != 0u )
 			ResampleXaAdpcm<false, true>( m_xaAdpcmSampleBuffer.get(), sampleCount );
 		else
 			ResampleXaAdpcm<false, false>( m_xaAdpcmSampleBuffer.get(), sampleCount );

@@ -35,7 +35,7 @@ static_assert( sizeof( SubMode ) == 1 );
 
 union CodingInfo
 {
-	uint32_t GetSampleRate() const { return sampleRate ? 18900 : 37800; }
+	uint32_t GetSampleRate() const { return sampleRate != 0u ? 18900 : 37800; }
 
 	struct
 	{
