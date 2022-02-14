@@ -80,6 +80,7 @@ public:
 private:
 	using DepthType = int16_t;
 	static constexpr DepthType MaxDepth = std::numeric_limits<DepthType>::max();
+	static constexpr DepthType ResetDepth = 1;
 
 	using Rect = Math::Rectangle<int32_t>;
 

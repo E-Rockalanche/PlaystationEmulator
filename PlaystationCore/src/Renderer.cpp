@@ -162,7 +162,7 @@ void Renderer::Reset()
 	m_vertices.clear();
 	ResetDirtyArea();
 
-	m_currentDepth = 0;
+	m_currentDepth = ResetDepth;
 
 	// GPU will reset uniforms
 }
@@ -469,7 +469,7 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 	dbExpects( destY + height <= VRamHeight );
 
 	const auto srcBounds = Rect::FromExtents( srcX, srcY, width, height );
-	const auto destBounds = Rect::FromExtents( srcX, srcY, width, height );
+	const auto destBounds = Rect::FromExtents( destX, destY, width, height );
 
 	if ( m_dirtyArea.Intersects( srcBounds ) )
 	{
@@ -694,7 +694,7 @@ void Renderer::ResetDepthBuffer()
 {
 	DrawBatch();
 
-	m_currentDepth = 0;
+	m_currentDepth = ResetDepth;
 
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
@@ -715,10 +715,10 @@ void Renderer::UpdateCurrentDepth()
 {
 	if ( m_checkMaskBit )
 	{
+		++m_currentDepth;
+
 		if ( m_currentDepth == MaxDepth )
 			ResetDepthBuffer();
-
-		++m_currentDepth;
 	}
 }
 
