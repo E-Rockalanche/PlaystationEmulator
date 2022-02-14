@@ -272,7 +272,7 @@ public:
 
 	uint32_t GetLastTrackEndPosition() const noexcept
 	{
-		auto& track = m_tracks.back();
+		const auto& track = m_tracks.back();
 		return track.position + track.length;
 	}
 

@@ -36,7 +36,7 @@ constexpr std::array<uint8_t, 64> CreateZagZig()
 
 constexpr std::array<uint8_t, 64> ZagZig = CreateZagZig();
 
-const std::array<cycles_t, 4> CyclesPerBlock // values from duckstation
+constexpr std::array<cycles_t, 4> CyclesPerBlock // values from duckstation
 {
 	448,		// 4bit
 	448,		// 8bit
@@ -70,7 +70,6 @@ void MacroblockDecoder::Reset()
 	m_dataOutBuffer.Reset();
 
 	m_luminanceTable.fill( 0 );
-
 	m_colorTable.fill( 0 );
 	m_scaleTable.fill( 0 );
 
@@ -98,7 +97,7 @@ void MacroblockDecoder::UpdateStatus()
 	m_status.dataInRequest = dataInRequest;
 	m_dma->SetRequest( Dma::Channel::MDecIn, dataInRequest );
 
-	const bool dataOutRequest = m_enableDataOut && !m_dataOutBuffer.Empty();;
+	const bool dataOutRequest = m_enableDataOut && !m_dataOutBuffer.Empty();
 	m_status.dataOutRequest = dataOutRequest;
 	m_dma->SetRequest( Dma::Channel::MDecOut, dataOutRequest );
 }
@@ -245,9 +244,9 @@ void MacroblockDecoder::ProcessInput()
 				if ( m_dataInBuffer.Size() < m_remainingHalfWords )
 					return;
 
-				m_dataInBuffer.Pop( (uint16_t*)m_luminanceTable.data(), 32 ); // 64 bytes
+				m_dataInBuffer.Pop( reinterpret_cast<uint16_t*>( m_luminanceTable.data() ), 32 ); // 64 bytes
 				if ( m_color )
-					m_dataInBuffer.Pop( (uint16_t*)m_colorTable.data(), 32 ); // 64 bytes
+					m_dataInBuffer.Pop( reinterpret_cast<uint16_t*>( m_colorTable.data() ), 32 ); // 64 bytes
 
 				m_remainingHalfWords = 0;
 				m_state = State::Idle;
@@ -259,7 +258,7 @@ void MacroblockDecoder::ProcessInput()
 				if ( m_dataInBuffer.Size() < m_remainingHalfWords )
 					return;
 
-				m_dataInBuffer.Pop( (uint16_t*)m_scaleTable.data(), 64 );
+				m_dataInBuffer.Pop( reinterpret_cast<uint16_t*>( m_scaleTable.data() ), 64 );
 
 				m_remainingHalfWords = 0;
 				m_state = State::Idle;
@@ -392,7 +391,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 		blk.fill( 0 );
 
 		// skip padding
-		uint16_t n;
+		uint16_t n = 0;
 		do
 		{
 			if ( m_dataInBuffer.Empty() || m_remainingHalfWords == 0 )
@@ -422,7 +421,7 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 
 	while( !m_dataInBuffer.Empty() && m_remainingHalfWords > 0 && m_currentK < 63 )
 	{
-		uint16_t n = m_dataInBuffer.Pop();
+		const uint16_t n = m_dataInBuffer.Pop();
 		--m_remainingHalfWords;
 
 		m_currentK += ( ( n >> 10 ) & 0x3f ) + 1;
@@ -458,10 +457,10 @@ bool MacroblockDecoder::rl_decode_block( Block& blk, const Table& qt )
 
 void MacroblockDecoder::real_idct_core( Block& blk )
 {
-	std::array<int16_t, 64> temp_buffer;
+	Block tempBuffer;
 
 	int16_t* src = blk.data();
-	int16_t* dst = temp_buffer.data();
+	int16_t* dst = tempBuffer.data();
 
 	for ( size_t pass = 0; pass < 2; ++pass )
 	{

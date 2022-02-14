@@ -78,7 +78,9 @@ public:
 	void DisplayFrame();
 
 private:
-	static constexpr int16_t MaxDepth = std::numeric_limits<int16_t>::max();
+	using DepthType = int16_t;
+	static constexpr DepthType MaxDepth = std::numeric_limits<DepthType>::max();
+	static constexpr DepthType ResetDepth = 1;
 
 	using Rect = Math::Rectangle<int32_t>;
 
@@ -219,8 +221,8 @@ private:
 	Rect m_textureArea;
 	Rect m_clutArea;
 
-	// depth to use when bit15 is set
-	int16_t m_currentDepth = 0;
+	// vertex depth to use when mask bit of pixel is set
+	DepthType m_currentDepth = 0;
 };
 
 }

@@ -266,9 +266,9 @@ bool CueSheet::Parse( std::string_view rawtext, CueSheet& sheet )
 
 std::pair<const CueSheet::Track*, const CueSheet::File*> CueSheet::FindTrack( uint32_t trackNumber ) const
 {
-	for ( auto& file : files )
+	for ( const auto& file : files )
 	{
-		for ( auto& track : file.tracks )
+		for ( const auto& track : file.tracks )
 		{
 			if ( track.trackNumber == trackNumber )
 				return { &track, &file };

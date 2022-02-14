@@ -22,7 +22,13 @@ class Event
 	friend class EventManager;
 
 public:
+	Event( const Event& ) = delete;
+	Event( Event&& ) = delete;
+
 	~Event();
+
+	Event& operator=( const Event& ) = delete;
+	Event& operator=( Event&& ) = delete;
 
 	// Reset state without rescheduling
 	void Reset();

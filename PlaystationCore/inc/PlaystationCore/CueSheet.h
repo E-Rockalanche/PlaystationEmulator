@@ -55,7 +55,7 @@ struct CueSheet
 
 		const TrackIndex* FindIndex( uint32_t indexNumber ) const
 		{
-			for ( auto& index : indices )
+			for ( const auto& index : indices )
 				if ( index.indexNumber == indexNumber )
 					return &index;
 

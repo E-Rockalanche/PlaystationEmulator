@@ -62,6 +62,9 @@ public:
 		};
 	};
 
+public:
+	void Reset() {}
+
 	void Write( uint32_t offset, uint8_t value ) noexcept
 	{
 		switch ( offset )

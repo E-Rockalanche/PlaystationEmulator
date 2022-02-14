@@ -242,15 +242,15 @@ private:
 
 	cycles_t GetReadCycles() const noexcept
 	{
-		return CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) );
+		return static_cast<cycles_t>( CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) ) );
 	}
 
-	cycles_t GetSeekCycles() const noexcept
+	static cycles_t GetSeekCycles() noexcept
 	{
 		return 20000; // TODO: account for motor spin up time, sector difference, etc
 	}
 
-	cycles_t GetFirstResponseCycles( Command command ) const noexcept;
+	static cycles_t GetFirstResponseCycles( Command command ) noexcept;
 
 	void ClearSectorBuffers() noexcept
 	{
@@ -295,10 +295,14 @@ private:
 private:
 	InterruptControl& m_interruptControl;
 	Dma* m_dma = nullptr;
+
+	std::unique_ptr<CDRom> m_cdrom;
+
 	EventHandle m_commandEvent;
 	EventHandle m_secondResponseEvent;
 	EventHandle m_driveEvent;
-	std::unique_ptr<CDRom> m_cdrom;
+
+	DriveState m_driveState = DriveState::Idle;
 
 	Status m_status;
 	uint8_t m_interruptEnable = 0;
@@ -311,8 +315,6 @@ private:
 	// timing
 	std::optional<Command> m_pendingCommand;
 	std::optional<Command> m_secondResponseCommand;
-
-	DriveState m_driveState = DriveState::Idle;
 
 	DriveStatus m_driveStatus;
 	ControllerMode m_mode;
@@ -365,8 +367,8 @@ private:
 	static const std::array<uint8_t, 256> ExpectedCommandParameters;
 
 	std::unique_ptr<int16_t[]> m_xaAdpcmSampleBuffer;
-	std::array<int32_t, 4> m_oldXaAdpcmSamples;
-	std::array<std::array<int16_t, ResampleRingBufferSize>, 2> m_resampleRingBuffers;
+	std::array<int32_t, 4> m_oldXaAdpcmSamples{};
+	std::array<std::array<int16_t, ResampleRingBufferSize>, 2> m_resampleRingBuffers{};
 	uint8_t m_resampleP = 0;
 
 	FifoBuffer<uint32_t, AudioFifoSize> m_audioBuffer;

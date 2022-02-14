@@ -75,8 +75,8 @@ private:
 
 		SyncMode GetSyncMode() const noexcept { return static_cast<SyncMode>( control.syncMode ); }
 
-		uint32_t GetChoppingDmaWindowSize() const noexcept { return 1 << control.choppingDmaWindowSize; }
-		uint32_t GetChoppingCpuWindowSize() const noexcept { return 1 << control.choppingCpuWindowSize; }
+		uint32_t GetChoppingDmaWindowSize() const noexcept { return static_cast<uint32_t>( 1 << control.choppingDmaWindowSize ); }
+		uint32_t GetChoppingCpuWindowSize() const noexcept { return static_cast<uint32_t>( 1 << control.choppingCpuWindowSize ); }
 
 		void SetBaseAddress( uint32_t value ) noexcept { baseAddress = value & BaseAddressMask; }
 
