@@ -469,7 +469,7 @@ void Renderer::CopyVRam( int srcX, int srcY, int destX, int destY, int width, in
 	dbExpects( destY + height <= VRamHeight );
 
 	const auto srcBounds = Rect::FromExtents( srcX, srcY, width, height );
-	const auto destBounds = Rect::FromExtents( srcX, srcY, width, height );
+	const auto destBounds = Rect::FromExtents( destX, destY, width, height );
 
 	if ( m_dirtyArea.Intersects( srcBounds ) )
 	{
