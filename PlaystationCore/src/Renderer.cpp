@@ -150,6 +150,7 @@ constexpr Renderer::Rect Renderer::GetWrappedBounds( uint32_t left, uint32_t top
 
 void Renderer::Reset()
 {
+	glDisable( GL_SCISSOR_TEST );
 	glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
 	glClearDepth( 1.0 );
 
@@ -158,6 +159,8 @@ void Renderer::Reset()
 
 	m_vramDrawFramebuffer.Bind();
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+
+	glEnable( GL_SCISSOR_TEST );
 
 	m_vertices.clear();
 	ResetDirtyArea();

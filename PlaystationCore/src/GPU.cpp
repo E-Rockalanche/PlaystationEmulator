@@ -1434,24 +1434,24 @@ void Gpu::Command_RenderRectangle() noexcept
 		int16_t u1, v1, u2, v2;
 		if ( m_texturedRectFlipX )
 		{
-			u1 = texcoord.u + 1;
-			u2 = u1 - width + 1;
+			u1 = texcoord.u;
+			u2 = u1 - width;
 		}
 		else
 		{
 			u1 = texcoord.u;
-			u2 = u1 + width - 1;
+			u2 = u1 + width;
 		}
 
 		if ( m_texturedRectFlipY )
 		{
-			v1 = texcoord.v + 1;
-			v2 = v1 - height + 1;
+			v1 = texcoord.v;
+			v2 = v1 - height;
 		}
 		else
 		{
 			v1 = texcoord.v;
-			v2 = v1 + height - 1;
+			v2 = v1 + height;
 		}
 
 		vertices[ 0 ].texCoord = TexCoord{ u1, v1 };
