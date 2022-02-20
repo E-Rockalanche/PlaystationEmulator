@@ -172,7 +172,7 @@ vec4 LookupTexel()
 {
 	vec4 color;
 
-	ivec2 texCoord = ivec2( ceil( TexCoord - vec2( 0.0001 ) ) );
+	ivec2 texCoord = ivec2( floor( TexCoord + vec2( 0.0001 ) ) );
 
 	// apply texture window
 	texCoord.x = ( texCoord.x & ~( u_texWindowMask.x * 8 ) ) | ( ( u_texWindowOffset.x & u_texWindowMask.x ) * 8 );
