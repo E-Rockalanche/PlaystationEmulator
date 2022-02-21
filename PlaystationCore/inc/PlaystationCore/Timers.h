@@ -53,6 +53,8 @@ public:
 	// returns true if IRQ was signalled
 	bool Update( uint32_t ticks ) noexcept;
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	union CounterMode
 	{
@@ -133,6 +135,8 @@ public:
 
 	void AddCycles( cycles_t cycles ) noexcept;
 	void ScheduleNextIrq() noexcept;
+
+	void Serialize( SaveStateSerializer& serializer );
 
 private:
 	enum class TimerRegister

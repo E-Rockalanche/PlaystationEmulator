@@ -173,9 +173,7 @@ void Playstation::Serialize( SaveStateSerializer& serializer )
 	m_memoryMap->Serialize( serializer );
 	m_cpu->Serialize( serializer );
 	m_spu->Serialize( serializer );
-	/*
 	m_timers->Serialize( serializer );
-	*/
 
 	serializer( m_bios->Data(), m_bios->Size() );
 	serializer( m_ram->Data(), m_ram->Size() );
