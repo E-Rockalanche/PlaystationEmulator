@@ -160,9 +160,15 @@ float Playstation::GetRefreshRate() const
 	return m_gpu->GetRefreshRate();
 }
 
-void Playstation::Serialize( SaveStateSerializer& serializer )
+bool Playstation::Serialize( SaveStateSerializer& serializer )
 {
-	m_eventManager->Serialize( serializer );
+	if ( !serializer.Header( "PSX", 1 ) )
+		return false;
+
+	serializer( m_bios->Data(), m_bios->Size() );
+	serializer( m_ram->Data(), m_ram->Size() );
+	serializer( m_scratchpad->Data(), m_scratchpad->Size() );
+
 	m_cdromDrive->Serialize( serializer );
 	m_controllerPorts->Serialize( serializer );
 	m_dma->Serialize( serializer );
@@ -175,9 +181,10 @@ void Playstation::Serialize( SaveStateSerializer& serializer )
 	m_spu->Serialize( serializer );
 	m_timers->Serialize( serializer );
 
-	serializer( m_bios->Data(), m_bios->Size() );
-	serializer( m_ram->Data(), m_ram->Size() );
-	serializer( m_scratchpad->Data(), m_scratchpad->Size() );
+	// must be deserialized last so it can schedule next event
+	m_eventManager->Serialize( serializer );
+
+	return serializer.End();
 }
 
 }

@@ -243,6 +243,8 @@ void EventManager::Serialize( SaveStateSerializer& serializer )
 	serializer( m_pendingCycles );
 	serializer( m_cyclesUntilGteComplete );
 	serializer( m_cyclesThisFrame );
+
+	ScheduleNextEvent();
 }
 
 }

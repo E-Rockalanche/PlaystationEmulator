@@ -67,6 +67,20 @@ public:
 		}
 	}
 
+	bool End()
+	{
+		if ( Writing() )
+			return true;
+
+		if ( m_error )
+			return false;
+
+		// return true if we read the entire stream
+		const auto pos = m_stream->tellg();
+		m_stream->seekg( 0, ByteIO::ByteStream::SeekDir::End );
+		return pos == m_stream->tellg();
+	}
+
 	template <typename T, STDX_requires( is_primitive_v<T> )
 	void operator()( T& value )
 	{

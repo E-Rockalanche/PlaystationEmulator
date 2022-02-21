@@ -29,7 +29,7 @@ public:
 
 	float GetRefreshRate() const;
 
-	void Serialize( SaveStateSerializer& serializer );
+	bool Serialize( SaveStateSerializer& serializer );
 
 public:
 	AudioQueue&			GetAudioQueue()			{ dbAssert( m_audioQueue); return *m_audioQueue; }
