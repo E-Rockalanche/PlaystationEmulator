@@ -31,6 +31,8 @@ public:
 	void DmaIn( const uint32_t* input, uint32_t count );
 	void DmaOut( uint32_t* output, uint32_t count );
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	union Status
 	{

@@ -2,6 +2,7 @@
 
 #include "EventManager.h"
 #include "DMA.h"
+#include "SaveState.h"
 
 #include <stdx/scope.h>
 
@@ -652,6 +653,39 @@ void MacroblockDecoder::OutputBlock()
 
 	m_state = ( m_remainingHalfWords == 0 ) ? State::Idle : State::DecodingMacroblock;
 	ProcessInput();
+}
+
+void MacroblockDecoder::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "MDEC", 1 ) )
+		return;
+
+	m_outputBlockEvent->Serialize( serializer );
+
+	serializer( m_status.value );
+
+	serializer( m_remainingHalfWords );
+
+	serializer( m_enableDataOut );
+	serializer( m_enableDataIn );
+	serializer( m_color );
+
+	serializer( m_state );
+
+	serializer( m_dataInBuffer );
+	serializer( m_dataOutBuffer );
+
+	serializer( m_luminanceTable );
+	serializer( m_colorTable );
+	serializer( m_scaleTable );
+
+	serializer( m_currentK );
+	serializer( m_currentQ );
+
+	serializer( m_blocks );
+	serializer( m_currentBlock );
+
+	serializer( m_dest );
 }
 
 }
