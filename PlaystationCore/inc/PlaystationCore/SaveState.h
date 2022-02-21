@@ -168,6 +168,12 @@ public:
 			m_stream->write( static_cast<const std::byte*>( bytes ), count );
 	}
 
+	template <typename T>
+	void SerializeAsBytes( T& value )
+	{
+		SerializeBytes( &value, sizeof( T ) );
+	}
+
 	void SetError()
 	{
 		dbAssert( Reading() );

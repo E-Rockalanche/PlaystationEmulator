@@ -50,16 +50,12 @@ union CodingInfo
 };
 static_assert( sizeof( CodingInfo ) == 1 );
 
-union SubHeader
+struct SubHeader
 {
-	struct
-	{
-		uint8_t file;			// (0x00-0xff) (for audio/video interleave)
-		uint8_t channel;		// (0x00-0x1f) (for audio/video interleave)
-		SubMode subMode;
-		CodingInfo codingInfo;
-	};
-	std::array<uint8_t, 4> data;
+	uint8_t file;			// (0x00-0xff) (for audio/video interleave)
+	uint8_t channel;		// (0x00-0x1f) (for audio/video interleave)
+	SubMode subMode;
+	CodingInfo codingInfo;
 };
 static_assert( sizeof( SubHeader ) == 4 );
 

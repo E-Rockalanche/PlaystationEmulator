@@ -1828,7 +1828,7 @@ void CDRomDrive::Serialize( SaveStateSerializer& serializer )
 
 	serializer( m_secondResponseCommand );
 
-	serializer( m_lastSubQ.data );
+	serializer.SerializeAsBytes( m_lastSubQ );
 
 	serializer( m_playingTrackNumberBCD );
 
@@ -1856,8 +1856,8 @@ void CDRomDrive::Serialize( SaveStateSerializer& serializer )
 		if ( serializer.Reading() )
 			m_currentSectorHeaders.emplace();
 
-		serializer( m_currentSectorHeaders->header.data );
-		serializer( m_currentSectorHeaders->subHeader.data );
+		serializer.SerializeAsBytes( m_currentSectorHeaders->header );
+		serializer.SerializeAsBytes( m_currentSectorHeaders->subHeader );
 	}
 
 	serializer( m_seekLocation.minute );
