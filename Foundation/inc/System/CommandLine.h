@@ -67,19 +67,29 @@ private:
 template <typename T>
 std::optional<T> CommandLineOptions::FindOption( std::string_view name ) const
 {
-	static_assert( std::is_integral_v<T> || std::is_floating_point_v<T> );
-
-	std::string_view valueStr;
-	int base = 10;
-	if ( SetupCharConv( name, valueStr, base ) )
+	if constexpr ( std::is_arithmetic_v<T> )
 	{
-		T value{};
-		auto end = valueStr.data() + valueStr.size();
-		const auto result = std::from_chars( valueStr.data(), end, value, base );
-		if ( result.ptr == end && result.ec == std::errc{} )
-			return value;
+		std::string_view valueStr;
+		int base = 10;
+		if ( SetupCharConv( name, valueStr, base ) )
+		{
+			T value{};
+			auto end = valueStr.data() + valueStr.size();
+			const auto result = std::from_chars( valueStr.data(), end, value, base );
+			if ( result.ptr == end && result.ec == std::errc{} )
+				return value;
+		}
+		return std::nullopt;
 	}
-	return std::nullopt;
+	else
+	{
+		// treat as string
+		const auto str = FindOption( name );
+		if ( !str.has_value() )
+			return std::nullopt;
+
+		return T( *str );
+	}
 }
 
 template <typename T>
