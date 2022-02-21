@@ -10,6 +10,10 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace PSX
@@ -17,6 +21,12 @@ namespace PSX
 
 class SaveStateSerializer
 {
+	template <typename T>
+	static constexpr bool is_byte_like_v = std::is_trivial_v<T> && sizeof( T ) == 1;
+
+	template <typename T>
+	static constexpr bool is_primitive_v = std::is_arithmetic_v<T> || std::is_enum_v<T>;
+
 public:
 	enum class Mode
 	{
@@ -24,36 +34,49 @@ public:
 		Write
 	};
 
-	SaveStateSerializer( Mode mode, ByteIO::ByteStream stream = {} ) : m_stream{ std::move( stream ) }, m_mode{ mode } {}
-
-	ByteIO::ByteStream& GetStream() noexcept { return m_stream; }
-	const ByteIO::ByteStream& GetStream() const noexcept { return m_stream; }
+	SaveStateSerializer( Mode mode, ByteIO::ByteStream& stream ) : m_stream{ &stream }, m_mode{ mode } {}
 
 	bool Reading() const noexcept { return m_mode == Mode::Read; }
 	bool Writing() const noexcept { return m_mode == Mode::Write; }
+
 	bool Error() const noexcept { return m_error; }
 
-	template <typename T, STDX_requires( std::is_integral_v<T> && sizeof( T ) == 1 )
-	void operator()( T* bytes, size_t count )
+	bool Header( std::string tag, uint32_t version )
 	{
-		if ( m_mode == Mode::Read )
+		if ( Reading() )
 		{
-			m_error = m_error || !m_stream.read( reinterpret_cast<std::byte*>( bytes ), count );
+			std::string t;
+			uint32_t v;
+			( *this )( t );
+			( *this )( v );
+
+			const bool headerOK = !m_error && t == tag && v == version;
+			if ( !headerOK )
+				m_error = true;
+
+			return headerOK;
 		}
 		else
 		{
-			m_stream.write( reinterpret_cast<const std::byte*>( bytes ), count );
+			( *this )( tag );
+			( *this )( version );
+			return true;
 		}
 	}
 
-	template <typename T, STDX_requires( std::is_integral_v<T> || std::is_floating_point_v<T> )
+	template <typename T, STDX_requires( is_primitive_v<T> )
 	void operator()( T& value )
 	{
-		// TODO check endianness
-		( *this )( &value, sizeof( T ) );
+		SerializePrimitive( value );
 	}
 
-	template <typename T>
+	template <typename T, STDX_requires( is_byte_like_v<T> )
+	void operator()( T* bytes, size_t count )
+	{
+		SerializeBytes( bytes, count );
+	}
+
+	template <typename T, STDX_requires( !is_byte_like_v<T> )
 	void operator()( T* elements, size_t length )
 	{
 		std::for_each_n( elements, length, [this]( T& value ) { ( *this )( value ); } );
@@ -70,10 +93,29 @@ public:
 	{
 		uint32_t length = static_cast<uint32_t>( vec.size() );
 		( *this )( length );
+
 		if ( Reading() )
 			vec.resize( length );
 
 		( *this )( vec.data(), length );
+	}
+
+	template <typename CharT, typename CharTraits>
+	void operator()( std::basic_string<CharT, CharTraits>& str )
+	{
+		uint32_t length = static_cast<uint32_t>( str.size() );
+		( *this )( length );
+
+		if ( Reading() )
+		{
+			CharT* buffer = GetBuffer<CharT>( length );
+			( *this )( buffer, length );
+			str.assign( buffer, length );
+		}
+		else
+		{
+			( *this )( str.data(), length );
+		}
 	}
 
 	template <typename T, size_t N>
@@ -81,11 +123,12 @@ public:
 	{
 		uint32_t length = static_cast<uint32_t>( fifo.Size() );
 		( *this )( length );
+
 		if ( Reading() )
 		{
-			ResizeBuffer( length );
-			( *this )( reinterpret_cast<T*>( m_buffer.get() ), length );
-			fifo.Push( reinterpret_cast<const T*>( m_buffer.get() ), length );
+			T* buffer = GetBuffer<T>( length );
+			( *this )( buffer, length );
+			fifo.Push( buffer, length );
 		}
 		else
 		{
@@ -93,21 +136,100 @@ public:
 		}
 	}
 
-private:
-	void ResizeBuffer( size_t size )
+	template <typename T>
+	void operator()( std::optional<T>& opt )
 	{
-		if ( m_bufferCapacity < size )
-			m_buffer.reset( new std::byte[ size ] );
+		bool hasValue = opt.has_value();
+		( *this )( hasValue );
+
+		if ( hasValue )
+		{
+			if ( Reading() )
+				opt.emplace();
+
+			( *this )( *opt );
+		}
+	}
+
+	template <typename T, STDX_requires( is_primitive_v<T> )
+	void SerializePrimitive( T& value )
+	{
+		if ( Reading() )
+			ReadPrimitive( value );
+		else
+			WritePrimitive( value );
+	}
+
+	void SerializeBytes( void* bytes, size_t count )
+	{
+		if ( Reading() )
+			m_error = m_error || !m_stream->read( static_cast<std::byte*>( bytes ), count );
+		else
+			m_stream->write( static_cast<const std::byte*>( bytes ), count );
+	}
+
+	void SetError()
+	{
+		dbAssert( Reading() );
+		m_error = true;
 	}
 
 private:
-	ByteIO::ByteStream m_stream;
-	Mode m_mode;
+	template <typename T, STDX_requires( is_primitive_v<T> )
+	void ReadPrimitive( T& value )
+	{
+		dbAssert( Reading() );
+		if ( m_error )
+			return;
+
+		// read bytes
+		std::array<std::byte, sizeof( T )> bytes;
+		if ( !m_stream->read( bytes.data(), sizeof( T ) ) )
+		{
+			m_error = true;
+			return;
+		}
+
+		// convert if big endian
+		if constexpr ( stdx::endian::native == stdx::endian::little )
+			std::memcpy( &value, bytes.data(), sizeof( T ) );
+		else
+			std::reverse_copy( bytes.begin(), bytes.end(), reinterpret_cast<std::byte*>( &value ) );
+	}
+
+	template <typename T, STDX_requires( is_primitive_v<T> )
+	void WritePrimitive( const T& value )
+	{
+		dbAssert( Writing() );
+		std::array<std::byte, sizeof( T )> bytes;
+
+		// convert if big endian
+		if constexpr ( stdx::endian::native == stdx::endian::little )
+			std::memcpy( bytes.data(), &value, sizeof( T ) );
+		else
+			std::reverse_copy( reinterpret_cast<const std::byte*>( &value ), reinterpret_cast<const std::byte*>( &value ) + sizeof( T ), bytes.data() );
+
+		// write bytes
+		m_stream->write( bytes.data(), sizeof( T ) );
+	}
+
+	template <typename T>
+	T* GetBuffer( size_t size )
+	{
+		if ( m_bufferCapacity < sizeof( T ) * size )
+			m_buffer.reset( new std::byte[ sizeof( T ) * size ] );
+
+		return reinterpret_cast<T*>( m_buffer.get() );
+	}
+
+private:
+	ByteIO::ByteStream* m_stream = nullptr;
 
 	// temp buffer to help deserialize into containers
 	std::unique_ptr<std::byte[]> m_buffer;
 	size_t m_bufferCapacity = 0;
 
+	Mode m_mode;
 	bool m_error = false;
 };
 
