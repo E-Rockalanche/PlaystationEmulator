@@ -56,6 +56,7 @@ bool SaveState( PSX::Playstation& psx, fs::path filename )
 	PSX::SaveStateSerializer serializer( PSX::SaveStateSerializer::Mode::Write, saveState );
 	psx.Serialize( serializer );
 	fout.write( saveState.data(), saveState.size() );
+	Log( "Saves state to %s", filename.string().c_str() );
 	return true;
 }
 
@@ -78,11 +79,14 @@ bool LoadState( PSX::Playstation& psx, fs::path filename )
 
 	ByteIO::ByteStream saveState( std::move( data ), size );
 	PSX::SaveStateSerializer deserializer( PSX::SaveStateSerializer::Mode::Read, saveState );
-	if ( psx.Serialize( deserializer ) )
-		return true;
+	if ( !psx.Serialize( deserializer ) )
+	{
+		LogError( "Could not load save state %s", filename.string().c_str() );
+		return false;
+	}
 
-	LogError( "Could not load save state %s", filename.string().c_str() );
-	return false;
+	Log( "Loaded state from %s", filename.string().c_str() );
+	return true;
 }
 
 int main( int argc, char** argv )
@@ -306,6 +310,8 @@ int main( int argc, char** argv )
 						{
 							if ( !romFilename.empty() )
 								SaveState( *playstationCore, MakeSaveStatePath( romFilename ) );
+							else
+								LogError( "No rom file to save state" );
 							break;
 						}
 
@@ -317,6 +323,8 @@ int main( int argc, char** argv )
 						case SDLK_F9:
 							if ( !romFilename.empty() )
 								LoadState( *playstationCore, MakeSaveStatePath( romFilename ) );
+							else
+								LogError( "No rom file to load state" );
 							break;
 
 						case SDLK_F11:
@@ -439,11 +447,11 @@ int main( int argc, char** argv )
 
 					if ( filename.extension() == fs::path( ".exe" ) )
 					{
+						exeFilename = filename;
 						playstationCore->HookExe( std::move( filename ) );
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
 						paused = false;
-						exeFilename = std::move( filename );
 					}
 					else if ( filename.extension() == fs::path( ".save" ) )
 					{
@@ -452,7 +460,7 @@ int main( int argc, char** argv )
 						{
 							memCard1 = std::move( memCard );
 							playstationCore->SetMemoryCard( 0, memCard1.get() );
-							memCard1Filename = std::move( filename );
+							memCard1Filename = memCard->GetFilename();
 						}
 					}
 					else if ( playstationCore->LoadRom( filename ) )
@@ -462,7 +470,7 @@ int main( int argc, char** argv )
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
 						paused = false;
-						romFilename = std::move( filename );
+						romFilename = memCard1->GetFilename();
 					}
 					break;
 				}
