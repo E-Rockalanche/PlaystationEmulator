@@ -208,7 +208,11 @@ void SaveStateSerializer::operator()( FifoBuffer<T, N>& fifo )
 	}
 	else
 	{
-		( *this )( fifo.Data(), length );
+		for ( size_t i = 0; i < fifo.Size(); ++i )
+		{
+			T element = fifo[ i ];
+			( *this )( element );
+		}
 	}
 }
 
