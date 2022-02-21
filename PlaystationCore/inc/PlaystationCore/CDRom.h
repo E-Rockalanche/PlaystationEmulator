@@ -313,8 +313,6 @@ public:
 		return Location::FromLogicalSector( GetCurrentTrackSector() );
 	}
 
-	void Serialize( SaveStateSerializer& serializer );
-
 protected:
 	// best API for single or multi file formats with pregaps
 	virtual bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) = 0;

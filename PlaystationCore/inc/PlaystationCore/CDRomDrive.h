@@ -369,12 +369,12 @@ private:
 	bool m_pendingPlay = false; // Play was called, but we need to seek
 
 	FifoBuffer<uint32_t, AudioFifoSize> m_audioBuffer;
-
-	// not serialized
-	std::unique_ptr<int16_t[]> m_xaAdpcmSampleBuffer;
 	std::array<int32_t, 4> m_oldXaAdpcmSamples{};
 	std::array<std::array<int16_t, ResampleRingBufferSize>, 2> m_resampleRingBuffers{};
 	uint8_t m_resampleP = 0;
+
+	// not serialized
+	std::unique_ptr<int16_t[]> m_xaAdpcmSampleBuffer;
 };
 
 }

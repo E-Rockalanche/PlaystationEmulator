@@ -180,21 +180,4 @@ std::unique_ptr<CDRom> CDRom::Open( const fs::path& filename )
 	return cdrom;
 }
 
-
-void CDRom::Serialize( SaveStateSerializer& serializer )
-{
-	if ( !serializer.Header( "CDROM", 1 ) )
-		return;
-
-	serializer( m_position );
-	serializer( m_positionInTrack );
-	serializer( m_positionInIndex );
-
-	if ( serializer.Reading() )
-	{
-		m_currentIndex = FindIndex( m_position );
-		dbAssert( m_currentIndex );
-	}
-}
-
 }

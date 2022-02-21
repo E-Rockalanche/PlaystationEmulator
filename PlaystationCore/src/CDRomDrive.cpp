@@ -1796,6 +1796,19 @@ void CDRomDrive::Serialize( SaveStateSerializer& serializer )
 	if ( !serializer.Header( "CDRomDrive", 1 ) )
 		return;
 
+	bool hasDisk = ( m_cdrom != nullptr );
+	CDRom::LogicalSector diskPosition = m_cdrom ? m_cdrom->GetCurrentSeekSector() : 0;
+	serializer( hasDisk );
+	serializer( diskPosition );
+	if ( serializer.Reading() && hasDisk )
+	{
+		if ( m_cdrom == nullptr || !m_cdrom->Seek( diskPosition ) )
+		{
+			serializer.SetError();
+			return;
+		}
+	}
+
 	m_commandEvent->Serialize( serializer );
 	m_secondResponseEvent->Serialize( serializer );
 	m_driveEvent->Serialize( serializer );
@@ -1867,8 +1880,9 @@ void CDRomDrive::Serialize( SaveStateSerializer& serializer )
 	serializer( m_pendingPlay );
 
 	serializer( m_audioBuffer );
-
-	m_cdrom->Serialize( serializer );
+	serializer( m_oldXaAdpcmSamples );
+	serializer( m_resampleRingBuffers );
+	serializer( m_resampleP );
 }
 
 }
