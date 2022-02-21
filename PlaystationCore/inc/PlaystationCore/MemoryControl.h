@@ -8,6 +8,8 @@
 namespace PSX
 {
 
+class SaveStateSerializer;
+
 class MemoryControl
 {
 public:
@@ -82,6 +84,8 @@ public:
 	{
 		return m_delaySizes[ static_cast<size_t>( index ) ];
 	}
+
+	void Serialize( SaveStateSerializer& serializer );
 
 private:
 
