@@ -159,4 +159,26 @@ float Playstation::GetRefreshRate() const
 	return m_gpu->GetRefreshRate();
 }
 
+void Playstation::Serialize( SaveStateSerializer& serializer )
+{
+	m_eventManager->Serialize( serializer );
+	m_cdromDrive->Serialize( serializer );
+	m_controllerPorts->Serialize( serializer );
+	m_dma->Serialize( serializer );
+	/*
+	m_dualSerialPort->Serialize( serializer );
+	m_gpu->Serialize( serializer );
+	m_interruptControl->Serialize( serializer );
+	m_mdec->Serialize( serializer );
+	m_memoryControl->Serialize( serializer );
+	m_memoryMap->Serialize( serializer );
+	m_cpu->Serialize( serializer );
+	m_ram->Serialize( serializer );
+	m_renderer->Serialize( serializer );
+	m_scratchpad->Serialize( serializer );
+	m_spu->Serialize( serializer );
+	m_timers->Serialize( serializer );
+	*/
+}
+
 }

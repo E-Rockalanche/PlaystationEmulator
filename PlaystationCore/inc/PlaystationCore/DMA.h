@@ -51,6 +51,8 @@ public:
 
 	void SetRequest( Channel channel, bool request ) noexcept;
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	enum class ChannelRegister
 	{
@@ -218,6 +220,7 @@ private:
 	uint32_t m_controlRegister = 0;
 	InterruptRegister m_interruptRegister;
 
+	// not serialized
 	std::unique_ptr<uint32_t[]> m_tempBuffer;
 	uint32_t m_tempBufferSize = 0;
 };

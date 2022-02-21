@@ -5,6 +5,7 @@
 #include "GPU.h"
 #include "InterruptControl.h"
 #include "MacroblockDecoder.h"
+#include "SaveState.h"
 #include "SPU.h"
 
 #include <stdx/bit.h>
@@ -547,6 +548,26 @@ void Dma::ResumeDma()
 		if ( StartDma( static_cast<Channel>( i ) ) == DmaResult::Chopping )
 			break;
 	}
+}
+
+void Dma::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "DMA", 1 ) )
+		return;
+
+	m_resumeDmaEvent->Serialize( serializer );
+
+	for ( auto& channel : m_channels )
+	{
+		serializer( channel.baseAddress );
+		serializer( channel.wordCount );
+		serializer( channel.blockCount );
+		serializer( channel.control.value );
+		serializer( channel.request );
+	}
+
+	serializer( m_controlRegister );
+	serializer( m_interruptRegister.value );
 }
 
 }
