@@ -192,6 +192,9 @@ private:
 
 	void UpdateCommunication();
 
+	ControllerType GetControllerType( size_t slot ) const;
+	bool HasMemoryCard( size_t slot ) const { return m_memCards[ slot ] != nullptr; }
+
 	void SerializeController( SaveStateSerializer& serializer, size_t slot );
 	void SerializeMemoryCard( SaveStateSerializer& serializer, size_t slot );
 
