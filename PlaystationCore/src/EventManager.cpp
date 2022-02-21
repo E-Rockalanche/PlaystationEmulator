@@ -1,5 +1,7 @@
 #include "EventManager.h"
 
+#include "SaveState.h"
+
 #include <stdx/assert.h>
 
 namespace PSX
@@ -102,6 +104,13 @@ void Event::Update( cycles_t cycles )
 		m_pendingCycles = 0;
 		m_active = false;
 	}
+}
+
+void Event::Serialize( SaveStateSerializer& serializer )
+{
+	serializer( m_cyclesUntilEvent );
+	serializer( m_pendingCycles );
+	serializer( m_active );
 }
 
 EventManager::~EventManager()
@@ -221,6 +230,19 @@ void EventManager::EndFrame()
 	m_cyclesThisFrame += m_pendingCycles;
 	dbLogDebug( "EventManager::EndFrame -- CPU cycles this frame: %i", m_cyclesThisFrame );
 	m_cyclesThisFrame = -m_pendingCycles;
+}
+
+void EventManager::Serialize( SaveStateSerializer& serializer )
+{
+	dbAssert( !m_updating );
+
+	if ( !serializer.Header( "EventManager", 1 ) )
+		return;
+
+	serializer( m_cyclesUntilNextEvent );
+	serializer( m_pendingCycles );
+	serializer( m_cyclesUntilGteComplete );
+	serializer( m_cyclesThisFrame );
 }
 
 }
