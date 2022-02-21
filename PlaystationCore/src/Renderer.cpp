@@ -6,6 +6,7 @@
 #include "Output16bitShader.h"
 #include "Output24bitShader.h"
 #include "ResetDepthShader.h"
+#include "SaveState.h"
 
 #include <Render/Types.h>
 

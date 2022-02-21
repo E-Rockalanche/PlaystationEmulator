@@ -1818,6 +1818,27 @@ void Gpu::Serialize( SaveStateSerializer& serializer )
 	}
 
 	serializer( m_cropMode );
+
+	if ( serializer.Writing() )
+		m_renderer.ReadVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
+
+	serializer( m_vram.get(), VRamWidth * VRamHeight );
+
+	if ( serializer.Reading() )
+	{
+		m_renderer.Reset();
+
+		m_renderer.UpdateVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
+
+		m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
+		m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
+		m_renderer.SetSemiTransparencyMode( m_status.GetSemiTransparencyMode() );
+		m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
+		m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
+		m_renderer.SetDisplayEnable( !m_status.displayDisable );
+
+		UpdateCrtDisplay();
+	}
 }
 
 } // namespace PSX
