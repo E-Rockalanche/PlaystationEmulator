@@ -203,6 +203,7 @@ void SaveStateSerializer::operator()( FifoBuffer<T, N>& fifo )
 	{
 		T* buffer = GetBuffer<T>( length );
 		( *this )( buffer, length );
+		fifo.Clear();
 		fifo.Push( buffer, length );
 	}
 	else
