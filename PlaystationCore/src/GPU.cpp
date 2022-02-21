@@ -228,7 +228,6 @@ void Gpu::Reset()
 	m_gpuRead = 0;
 
 	m_crtState = CrtState{};
-	m_cachedCyclesUntilNextEvent = 0;
 
 	// clear VRAM
 	std::fill_n( m_vram.get(), VRamWidth * VRamHeight, uint16_t{ 0 } );
@@ -1605,7 +1604,6 @@ void Gpu::UpdateCrtDisplay() noexcept
 
 void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 {
-	dbExpects( cpuCycles <= m_cachedCyclesUntilNextEvent );
 	const cycles_t gpuCycles = ConvertCpuToGpuCycles( cpuCycles, m_crtState.fractionalCycles );
 
 	auto& dotTimer = m_timers->GetTimer( DotTimerIndex );
@@ -1731,7 +1729,6 @@ void Gpu::ScheduleCrtEvent() noexcept
 
 	// schedule next update
 	const cycles_t cpuCycles = ConvertGpuToCpuCycles( gpuCycles, m_crtState.fractionalCycles );
-	m_cachedCyclesUntilNextEvent = cpuCycles;
 	m_crtEvent->Schedule( cpuCycles );
 }
 

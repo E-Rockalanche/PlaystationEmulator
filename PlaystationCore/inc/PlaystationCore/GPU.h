@@ -395,8 +395,6 @@ private:
 	};
 	CrtState m_crtState;
 
-	mutable cycles_t m_cachedCyclesUntilNextEvent = 0;
-
 	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512, used for VRAM to CPU transfers
 
 	std::vector<uint32_t> m_transferBuffer; // for VRAM write and polyline commands
