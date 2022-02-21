@@ -1826,8 +1826,6 @@ void CDRomDrive::Serialize( SaveStateSerializer& serializer )
 	serializer( m_xaFilter.channel );
 	serializer( m_xaFilter.set );
 
-	serializer( m_secondResponseCommand );
-
 	serializer.SerializeAsBytes( m_lastSubQ );
 
 	serializer( m_playingTrackNumberBCD );
@@ -1843,7 +1841,7 @@ void CDRomDrive::Serialize( SaveStateSerializer& serializer )
 	for ( auto& buffer : m_sectorBuffers )
 	{
 		serializer( buffer.size );
-		serializer( buffer.bytes );
+		serializer( buffer.bytes.data(), buffer.size );
 	}
 
 	serializer( m_readSectorBuffer );
