@@ -34,7 +34,7 @@ std::unique_ptr<MemoryCard> MemoryCard::Load( fs::path filename )
 	std::ifstream fin( filename, std::ios::binary );
 	if ( !fin.is_open() )
 	{
-		dbLogWarning( "MemoryCard::Load -- Cannot open file [%s]", filename.c_str() );
+		dbLogWarning( "MemoryCard::Load -- Cannot open file [%s]", filename.string().c_str() );
 		return nullptr;
 	}
 
