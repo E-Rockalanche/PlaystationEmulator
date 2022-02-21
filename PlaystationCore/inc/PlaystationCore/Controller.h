@@ -4,6 +4,8 @@
 
 #include <stdx/bit.h>
 
+#include <array>
+
 namespace PSX
 {
 
@@ -57,6 +59,8 @@ enum class Axis
 class Controller
 {
 public:
+	ControllerType GetType() const { return ControllerType::Analog; }
+
 	void Reset()
 	{
 		ResetTransfer();
@@ -96,6 +100,8 @@ public:
 		return m_analogMode;
 	}
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	enum class State
 	{
@@ -119,6 +125,7 @@ private:
 	State m_state = State::Idle;
 	uint16_t m_buttons = 0xffffu;
 
+	// don't serialize buttons & axis
 	union
 	{
 		struct
@@ -129,7 +136,7 @@ private:
 			uint8_t m_joyLeftY;
 		};
 
-		uint8_t m_axis[4] = { 0x80, 0x80, 0x80, 0x80 };
+		std::array<uint8_t, 4> m_axis{ 0x80, 0x80, 0x80, 0x80 };
 	};
 
 

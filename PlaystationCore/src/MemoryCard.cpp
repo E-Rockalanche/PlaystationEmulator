@@ -1,5 +1,7 @@
 #include "MemoryCard.h"
 
+#include "SaveState.h"
+
 #include <stdx/assert.h>
 
 #include <fstream>
@@ -334,6 +336,17 @@ bool MemoryCard::Save()
 
 	m_written = false;
 	return true;
+}
+
+
+void MemoryCard::Serialize( SaveStateSerializer& serializer )
+{
+	serializer( m_state );
+	serializer( m_flag.value );
+	serializer( m_dataCount );
+	serializer( m_address );
+	serializer( m_previousData );
+	serializer( m_writeChecksum );
 }
 
 }

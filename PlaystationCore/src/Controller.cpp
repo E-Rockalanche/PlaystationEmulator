@@ -1,5 +1,7 @@
 #include "Controller.h"
 
+#include "SaveState.h"
+
 namespace PSX
 {
 
@@ -94,6 +96,16 @@ bool Controller::Communicate( uint8_t input, uint8_t& output )
 	dbBreak();
 	output = HighZ;
 	return false;
+}
+
+
+void Controller::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "Controller", 1 ) )
+		return;
+
+	serializer( m_state );
+	serializer( m_analogMode );
 }
 
 }

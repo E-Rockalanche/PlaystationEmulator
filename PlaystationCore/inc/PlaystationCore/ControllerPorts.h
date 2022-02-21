@@ -151,6 +151,8 @@ public:
 		m_memCards[ slot ] = memCard;
 	}
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	enum class State
 	{
@@ -189,6 +191,9 @@ private:
 	void EndTransfer();
 
 	void UpdateCommunication();
+
+	void SerializeController( SaveStateSerializer& serializer, size_t slot );
+	void SerializeMemoryCard( SaveStateSerializer& serializer, size_t slot );
 
 private:
 	InterruptControl& m_interruptControl;

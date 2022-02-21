@@ -12,6 +12,8 @@ namespace fs = std::filesystem;
 namespace PSX
 {
 
+class SaveStateSerializer;
+
 class MemoryCard
 {
 public:
@@ -45,6 +47,8 @@ public:
 	{
 		return m_written;
 	}
+
+	void Serialize( SaveStateSerializer& serializer );
 
 private:
 	static constexpr uint32_t TotalSize = 128 * 1024;
@@ -162,6 +166,7 @@ private:
 	uint8_t m_previousData = 0;
 	uint8_t m_writeChecksum = 0;
 
+	// serialize this?
 	fs::path m_filename;
 	std::array<uint8_t, TotalSize> m_memory{};
 	bool m_written = false;
