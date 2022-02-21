@@ -112,6 +112,12 @@ public:
 	}
 
 	// get pointer to raw buffer. USE WITH CAUTION
+	T* Data() noexcept
+	{
+		return m_storage.GetData();
+	}
+
+	// get pointer to raw buffer. USE WITH CAUTION
 	const T* Data() const noexcept
 	{
 		return m_storage.GetData();

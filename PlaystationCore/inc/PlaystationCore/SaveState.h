@@ -73,7 +73,7 @@ public:
 	template <typename T, STDX_requires( is_byte_like_v<T> )
 	void operator()( T* bytes, size_t count )
 	{
-		SerializeBytes( bytes, count );
+		SerializeBytes( static_cast<void*>( bytes ), count );
 	}
 
 	template <typename T, STDX_requires( !is_byte_like_v<T> )
