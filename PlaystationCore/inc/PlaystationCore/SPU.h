@@ -28,6 +28,8 @@ public:
 
 	void EndFrame() noexcept;
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	static constexpr uint32_t VoiceCount = 24;
 	static constexpr uint32_t VoiceRegisterCount = 8;
@@ -317,8 +319,8 @@ private:
 	struct VolumeSweep
 	{
 		VolumeEnvelope envelope;
-		bool envelopeActive = false;
 		int16_t currentLevel = 0;
+		bool envelopeActive = false;
 
 		void Reset( VolumeRegister reg ) noexcept;
 
@@ -430,6 +432,10 @@ private:
 	void ReverbWrite( uint32_t address, int16_t data ) noexcept;
 
 	std::pair<int32_t, int32_t> ProcessReverb( int16_t inLeft, int16_t inRight ) noexcept;
+
+	void SerializeVolumeEnvelope( SaveStateSerializer& serializer, VolumeEnvelope& envelope );
+	void SerializeVolumeSweep( SaveStateSerializer& serializer, VolumeSweep& volumeSweep );
+	void SerializeVoice( SaveStateSerializer& serializer, Voice& voice );
 
 private:
 	CDRomDrive& m_cdromDrive;

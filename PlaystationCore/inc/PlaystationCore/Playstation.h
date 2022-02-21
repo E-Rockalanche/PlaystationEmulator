@@ -29,6 +29,8 @@ public:
 
 	float GetRefreshRate() const;
 
+	bool Serialize( SaveStateSerializer& serializer );
+
 public:
 	AudioQueue&			GetAudioQueue()			{ dbAssert( m_audioQueue); return *m_audioQueue; }
 	Bios&				GetBios()				{ dbAssert( m_bios ); return *m_bios; }

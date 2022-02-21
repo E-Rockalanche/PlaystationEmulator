@@ -99,6 +99,12 @@
     <ClCompile Include="src\CDRom_Cue.cpp">
       <Filter>src\CDRoms</Filter>
     </ClCompile>
+    <ClCompile Include="src\InterruptControl.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\SaveState.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationCore\BIOS.h">
@@ -214,6 +220,9 @@
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\ResetDepthShader.h">
       <Filter>inc\shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\SaveState.h">
+      <Filter>inc</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

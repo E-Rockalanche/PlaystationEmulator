@@ -138,6 +138,8 @@ public:
 
 	Ram& GetRam() noexcept { return m_ram; }
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	// masks help strip region bits from virtual address to make a physical address
 	// KSEG2 doesn't mirror the other regions so it's essentially ignored
@@ -153,13 +155,17 @@ private:
 		0xffffffff, 0xffffffff
 	};
 
-	struct ICacheFlags
+	union ICacheFlags
 	{
-		ICacheFlags() : tag{ 0 }, valid{ 0 } {}
-
-		uint32_t tag : 20;
-		uint32_t valid : 4;
+		struct
+		{
+			uint32_t tag : 20;
+			uint32_t valid : 4;
+			uint32_t : 8;
+		};
+		uint32_t value = 0;
 	};
+	static_assert( sizeof( ICacheFlags ) == 4 );
 
 private:
 	template <typename T, bool Read>

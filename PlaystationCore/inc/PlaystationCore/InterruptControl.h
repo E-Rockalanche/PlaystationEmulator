@@ -7,6 +7,8 @@
 namespace PSX
 {
 
+class SaveStateSerializer;
+
 enum class Interrupt : uint32_t
 {
 	VBlank = 1,
@@ -47,39 +49,11 @@ public:
 		return ( m_status & m_mask ) != 0;
 	}
 
-	uint32_t Read( uint32_t index ) const noexcept
-	{
-		dbExpects( index < 2 );
-		switch ( index )
-		{
-			case 0:
-				return m_status;
+	uint32_t Read( uint32_t index ) const noexcept;
 
-			case 1:
-				return m_mask;
+	void Write( uint32_t index, uint32_t value ) noexcept;
 
-			default:
-				dbBreak();
-				return 0;
-		}
-	}
-
-	void Write( uint32_t index, uint32_t value ) noexcept
-	{
-		dbExpects( index < 2 );
-		switch ( index )
-		{
-			case 0:
-				dbLogDebug( "InterruptControl::Write -- acknowledge IRQs [%X]", value );
-				m_status &= value & WriteMask;
-				break;
-
-			case 1:
-				dbLogDebug( "InterruptControl::Write -- interrupt mask [%X]", value );
-				m_mask = value & WriteMask;
-				break;
-		}
-	}
+	void Serialize( SaveStateSerializer& serializer );
 
 private:
 	uint32_t m_status = 0;

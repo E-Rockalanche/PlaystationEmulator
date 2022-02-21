@@ -34,6 +34,8 @@ public:
 	// returns cycles to complete command
 	cycles_t ExecuteCommand( uint32_t command ) noexcept;
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	enum class Register : uint32_t
 	{

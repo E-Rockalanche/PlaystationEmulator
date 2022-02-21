@@ -1,5 +1,7 @@
 #include "CDRom.h"
 
+#include "SaveState.h"
+
 #include <stdx/string.h>
 
 namespace PSX

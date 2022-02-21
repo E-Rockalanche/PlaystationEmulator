@@ -4,6 +4,7 @@
 #include "EventManager.h"
 #include "InterruptControl.h"
 #include "MemoryCard.h"
+#include "SaveState.h"
 
 namespace PSX
 {
@@ -279,6 +280,74 @@ void ControllerPorts::UpdateCommunication()
 			EndTransfer();
 			break;
 	}
+}
+
+
+ControllerType ControllerPorts::GetControllerType( size_t slot ) const
+{
+	return m_controllers[ slot ] ? m_controllers[ slot ]->GetType() : ControllerType::None;
+}
+
+void ControllerPorts::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "ControllerPorts", 1 ) )
+		return;
+
+	m_communicateEvent->Serialize( serializer );
+
+	serializer( m_status.value );
+	serializer( m_mode.value );
+	serializer( m_control.value );
+	serializer( m_baudrateReloadValue );
+
+	serializer( m_state );
+	serializer( m_currentDevice );
+
+	serializer( m_txBuffer );
+	serializer( m_txBufferFull );
+
+	serializer( m_rxBuffer );
+	serializer( m_rxBufferFull );
+
+	serializer( m_tranferringValue );
+
+	SerializeController( serializer, 0 );
+	SerializeController( serializer, 1 );
+
+	SerializeMemoryCard( serializer, 0 );
+	SerializeMemoryCard( serializer, 1 );
+}
+
+void ControllerPorts::SerializeController( SaveStateSerializer& serializer, size_t slot )
+{
+	ControllerType type = GetControllerType( slot );
+	serializer( type );
+	if ( type != GetControllerType( slot ) )
+	{
+		// TODO: create or ignore controller
+		dbAssert( serializer.Reading() );
+		serializer.SetError();
+		return;
+	}
+
+	if ( type != ControllerType::None )
+		m_controllers[ slot ]->Serialize( serializer );
+}
+
+void ControllerPorts::SerializeMemoryCard( SaveStateSerializer& serializer, size_t slot )
+{
+	bool hasMemCard = HasMemoryCard( slot );
+	serializer( hasMemCard );
+	if ( hasMemCard != HasMemoryCard( slot ) )
+	{
+		// TODO: create or ignore memory card
+		dbAssert( serializer.Reading() );
+		serializer.SetError();
+		return;
+	}
+
+	if ( hasMemCard )
+		m_memCards[ slot ]->Serialize( serializer );
 }
 
 }

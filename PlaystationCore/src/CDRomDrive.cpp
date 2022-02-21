@@ -3,6 +3,7 @@
 #include "DMA.h"
 #include "EventManager.h"
 #include "InterruptControl.h"
+#include "SaveState.h"
 
 #include <stdx/scope.h>
 
@@ -1789,6 +1790,99 @@ void CDRomDrive::ResampleXaAdpcm( const int16_t* samples, uint32_t count )
 	m_resampleP = p;
 }
 
-// CDROM control commands
+
+void CDRomDrive::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "CDRomDrive", 1 ) )
+		return;
+
+	bool hasDisk = ( m_cdrom != nullptr );
+	CDRom::LogicalSector diskPosition = m_cdrom ? m_cdrom->GetCurrentSeekSector() : 0;
+	serializer( hasDisk );
+	serializer( diskPosition );
+	if ( serializer.Reading() && hasDisk )
+	{
+		if ( m_cdrom == nullptr || !m_cdrom->Seek( diskPosition ) )
+		{
+			serializer.SetError();
+			return;
+		}
+	}
+
+	m_commandEvent->Serialize( serializer );
+	m_secondResponseEvent->Serialize( serializer );
+	m_driveEvent->Serialize( serializer );
+
+	serializer( m_driveState );
+
+	serializer( m_status.value );
+	serializer( m_interruptEnable );
+	serializer( m_interruptFlags );
+	serializer( m_queuedInterrupt );
+
+	serializer( m_volumes.leftToLeft );
+	serializer( m_volumes.leftToRight );
+	serializer( m_volumes.rightToRight );
+	serializer( m_volumes.rightToLeft );
+	serializer( m_nextVolumes.leftToLeft );
+	serializer( m_nextVolumes.leftToRight );
+	serializer( m_nextVolumes.rightToRight );
+	serializer( m_nextVolumes.rightToLeft );
+
+	serializer( m_pendingCommand );
+	serializer( m_secondResponseCommand );
+
+	serializer( m_driveStatus.value );
+	serializer( m_mode.value );
+
+	serializer( m_xaFilter.file );
+	serializer( m_xaFilter.channel );
+	serializer( m_xaFilter.set );
+
+	serializer.SerializeAsBytes( m_lastSubQ );
+
+	serializer( m_playingTrackNumberBCD );
+
+	serializer( m_muted );
+	serializer( m_muteADPCM );
+
+	serializer( m_parameterBuffer );
+	serializer( m_responseBuffer );
+	serializer( m_secondResponseBuffer );
+	serializer( m_dataBuffer );
+
+	for ( auto& buffer : m_sectorBuffers )
+	{
+		serializer( buffer.size );
+		serializer( buffer.bytes.data(), buffer.size );
+	}
+
+	serializer( m_readSectorBuffer );
+	serializer( m_writeSectorBuffer );
+
+	bool hasSectorHeaders = m_currentSectorHeaders.has_value();
+	serializer( hasSectorHeaders );
+	if ( hasSectorHeaders )
+	{
+		if ( serializer.Reading() )
+			m_currentSectorHeaders.emplace();
+
+		serializer.SerializeAsBytes( m_currentSectorHeaders->header );
+		serializer.SerializeAsBytes( m_currentSectorHeaders->subHeader );
+	}
+
+	serializer( m_seekLocation.minute );
+	serializer( m_seekLocation.second );
+	serializer( m_seekLocation.sector );
+
+	serializer( m_pendingSeek );
+	serializer( m_pendingRead );
+	serializer( m_pendingPlay );
+
+	serializer( m_audioBuffer );
+	serializer( m_oldXaAdpcmSamples );
+	serializer( m_resampleRingBuffers );
+	serializer( m_resampleP );
+}
 
 }

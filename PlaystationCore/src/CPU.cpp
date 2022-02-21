@@ -4,6 +4,7 @@
 #include "EventManager.h"
 #include "File.h"
 #include "MemoryMap.h"
+#include "SaveState.h"
 
 #include <stdx/assert.h>
 
@@ -961,6 +962,40 @@ inline void MipsR3000Cpu::IllegalInstruction( [[maybe_unused]] Instruction instr
 {
 	dbBreakMessage( "Illegal instruction [%X]", instr.value );
 	RaiseException( Cop0::ExceptionCode::ReservedInstruction );
+}
+
+void MipsR3000Cpu::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "CPU", 1 ) )
+		return;
+
+	m_registers.Serialize( serializer );
+
+	serializer( m_currentPC );
+	serializer( m_pc );
+	serializer( m_nextPC );
+
+	serializer( m_inBranch );
+	serializer( m_inDelaySlot );
+
+	serializer( m_hi );
+	serializer( m_lo );
+
+	serializer( m_consoleOutput );
+
+	m_cop0.Serialize( serializer );
+	m_gte.Serialize( serializer );
+}
+
+void MipsR3000Cpu::Registers::Serialize( SaveStateSerializer& serializer )
+{
+	serializer( m_registers );
+
+	serializer( m_loadDelay.index );
+	serializer( m_loadDelay.value );
+
+	serializer( m_newLoadDelay.index );
+	serializer( m_newLoadDelay.value );
 }
 
 }

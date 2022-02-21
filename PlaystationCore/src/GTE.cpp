@@ -1,5 +1,7 @@
 #include "GTE.h"
 
+#include "SaveState.h"
+
 #include <stdx/assert.h>
 #include <stdx/bit.h>
 
@@ -1023,6 +1025,58 @@ uint32_t GTE::UNRDivide( uint32_t lhs, uint32_t rhs ) noexcept
 	}
 
 	return result;
+}
+
+void GTE::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "GTE", 1 ) )
+		return;
+
+	serializer( m_vectors );
+
+	serializer( m_color.value );
+
+	serializer( m_orderTableZ );
+
+	serializer( m_ir0 );
+	serializer( m_ir123 );
+
+	serializer( m_screenXYFifo );
+	serializer( m_screenZFifo );
+
+	for ( auto& c : m_colorCodeFifo )
+		serializer( c.value );
+
+	serializer( m_unused );
+
+	serializer( m_mac0 );
+	serializer( m_mac123 );
+
+	serializer( m_leadingBitsSource );
+
+	serializer( m_rotation );
+
+	serializer( m_translation );
+
+	serializer( m_lightMatrix );
+
+	serializer( m_backgroundColor );
+
+	serializer( m_colorMatrix );
+
+	serializer( m_farColor );
+
+	serializer( m_screenOffset );
+
+	serializer( m_projectionPlaneDistance );
+
+	serializer( m_depthQueueParamA );
+	serializer( m_depthQueueParamB );
+
+	serializer( m_zScaleFactor3 );
+	serializer( m_zScaleFactor4 );
+
+	serializer( m_errorFlags );
 }
 
 #undef CMOAE

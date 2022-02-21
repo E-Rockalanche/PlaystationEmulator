@@ -4,10 +4,42 @@
 #include <stdx/cast.h>
 #include <type_traits>
 
+#include <algorithm>
 #include <intrin.h>
 
 namespace stdx
 {
+
+// c++20 endian
+enum class endian
+{
+#ifdef _WIN32
+	little = 0,
+	big = 1,
+	native = little
+#else
+	little = __ORDER_LITTLE_ENDIAN__,
+	big = __ORDER_BIG_ENDIAN__,
+	native = __BYTE_ORDER__
+#endif
+};
+
+// c++23 byteswap
+template <typename T, STDX_requires( std::is_integral_v<T> )
+constexpr T byteswap( T n ) noexcept
+{
+	if constexpr ( sizeof( T ) == 1 )
+		return n;
+
+	T result;
+	const char* src = reinterpret_cast<const char*>( &n );
+	char* dest = reinterpret_cast<char*>( &result );
+
+	for ( size_t i = 0; i < sizeof( T ); ++i )
+		dest[ i ] = src[ sizeof( T ) - i - 1 ];
+
+	return result;
+}
 
 template <typename T, STDX_requires( std::is_integral_v<T> )
 inline constexpr bool any_of( T value, T flags ) noexcept

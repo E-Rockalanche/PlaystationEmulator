@@ -10,6 +10,8 @@
 namespace PSX
 {
 
+class SaveStateSerializer;
+
 class Cop0
 {
 public:
@@ -148,6 +150,8 @@ public:
 	void SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor = 0, bool branch = false ) noexcept;
 
 	void PrepareReturnFromException() noexcept;
+
+	void Serialize( SaveStateSerializer& serializer );
 
 private:
 	InterruptControl& m_interruptControl;

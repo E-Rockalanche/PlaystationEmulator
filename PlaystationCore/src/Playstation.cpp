@@ -16,6 +16,7 @@
 #include "MemoryControl.h"
 #include "RAM.h"
 #include "Renderer.h"
+#include "SaveState.h"
 #include "SPU.h"
 #include "Timers.h"
 
@@ -157,6 +158,33 @@ void Playstation::HookExe( fs::path filename )
 float Playstation::GetRefreshRate() const
 {
 	return m_gpu->GetRefreshRate();
+}
+
+bool Playstation::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "PSX", 1 ) )
+		return false;
+
+	serializer( m_bios->Data(), m_bios->Size() );
+	serializer( m_ram->Data(), m_ram->Size() );
+	serializer( m_scratchpad->Data(), m_scratchpad->Size() );
+
+	m_cdromDrive->Serialize( serializer );
+	m_controllerPorts->Serialize( serializer );
+	m_dma->Serialize( serializer );
+	m_gpu->Serialize( serializer );
+	m_interruptControl->Serialize( serializer );
+	m_mdec->Serialize( serializer );
+	m_memoryControl->Serialize( serializer );
+	m_memoryMap->Serialize( serializer );
+	m_cpu->Serialize( serializer );
+	m_spu->Serialize( serializer );
+	m_timers->Serialize( serializer );
+
+	// must be deserialized last so it can schedule next event
+	m_eventManager->Serialize( serializer );
+
+	return serializer.End();
 }
 
 }

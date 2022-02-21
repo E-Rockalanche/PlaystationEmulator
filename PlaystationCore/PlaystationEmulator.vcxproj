@@ -242,12 +242,14 @@
     <ClCompile Include="src\GTE.cpp" />
     <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />
+    <ClCompile Include="src\InterruptControl.cpp" />
     <ClCompile Include="src\MacroblockDecoder.cpp" />
     <ClCompile Include="src\MemoryCard.cpp" />
     <ClCompile Include="src\MemoryControl.cpp" />
     <ClCompile Include="src\MemoryMap.cpp" />
     <ClCompile Include="src\Playstation.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\SaveState.cpp" />
     <ClCompile Include="src\SPU.cpp" />
     <ClCompile Include="src\Timers.cpp" />
     <ClCompile Include="src\VRamCopyShader.cpp" />
@@ -280,6 +282,7 @@
     <ClInclude Include="inc\PlaystationCore\File.h" />
     <ClInclude Include="inc\PlaystationCore\DisplayShader.h" />
     <ClInclude Include="inc\PlaystationCore\ResetDepthShader.h" />
+    <ClInclude Include="inc\PlaystationCore\SaveState.h" />
     <ClInclude Include="inc\PlaystationCore\VRamViewShader.h" />
     <ClInclude Include="inc\PlaystationCore\GPU.h" />
     <ClInclude Include="inc\PlaystationCore\GpuDefs.h" />

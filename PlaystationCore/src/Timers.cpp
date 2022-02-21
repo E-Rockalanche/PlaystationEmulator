@@ -3,6 +3,7 @@
 #include "EventManager.h"
 #include "InterruptControl.h"
 #include "GPU.h"
+#include "SaveState.h"
 
 namespace PSX
 {
@@ -412,6 +413,31 @@ void Timers::ScheduleNextIrq() noexcept
 
 	// timers need to be scheduled even if an IRQ won't happen
 	m_timerEvent->Schedule( minCycles );
+}
+
+void Timers::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "Timers", 1 ) )
+		return;
+
+	m_timerEvent->Serialize( serializer );
+
+	for ( auto& timer : m_timers )
+		timer.Serialize( serializer );
+
+	serializer( m_cyclesDiv8Remainder );
+}
+
+void Timer::Serialize( SaveStateSerializer& serializer )
+{
+	serializer( m_counter );
+	serializer( m_mode.value );
+	serializer( m_target );
+
+	serializer( m_irq );
+	serializer( m_paused );
+	serializer( m_inBlank );
+	serializer( m_useSystemClock );
 }
 
 }

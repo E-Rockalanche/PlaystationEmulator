@@ -2,6 +2,7 @@
 
 #include <stdx/compiler.h>
 
+#include <array>
 #include <cstdint>
 
 namespace PSX::CDXA

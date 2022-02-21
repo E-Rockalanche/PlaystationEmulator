@@ -62,6 +62,8 @@ public:
 	void UpdateCrtEventEarly();
 	void ScheduleCrtEvent() noexcept;
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	struct CrtConstants
 	{
@@ -171,7 +173,20 @@ private:
 	};
 	static_assert( sizeof( Status ) == 4 );
 
+	enum class RenderCommandType
+	{
+		Fill,
+		Copy,
+		Write,
+		Read,
+		Polygon,
+		Line,
+		Rectangle,
+		None,
+	};
+
 	using CommandFunction = void( Gpu::* )( ) noexcept;
+	inline static std::array<CommandFunction, 7> s_renderCommandFunctions{};
 
 private:
 	// rounded down, remainder is stored in fractionalCycles
@@ -208,7 +223,7 @@ private:
 
 	void ClearCommandBuffer() noexcept;
 
-	void InitCommand( uint32_t paramaterCount, CommandFunction function ) noexcept;
+	void InitCommand( uint32_t paramaterCount, RenderCommandType renderCommandType ) noexcept;
 
 	void SetupVRamCopy() noexcept;
 	void FinishVRamWrite() noexcept;
@@ -314,7 +329,7 @@ private:
 	State m_state = State::Idle;
 	FifoBuffer<uint32_t, 16> m_commandBuffer;
 	uint32_t m_remainingParamaters = 0;
-	CommandFunction m_commandFunction = nullptr;
+	RenderCommandType m_renderCommandType = RenderCommandType::None;
 	cycles_t m_pendingCommandCycles = 0;
 	bool m_processingCommandBuffer = false;
 
@@ -379,8 +394,6 @@ private:
 		bool displayFrame = false;
 	};
 	CrtState m_crtState;
-
-	mutable cycles_t m_cachedCyclesUntilNextEvent = 0;
 
 	std::unique_ptr<uint16_t[]> m_vram; // 1MB of VRAM, 1024x512, used for VRAM to CPU transfers
 

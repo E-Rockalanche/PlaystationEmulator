@@ -1,17 +1,20 @@
+
 #include <PlaystationCore/Playstation.h>
 #include <PlaystationCore/Controller.h>
 #include <PlaystationCore/EventManager.h>
 #include <PlaystationCore/GPU.h>
 #include <PlaystationCore/MemoryCard.h>
 #include <PlaystationCore/Renderer.h>
-
 #include <PlaystationCore/AudioQueue.h>
 #include <PlaystationCore/CDRomDrive.h>
+#include <PlaystationCore/SaveState.h>
 
 #include <Render/Error.h>
 
 #include <System/CommandLine.h>
 #include <System/Stopwatch.h>
+
+#include <ByteIO/ByteStream.h>
 
 #include <SDL.h>
 #include <glad/glad.h>
@@ -31,15 +34,66 @@ void PrintSdlError( const char* message )
 	std::cout << "SDL error: " << SDL_GetError() << '\n';
 }
 
+fs::path MakeSaveStatePath( fs::path path, std::string_view postfix = "_quicksave" )
+{
+	auto filename = path.filename();
+	filename += postfix;
+	path.replace_filename( filename );
+	path.replace_extension( "sav" );
+	return path;
+}
+
+bool SaveState( PSX::Playstation& psx, fs::path filename )
+{
+	std::ofstream fout( filename, std::ios::binary );
+	if ( !fout.is_open() )
+	{
+		LogError( "Cannot open %s", filename.string().c_str() );
+		return false;
+	}
+
+	ByteIO::ByteStream saveState;
+	PSX::SaveStateSerializer serializer( PSX::SaveStateSerializer::Mode::Write, saveState );
+	psx.Serialize( serializer );
+	fout.write( saveState.data(), saveState.size() );
+	return true;
+}
+
+bool LoadState( PSX::Playstation& psx, fs::path filename )
+{
+	std::ifstream fin( filename, std::ios::binary );
+	if ( !fin.is_open() )
+	{
+		LogError( "Cannot open %s", filename.string().c_str() );
+		return false;
+	}
+
+	fin.seekg( 0, std::ios::end );
+	const auto size = static_cast<size_t>( fin.tellg() );
+	fin.seekg( 0, std::ios::beg );
+
+	std::unique_ptr<char[]> data( new char[ size ] );
+	fin.read( data.get(), size );
+	fin.close();
+
+	ByteIO::ByteStream saveState( std::move( data ), size );
+	PSX::SaveStateSerializer deserializer( PSX::SaveStateSerializer::Mode::Read, saveState );
+	if ( psx.Serialize( deserializer ) )
+		return true;
+
+	LogError( "Could not load save state %s", filename.string().c_str() );
+	return false;
+}
+
 int main( int argc, char** argv )
 {
 	CommandLine::Initialize( argc, argv );
 
-	const auto romFilename = CommandLine::Get().FindOption( "rom" );
-	const auto exeFilename = CommandLine::Get().FindOption( "exe" );
-	const auto memCard1Filename = CommandLine::Get().FindOption( "memcard1" );
-	const auto memCard2Filename = CommandLine::Get().FindOption( "memcard2" );
-	const std::string_view biosFilename = CommandLine::Get().GetOption( "bios", "bios.bin" );
+	fs::path romFilename = CommandLine::Get().GetOption( "rom", fs::path{} );
+	fs::path exeFilename = CommandLine::Get().GetOption( "exe", fs::path{} );
+	fs::path memCard1Filename = CommandLine::Get().GetOption( "memcard1", fs::path{} );
+	fs::path memCard2Filename = CommandLine::Get().GetOption( "memcard2", fs::path{} );
+	fs::path biosFilename = CommandLine::Get().GetOption( "bios", fs::path{ "bios.bin" } );
 
 	dbLog( "initializing SDL" );
 	if ( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER ) < 0 )
@@ -153,16 +207,16 @@ int main( int argc, char** argv )
 	};
 
 	bool paused = true;
-	if ( romFilename.has_value() && playstationCore->LoadRom( *romFilename ) )
+	if ( !romFilename.empty() && playstationCore->LoadRom( romFilename ) )
 	{
-		windowTitle = *romFilename;
+		windowTitle = romFilename.string();
 		paused = false;
 	}
 
-	if ( exeFilename.has_value() )
+	if ( !exeFilename.empty() )
 	{
-		playstationCore->HookExe( *exeFilename );
-		windowTitle = *exeFilename;
+		playstationCore->HookExe( exeFilename );
+		windowTitle = exeFilename.string();
 		paused = false;
 	}
 
@@ -173,7 +227,7 @@ int main( int argc, char** argv )
 
 	auto openMemoryCardForGame = []( fs::path filename )
 	{
-		filename.replace_extension( "save" );
+		filename.replace_extension( "mcr" );
 
 		// try to load existing memory card
 		auto memoryCard = PSX::MemoryCard::Load( filename );
@@ -185,17 +239,17 @@ int main( int argc, char** argv )
 		return memoryCard;
 	};
 
-	if ( memCard1Filename.has_value() )
+	if ( !memCard1Filename.empty() )
 	{
-		memCard1 = PSX::MemoryCard::Load( *memCard1Filename );
+		memCard1 = PSX::MemoryCard::Load( memCard1Filename );
 	}
-	else if ( romFilename.has_value() )
+	else if ( !romFilename.empty() )
 	{
-		memCard1 = openMemoryCardForGame( *romFilename );
+		memCard1 = openMemoryCardForGame( romFilename );
 	}
 
-	if ( memCard2Filename.has_value() )
-		memCard2 = PSX::MemoryCard::Load( *memCard2Filename );
+	if ( !memCard2Filename.empty() )
+		memCard2 = PSX::MemoryCard::Load( memCard2Filename );
 
 	playstationCore->SetMemoryCard( 0, memCard1.get() );
 	playstationCore->SetMemoryCard( 1, memCard2.get() );
@@ -249,8 +303,11 @@ int main( int argc, char** argv )
 							break;
 
 						case SDLK_F5:
-							// save state
+						{
+							if ( !romFilename.empty() )
+								SaveState( *playstationCore, MakeSaveStatePath( romFilename ) );
 							break;
+						}
 
 						case SDLK_F6:
 							// toggle vram view
@@ -258,7 +315,8 @@ int main( int argc, char** argv )
 							break;
 
 						case SDLK_F9:
-							// load state
+							if ( !romFilename.empty() )
+								LoadState( *playstationCore, MakeSaveStatePath( romFilename ) );
 							break;
 
 						case SDLK_F11:
@@ -385,6 +443,7 @@ int main( int argc, char** argv )
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
 						paused = false;
+						exeFilename = std::move( filename );
 					}
 					else if ( filename.extension() == fs::path( ".save" ) )
 					{
@@ -393,6 +452,7 @@ int main( int argc, char** argv )
 						{
 							memCard1 = std::move( memCard );
 							playstationCore->SetMemoryCard( 0, memCard1.get() );
+							memCard1Filename = std::move( filename );
 						}
 					}
 					else if ( playstationCore->LoadRom( filename ) )
@@ -402,6 +462,7 @@ int main( int argc, char** argv )
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
 						paused = false;
+						romFilename = std::move( filename );
 					}
 					break;
 				}

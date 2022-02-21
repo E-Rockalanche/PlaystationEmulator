@@ -1,5 +1,7 @@
 #include "MemoryControl.h"
 
+#include "SaveState.h"
+
 namespace PSX
 {
 
@@ -124,6 +126,28 @@ void MemoryControl::CalculateAccessTime( DelaySize& delaySize ) noexcept
 
 	delaySize.firstAccessTime = static_cast<uint16_t>( first );
 	delaySize.seqAccessTime = static_cast<uint16_t>( seq );
+}
+
+void MemoryControl::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "MemoryControl", 1 ) )
+		return;
+
+	serializer( m_expension1BaseAddress );
+	serializer( m_expension2BaseAddress );
+
+	for ( auto& delay : m_delaySizes )
+	{
+		serializer( delay.reg.value );
+		serializer( delay.firstAccessTime );
+		serializer( delay.seqAccessTime );
+	}
+
+	serializer( m_comDelay.value );
+
+	serializer( m_ramSize.value );
+
+	serializer( m_cacheControl );
 }
 
 }

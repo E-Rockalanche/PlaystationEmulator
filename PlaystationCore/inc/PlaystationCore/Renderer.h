@@ -191,14 +191,8 @@ private:
 
 	bool m_forceMaskBit = false;
 	bool m_checkMaskBit = false;
-
 	bool m_dither = false;
-
 	bool m_displayEnable = false;
-
-	bool m_stretchToFit = true;
-	bool m_viewVRam = false;
-	bool m_realColor = false;
 
 	TexPage m_texPage;
 	ClutAttribute m_clut;
@@ -223,6 +217,11 @@ private:
 
 	// vertex depth to use when mask bit of pixel is set
 	DepthType m_currentDepth = 0;
+
+	// not serialized
+	bool m_stretchToFit = true;
+	bool m_viewVRam = false;
+	bool m_realColor = false;
 };
 
 }

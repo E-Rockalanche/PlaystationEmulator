@@ -5,6 +5,7 @@
 #include <array>
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 
 namespace PSX
 {
@@ -111,10 +112,11 @@ public:
 		return m_storage[ m_first ];
 	}
 
-	// get pointer to raw buffer. USE WITH CAUTION
-	const T* Data() const noexcept
+	T operator[]( size_type i ) const noexcept
 	{
-		return m_storage.GetData();
+		dbExpects( i < m_size );
+		const size_type pos = ( m_first + i ) % BufferSize;
+		return m_storage[ pos ];
 	}
 
 	// capacity

@@ -11,7 +11,7 @@ struct SDL_Window;
 namespace PSX
 {
 
-using cycles_t = int;
+using cycles_t = int32_t;
 
 constexpr cycles_t InfiniteCycles = std::numeric_limits<cycles_t>::max();
 
@@ -36,6 +36,7 @@ class MemoryMap;
 class MipsR3000Cpu;
 class Playstation;
 class Renderer;
+class SaveStateSerializer;
 class Spu;
 class Timers;
 class AudioQueue;
@@ -48,6 +49,13 @@ using Scratchpad = Memory<1024>;
 struct Instruction;
 
 using EventHandle = std::unique_ptr<Event>;
+
+enum class ControllerType
+{
+	None,
+	Digital,
+	Analog
+};
 
 template <size_t N, typename To, typename From>
 inline constexpr To SignExtend( From value ) noexcept

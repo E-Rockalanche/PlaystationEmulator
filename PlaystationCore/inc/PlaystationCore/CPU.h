@@ -57,6 +57,8 @@ public:
 		m_exeFilename = std::move( filename );
 	}
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 
 	static constexpr uint32_t ResetVector = 0xbfc00000;
@@ -146,6 +148,8 @@ private:
 		// used by LWL and LWR to emulate special hardware that allows for both instructions to be used without a NOP inbetween
 		uint32_t GetLoadDelayIndex() const noexcept { return m_loadDelay.index; }
 		uint32_t GetLoadDelayValue() const noexcept { return m_loadDelay.value; }
+
+		void Serialize( SaveStateSerializer& serializer );
 
 	private:
 		struct LoadDelay
@@ -425,6 +429,8 @@ private:
 	Cop0 m_cop0;
 	GTE m_gte;
 
+	Registers m_registers;
+
 	uint32_t m_currentPC = 0; // pc of instruction being executed
 	uint32_t m_pc = 0; // pc of instruction being fetched
 	uint32_t m_nextPC = 0;
@@ -432,13 +438,12 @@ private:
 	bool m_inBranch = false;
 	bool m_inDelaySlot = false;
 
-	Registers m_registers;
-
 	uint32_t m_hi = 0;
 	uint32_t m_lo = 0;
 
 	std::string m_consoleOutput; // flushes on newline character
 
+	// not serialized
 	fs::path m_exeFilename;
 };
 

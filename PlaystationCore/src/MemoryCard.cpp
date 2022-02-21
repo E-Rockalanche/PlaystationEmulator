@@ -1,5 +1,7 @@
 #include "MemoryCard.h"
 
+#include "SaveState.h"
+
 #include <stdx/assert.h>
 
 #include <fstream>
@@ -32,7 +34,7 @@ std::unique_ptr<MemoryCard> MemoryCard::Load( fs::path filename )
 	std::ifstream fin( filename, std::ios::binary );
 	if ( !fin.is_open() )
 	{
-		dbLogWarning( "MemoryCard::Load -- Cannot open file [%s]", filename.c_str() );
+		dbLogWarning( "MemoryCard::Load -- Cannot open file [%s]", filename.string().c_str() );
 		return nullptr;
 	}
 
@@ -334,6 +336,20 @@ bool MemoryCard::Save()
 
 	m_written = false;
 	return true;
+}
+
+
+void MemoryCard::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "MemoryCard", 1 ) )
+		return;
+
+	serializer( m_state );
+	serializer( m_flag.value );
+	serializer( m_dataCount );
+	serializer( m_address );
+	serializer( m_previousData );
+	serializer( m_writeChecksum );
 }
 
 }

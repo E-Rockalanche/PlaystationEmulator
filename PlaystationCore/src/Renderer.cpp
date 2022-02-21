@@ -6,6 +6,7 @@
 #include "Output16bitShader.h"
 #include "Output24bitShader.h"
 #include "ResetDepthShader.h"
+#include "SaveState.h"
 
 #include <Render/Types.h>
 
@@ -150,6 +151,9 @@ constexpr Renderer::Rect Renderer::GetWrappedBounds( uint32_t left, uint32_t top
 
 void Renderer::Reset()
 {
+	// clear VRAM textures
+
+	glDisable( GL_SCISSOR_TEST );
 	glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
 	glClearDepth( 1.0 );
 
@@ -159,12 +163,40 @@ void Renderer::Reset()
 	m_vramDrawFramebuffer.Bind();
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
+	// reset GPU state
+
+	m_vramDisplayArea = {};
+	m_targetDisplayArea = {};
+	m_aspectRatio = 0.0f;
+
+	m_drawArea = {};
+	m_colorDepth = DisplayAreaColorDepth::B15;
+
+	m_semiTransparencyMode = SemiTransparencyMode::Blend;
+	m_semiTransparencyEnabled = false;
+
+	m_forceMaskBit = false;
+	m_checkMaskBit = false;
+	m_dither = false;
+	m_displayEnable = false;
+
+	m_texPage.value = 0;
+	m_texPage.textureDisable = true;
+	m_clut.value = 0;
+
+	// reset renderer state
+
+	m_uniform = {};
+
 	m_vertices.clear();
+
 	ResetDirtyArea();
+	m_textureArea = {};
+	m_clutArea = {};
 
 	m_currentDepth = ResetDepth;
 
-	// GPU will reset uniforms
+	RestoreRenderState();
 }
 
 void Renderer::EnableVRamView( bool enable )

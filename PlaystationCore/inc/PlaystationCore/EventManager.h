@@ -62,6 +62,8 @@ public:
 
 	const std::string& GetName() const noexcept { return m_name; }
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	Event( EventManager& manager, std::string name, EventUpdateCallback onUpdate )
 		: m_manager{ manager }
@@ -90,6 +92,7 @@ private:
 	EventManager& m_manager;
 	std::string m_name;
 	EventUpdateCallback m_onUpdate;
+
 	cycles_t m_cyclesUntilEvent = 0;
 	cycles_t m_pendingCycles = 0;
 	bool m_active = false;
@@ -145,6 +148,8 @@ public:
 	}
 
 	void EndFrame();
+
+	void Serialize( SaveStateSerializer& serializer );
 
 private:
 	void ScheduleNextEvent();

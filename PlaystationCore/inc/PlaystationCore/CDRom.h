@@ -13,6 +13,8 @@ namespace fs = std::filesystem;
 namespace PSX
 {
 
+class SaveStateSerializer;
+
 constexpr bool IsValidBCDDigit( uint8_t digit )
 {
 	return digit <= 0x09;

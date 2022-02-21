@@ -14,6 +14,7 @@
 #include "MemoryControl.h"
 #include "RAM.h"
 #include "SPU.h"
+#include "SaveState.h"
 #include "Timers.h"
 
 namespace PSX
@@ -322,6 +323,17 @@ const uint8_t* MemoryMap::GetRealAddress( uint32_t address ) const noexcept
 	else
 	{
 		return nullptr;
+	}
+}
+
+void MemoryMap::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "MemoryMap", 1 ) )
+		return;
+
+	for ( auto& cache : m_icacheFlags )
+	{
+		serializer( cache.value );
 	}
 }
 
