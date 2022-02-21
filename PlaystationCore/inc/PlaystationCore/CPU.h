@@ -429,14 +429,14 @@ private:
 	Cop0 m_cop0;
 	GTE m_gte;
 
+	Registers m_registers;
+
 	uint32_t m_currentPC = 0; // pc of instruction being executed
 	uint32_t m_pc = 0; // pc of instruction being fetched
 	uint32_t m_nextPC = 0;
 
 	bool m_inBranch = false;
 	bool m_inDelaySlot = false;
-
-	Registers m_registers;
 
 	uint32_t m_hi = 0;
 	uint32_t m_lo = 0;

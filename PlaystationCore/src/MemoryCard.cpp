@@ -341,6 +341,9 @@ bool MemoryCard::Save()
 
 void MemoryCard::Serialize( SaveStateSerializer& serializer )
 {
+	if ( !serializer.Header( "MemoryCard", 1 ) )
+		return;
+
 	serializer( m_state );
 	serializer( m_flag.value );
 	serializer( m_dataCount );

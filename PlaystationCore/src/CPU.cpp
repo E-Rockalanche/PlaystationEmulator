@@ -969,8 +969,7 @@ void MipsR3000Cpu::Serialize( SaveStateSerializer& serializer )
 	if ( !serializer.Header( "CPU", 1 ) )
 		return;
 
-	m_cop0.Serialize( serializer );
-	m_gte.Serialize( serializer );
+	m_registers.Serialize( serializer );
 
 	serializer( m_currentPC );
 	serializer( m_pc );
@@ -979,12 +978,13 @@ void MipsR3000Cpu::Serialize( SaveStateSerializer& serializer )
 	serializer( m_inBranch );
 	serializer( m_inDelaySlot );
 
-	m_registers.Serialize( serializer );
-
 	serializer( m_hi );
 	serializer( m_lo );
 
 	serializer( m_consoleOutput );
+
+	m_cop0.Serialize( serializer );
+	m_gte.Serialize( serializer );
 }
 
 void MipsR3000Cpu::Registers::Serialize( SaveStateSerializer& serializer )

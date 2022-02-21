@@ -115,6 +115,9 @@ void Cop0::PrepareReturnFromException() noexcept
 
 void Cop0::Serialize( SaveStateSerializer& serializer )
 {
+	if ( !serializer.Header( "COP0", 1 ) )
+		return;
+
 	serializer( m_breakpointOnExecute );
 	serializer( m_breakpointOnDataAccess );
 	serializer( m_jumpDestination );
