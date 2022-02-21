@@ -26,20 +26,19 @@ enum class endian
 
 // c++23 byteswap
 template <typename T, STDX_requires( std::is_integral_v<T> )
-inline T byteswap( T n ) noexcept
+constexpr T byteswap( T n ) noexcept
 {
 	if constexpr ( sizeof( T ) == 1 )
 		return n;
 
-	union
-	{
-		T result;
-		char bytes[ sizeof( T ) ];
-	} u;
-
+	T result;
 	const char* src = reinterpret_cast<const char*>( &n );
-	std::reverse_copy( src, src + sizeof( T ), u.bytes );
-	return u.result;
+	char* dest = reinterpret_cast<char*>( &result );
+
+	for ( size_t i = 0; i < sizeof( T ); ++i )
+		dest[ i ] = src[ sizeof( T ) - i - 1 ];
+
+	return result;
 }
 
 template <typename T, STDX_requires( std::is_integral_v<T> )
