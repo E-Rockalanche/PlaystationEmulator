@@ -16,6 +16,7 @@
 #include "MemoryControl.h"
 #include "RAM.h"
 #include "Renderer.h"
+#include "SaveState.h"
 #include "SPU.h"
 #include "Timers.h"
 
@@ -171,10 +172,12 @@ void Playstation::Serialize( SaveStateSerializer& serializer )
 	m_memoryControl->Serialize( serializer );
 	m_memoryMap->Serialize( serializer );
 	m_cpu->Serialize( serializer );
+
+	serializer( m_bios->Data(), m_bios->Size() );
+	serializer( m_ram->Data(), m_ram->Size() );
+	serializer( m_scratchpad->Data(), m_scratchpad->Size() );
 	/*
-	m_ram->Serialize( serializer );
 	m_renderer->Serialize( serializer );
-	m_scratchpad->Serialize( serializer );
 	m_spu->Serialize( serializer );
 	m_timers->Serialize( serializer );
 	*/
