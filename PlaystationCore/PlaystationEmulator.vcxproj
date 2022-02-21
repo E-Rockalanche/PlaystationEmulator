@@ -249,6 +249,7 @@
     <ClCompile Include="src\MemoryMap.cpp" />
     <ClCompile Include="src\Playstation.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\SaveState.cpp" />
     <ClCompile Include="src\SPU.cpp" />
     <ClCompile Include="src\Timers.cpp" />
     <ClCompile Include="src\VRamCopyShader.cpp" />
