@@ -1869,6 +1869,8 @@ void CDRomDrive::Serialize( SaveStateSerializer& serializer )
 	serializer( m_pendingPlay );
 
 	serializer( m_audioBuffer );
+
+	m_cdrom->Serialize( serializer );
 }
 
 }

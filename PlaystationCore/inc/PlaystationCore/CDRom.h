@@ -13,6 +13,8 @@ namespace fs = std::filesystem;
 namespace PSX
 {
 
+class SaveStateSerializer;
+
 constexpr bool IsValidBCDDigit( uint8_t digit )
 {
 	return digit <= 0x09;
@@ -310,6 +312,8 @@ public:
 	{
 		return Location::FromLogicalSector( GetCurrentTrackSector() );
 	}
+
+	void Serialize( SaveStateSerializer& serializer );
 
 protected:
 	// best API for single or multi file formats with pregaps
