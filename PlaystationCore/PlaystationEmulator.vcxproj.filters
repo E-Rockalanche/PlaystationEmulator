@@ -99,6 +99,9 @@
     <ClCompile Include="src\CDRom_Cue.cpp">
       <Filter>src\CDRoms</Filter>
     </ClCompile>
+    <ClCompile Include="src\InterruptControl.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationCore\BIOS.h">

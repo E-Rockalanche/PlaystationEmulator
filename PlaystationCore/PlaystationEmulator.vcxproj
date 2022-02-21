@@ -242,6 +242,7 @@
     <ClCompile Include="src\GTE.cpp" />
     <ClCompile Include="src\GPU.cpp" />
     <ClCompile Include="src\Instruction.cpp" />
+    <ClCompile Include="src\InterruptControl.cpp" />
     <ClCompile Include="src\MacroblockDecoder.cpp" />
     <ClCompile Include="src\MemoryCard.cpp" />
     <ClCompile Include="src\MemoryControl.cpp" />

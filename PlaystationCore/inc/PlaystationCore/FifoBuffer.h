@@ -5,6 +5,7 @@
 #include <array>
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 
 namespace PSX
 {
