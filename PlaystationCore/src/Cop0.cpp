@@ -1,6 +1,7 @@
 #include "Cop0.h"
 
 #include "InterruptControl.h"
+#include "SaveState.h"
 
 #include <stdx/bit.h>
 
@@ -109,6 +110,22 @@ void Cop0::PrepareReturnFromException() noexcept
 
 	// restore interrupt enable and user/kernel mode
 	m_systemStatus = ( ( m_systemStatus >> 2 ) & 0x0000000fu ) | ( m_systemStatus & 0xfffffff0u );
+}
+
+
+void Cop0::Serialize( SaveStateSerializer& serializer )
+{
+	serializer( m_breakpointOnExecute );
+	serializer( m_breakpointOnDataAccess );
+	serializer( m_jumpDestination );
+	serializer( m_breakpointControl );
+	serializer( m_badVirtualAddress );
+	serializer( m_dataAccessBreakpointMask );
+	serializer( m_executeBreakpointMask );
+	serializer( m_systemStatus );
+	serializer( m_exceptionCause );
+	serializer( m_trapReturnAddress );
+	serializer( m_processorId );
 }
 
 }

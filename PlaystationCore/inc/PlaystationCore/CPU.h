@@ -57,6 +57,8 @@ public:
 		m_exeFilename = std::move( filename );
 	}
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 
 	static constexpr uint32_t ResetVector = 0xbfc00000;
@@ -146,6 +148,8 @@ private:
 		// used by LWL and LWR to emulate special hardware that allows for both instructions to be used without a NOP inbetween
 		uint32_t GetLoadDelayIndex() const noexcept { return m_loadDelay.index; }
 		uint32_t GetLoadDelayValue() const noexcept { return m_loadDelay.value; }
+
+		void Serialize( SaveStateSerializer& serializer );
 
 	private:
 		struct LoadDelay
@@ -439,6 +443,7 @@ private:
 
 	std::string m_consoleOutput; // flushes on newline character
 
+	// not serialized
 	fs::path m_exeFilename;
 };
 

@@ -170,8 +170,8 @@ void Playstation::Serialize( SaveStateSerializer& serializer )
 	m_mdec->Serialize( serializer );
 	m_memoryControl->Serialize( serializer );
 	m_memoryMap->Serialize( serializer );
-	/*
 	m_cpu->Serialize( serializer );
+	/*
 	m_ram->Serialize( serializer );
 	m_renderer->Serialize( serializer );
 	m_scratchpad->Serialize( serializer );

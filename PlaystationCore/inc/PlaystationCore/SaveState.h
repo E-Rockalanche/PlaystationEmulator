@@ -4,6 +4,9 @@
 
 #include <ByteIO/ByteStream.h>
 
+#include <Math/Matrix.h>
+#include <Math/Vector.h>
+
 #include <stdx/bit.h>
 
 #include <array>
@@ -149,6 +152,27 @@ public:
 
 			( *this )( *opt );
 		}
+	}
+
+	template <typename T>
+	void operator()( Math::Vector2<T>& v )
+	{
+		( *this )( v.x );
+		( *this )( v.y );
+	}
+
+	template <typename T>
+	void operator()( Math::Vector3<T>& v )
+	{
+		( *this )( v.x );
+		( *this )( v.y );
+		( *this )( v.z );
+	}
+
+	template <typename T, size_t H, size_t W>
+	void operator()( Math::Matrix<T, H, W>& m )
+	{
+		( *this )( m.elements );
 	}
 
 	template <typename T, STDX_requires( is_primitive_v<T> )
