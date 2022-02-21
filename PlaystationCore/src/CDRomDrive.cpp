@@ -1012,7 +1012,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 				const uint8_t session = m_parameterBuffer.Pop();
 				if ( session != 0 )
 				{
-					// TODO: remember session parameter
+					dbBreak(); // TODO: remember session parameter
 					SendStatusAndInterrupt();
 					ScheduleDriveEvent( DriveState::ChangingSession, CpuCyclesPerSecond / 2 );
 				}
