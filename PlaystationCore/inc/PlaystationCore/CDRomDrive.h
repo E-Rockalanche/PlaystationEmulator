@@ -45,6 +45,8 @@ public:
 		return std::make_pair( leftResult, rightResult );
 	}
 
+	void Serialize( SaveStateSerializer& serializer );
+
 private:
 	static constexpr uint32_t DataBufferSize = CDRom::BytesPerSector - CDRom::SyncSize;
 	static constexpr uint32_t ParamaterBufferSize = 16;
@@ -55,6 +57,8 @@ private:
 	static constexpr uint32_t ResampleRingBufferSize = 0x20;
 
 	static constexpr uint32_t AudioFifoSize = 44100; // 1 second of audio
+
+	static const std::array<uint8_t, 256> ExpectedCommandParameters;
 
 	union Status
 	{
@@ -176,7 +180,7 @@ private:
 		uint8_t value = 0;
 	};
 
-	enum class ErrorCode
+	enum class ErrorCode : uint8_t
 	{
 		InvalidArgument = 0x10,
 		WrongNumberOfParameters = 0x20,
@@ -364,14 +368,13 @@ private:
 	bool m_pendingRead = false; // Read was called, but we need to seek
 	bool m_pendingPlay = false; // Play was called, but we need to seek
 
-	static const std::array<uint8_t, 256> ExpectedCommandParameters;
+	FifoBuffer<uint32_t, AudioFifoSize> m_audioBuffer;
 
+	// not serialized
 	std::unique_ptr<int16_t[]> m_xaAdpcmSampleBuffer;
 	std::array<int32_t, 4> m_oldXaAdpcmSamples{};
 	std::array<std::array<int16_t, ResampleRingBufferSize>, 2> m_resampleRingBuffers{};
 	uint8_t m_resampleP = 0;
-
-	FifoBuffer<uint32_t, AudioFifoSize> m_audioBuffer;
 };
 
 }

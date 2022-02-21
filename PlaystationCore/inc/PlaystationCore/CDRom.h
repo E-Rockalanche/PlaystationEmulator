@@ -73,12 +73,16 @@ public:
 
 	using Sync = std::array<uint8_t, SyncSize>;
 
-	struct Header
+	union Header
 	{
-		uint8_t minuteBCD;
-		uint8_t secondBCD;
-		uint8_t sectorBCD;
-		uint8_t mode;
+		struct
+		{
+			uint8_t minuteBCD;
+			uint8_t secondBCD;
+			uint8_t sectorBCD;
+			uint8_t mode;
+		};
+		std::array<uint8_t, 4> data;
 	};
 
 	union Sector
@@ -144,18 +148,22 @@ public:
 		uint8_t value = 0;
 	};
 
-	struct SubQ
+	union SubQ
 	{
-		SubQControl control;
-		uint8_t trackNumberBCD = 0;
-		uint8_t trackIndexBCD = 0;
-		uint8_t trackMinuteBCD = 0;
-		uint8_t trackSecondBCD = 0;
-		uint8_t trackSectorBCD = 0;
-		uint8_t reserved = 0;
-		uint8_t absoluteMinuteBCD = 0;
-		uint8_t absoluteSecondBCD = 0;
-		uint8_t absoluteSectorBCD = 0;
+		struct
+		{
+			SubQControl control;
+			uint8_t trackNumberBCD;
+			uint8_t trackIndexBCD;
+			uint8_t trackMinuteBCD;
+			uint8_t trackSecondBCD;
+			uint8_t trackSectorBCD;
+			uint8_t reserve;
+			uint8_t absoluteMinuteBCD;
+			uint8_t absoluteSecondBCD;
+			uint8_t absoluteSectorBCD;
+		};
+		std::array<char, 10> data{};
 	};
 	static_assert( sizeof( SubQ ) == 10 );
 

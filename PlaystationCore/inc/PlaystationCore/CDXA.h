@@ -2,6 +2,7 @@
 
 #include <stdx/compiler.h>
 
+#include <array>
 #include <cstdint>
 
 namespace PSX::CDXA
@@ -49,12 +50,16 @@ union CodingInfo
 };
 static_assert( sizeof( CodingInfo ) == 1 );
 
-struct SubHeader
+union SubHeader
 {
-	uint8_t file;			// (0x00-0xff) (for audio/video interleave)
-	uint8_t channel;		// (0x00-0x1f) (for audio/video interleave)
-	SubMode subMode;
-	CodingInfo codingInfo;
+	struct
+	{
+		uint8_t file;			// (0x00-0xff) (for audio/video interleave)
+		uint8_t channel;		// (0x00-0x1f) (for audio/video interleave)
+		SubMode subMode;
+		CodingInfo codingInfo;
+	};
+	std::array<uint8_t, 4> data;
 };
 static_assert( sizeof( SubHeader ) == 4 );
 
