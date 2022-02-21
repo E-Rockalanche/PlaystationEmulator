@@ -44,13 +44,13 @@ public:
 		Allocate( reserveCount );
 	}
 
-	ByteStream( std::unique_ptr<std::byte[]> bytes, size_type count )
+	ByteStream( std::unique_ptr<char[]> bytes, size_type count )
 		: m_buffer{ std::move( bytes ) }
 		, m_size{ count }
 		, m_capacity{ count }
 	{}
 
-	ByteStream( const std::byte* bytes, size_type count )
+	ByteStream( const char* bytes, size_type count )
 	{
 		Allocate( count );
 		std::copy_n( bytes, count, m_buffer.get() );
@@ -95,7 +95,7 @@ public:
 		return *this;
 	}
 
-	bool read( std::byte* bytes, size_type count )
+	bool read( char* bytes, size_type count )
 	{
 		if ( m_readPos + count > m_size )
 			return false;
@@ -105,7 +105,7 @@ public:
 		return true;
 	}
 
-	void write( const std::byte* bytes, size_type count )
+	void write( const char* bytes, size_type count )
 	{
 		const size_type requiredCapacity = m_writePos + count;
 
@@ -155,8 +155,8 @@ public:
 			ReserveImp( count );
 	}
 
-	std::byte* data() noexcept { return m_buffer.get(); }
-	const std::byte* data() const noexcept { return m_buffer.get(); }
+	char* data() noexcept { return m_buffer.get(); }
+	const char* data() const noexcept { return m_buffer.get(); }
 
 	size_type size() const noexcept { return m_size; }
 	difference_type ssize() const noexcept { return static_cast<difference_type>( m_size ); }
@@ -166,7 +166,7 @@ private:
 	void ReserveImp( pos_type count )
 	{
 		dbAssert( count > m_capacity );
-		std::byte* newBuffer = new std::byte[ count ];
+		char* newBuffer = new char[ count ];
 		std::copy_n( m_buffer.get(), m_size, newBuffer );
 		m_capacity = count;
 		m_buffer.reset( newBuffer );
@@ -177,7 +177,7 @@ private:
 		if ( count == 0 )
 			return;
 
-		m_buffer.reset( new std::byte[ count ] );
+		m_buffer.reset( new char[ count ] );
 		m_capacity = count;
 	}
 
@@ -199,7 +199,7 @@ private:
 	}
 
 private:
-	std::unique_ptr<std::byte[]> m_buffer;
+	std::unique_ptr<char[]> m_buffer;
 	size_type m_size = 0;
 	size_type m_capacity = 0;
 	pos_type m_readPos = 0;
