@@ -5,6 +5,7 @@
 #include "DMA.h"
 #include "EventManager.h"
 #include "InterruptControl.h"
+#include "SaveState.h"
 
 #include <stdx/bit.h>
 
@@ -1531,6 +1532,105 @@ std::pair<int32_t, int32_t> Spu::ProcessReverb( int16_t inLeft, int16_t inRight 
 	const int32_t outLeft = ApplyVolume( out[ 0 ], m_reverbOutVolume[ 0 ] );
 	const int32_t outRight = ApplyVolume( out[ 1 ], m_reverbOutVolume[ 1 ] );
 	return { outLeft, outRight };
+}
+
+void Spu::Serialize( SaveStateSerializer& serializer )
+{
+	if ( !serializer.Header( "SPU", 1 ) )
+		return;
+
+	m_generateSamplesEvent->Serialize( serializer );
+	m_transferEvent->Serialize( serializer );
+
+	for ( auto& voice : m_voices )
+		SerializeVoice( serializer, voice );
+
+	for ( auto& volume : m_mainVolumeRegisters )
+		serializer( volume.value );
+
+	for ( auto& volume : m_mainVolume )
+		SerializeVolumeSweep( serializer, volume );
+
+	serializer( m_reverbOutVolume );
+
+	serializer( m_voiceFlags.keyOn );
+	serializer( m_voiceFlags.keyOff );
+	serializer( m_voiceFlags.pitchModulationEnable );
+	serializer( m_voiceFlags.noiseModeEnable );
+	serializer( m_voiceFlags.reverbEnable );
+	serializer( m_voiceFlags.endx );
+
+	serializer( m_irqAddress );
+
+	serializer( m_transferAddressRegister );
+	serializer( m_transferAddress );
+
+	serializer( m_control.value );
+	serializer( m_dataTransferControl.value );
+	serializer( m_status.value );
+
+	serializer( m_cdAudioInputVolume );
+	serializer( m_externalAudioInputVolume );
+	serializer( m_currentMainVolume );
+
+	serializer( m_reverbBaseAddressRegister );
+	serializer( m_reverbBaseAddress );
+	serializer( m_reverbCurrentAddress );
+	serializer( m_reverbResampleBufferPosition );
+	serializer( m_reverb.registers );
+	serializer( m_reverbDownsampleBuffer );
+	serializer( m_reverbUpsampleBuffer );
+
+	serializer( m_transferBuffer );
+
+	serializer( m_captureBufferPosition );
+
+	serializer( m_noiseCount );
+	serializer( m_noiseLevel );
+
+	serializer( m_pendingCarryCycles );
+
+	serializer( m_generatedFrames );
+
+	serializer( m_ram.Data(), m_ram.Size() );
+}
+
+void Spu::SerializeVolumeEnvelope( SaveStateSerializer& serializer, VolumeEnvelope& envelope )
+{
+	serializer( envelope.counter );
+	serializer( envelope.rate );
+	serializer( envelope.decreasing );
+	serializer( envelope.exponential );
+}
+
+void Spu::SerializeVolumeSweep( SaveStateSerializer& serializer, VolumeSweep& volumeSweep )
+{
+	SerializeVolumeEnvelope( serializer, volumeSweep.envelope );
+
+	serializer( volumeSweep.currentLevel );
+	serializer( volumeSweep.envelopeActive );
+}
+
+void Spu::SerializeVoice( SaveStateSerializer& serializer, Voice& voice )
+{
+	serializer( voice.registers.values );
+	serializer( voice.currentAddress );
+	serializer( voice.counter.value );
+	serializer( voice.currentBlockFlags.value );
+	serializer( voice.firstBlock );
+	serializer( voice.currentBlockSamples );
+	serializer( voice.adpcmLastSamples );
+	serializer( voice.lastVolume );
+
+	for ( auto& volumeSweep : voice.volume )
+		SerializeVolumeSweep( serializer, volumeSweep );
+
+	SerializeVolumeEnvelope( serializer, voice.adsrEnvelope );
+
+	serializer( voice.adsrPhase );
+	serializer( voice.adsrTarget );
+	serializer( voice.hasSamples );
+	serializer( voice.ignoreLoopAddress );
 }
 
 } // namespace PSX
