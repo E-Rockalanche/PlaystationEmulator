@@ -19,6 +19,9 @@
     <Filter Include="src\System">
       <UniqueIdentifier>{c1845e95-c314-4381-9808-ab0685a19882}</UniqueIdentifier>
     </Filter>
+    <Filter Include="inc\ByteIO">
+      <UniqueIdentifier>{2fbffd5b-a74b-437b-aaed-c3648e50bd71}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\stdx\assert.h">
@@ -74,6 +77,9 @@
     </ClInclude>
     <ClInclude Include="inc\System\Stopwatch.h">
       <Filter>inc\System</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\ByteIO\ByteStream.h">
+      <Filter>inc\ByteIO</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

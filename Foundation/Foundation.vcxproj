@@ -230,6 +230,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="inc\ByteIO\ByteStream.h" />
     <ClInclude Include="inc\Math\Color.h" />
     <ClInclude Include="inc\Math\FixedPoint.h" />
     <ClInclude Include="inc\Math\Matrix.h" />
