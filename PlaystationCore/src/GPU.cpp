@@ -1816,6 +1816,8 @@ void Gpu::Serialize( SaveStateSerializer& serializer )
 
 	serializer( m_cropMode );
 
+	// serialize VRAM
+
 	if ( serializer.Writing() )
 		m_renderer.ReadVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
 
@@ -1825,6 +1827,9 @@ void Gpu::Serialize( SaveStateSerializer& serializer )
 	{
 		m_renderer.Reset();
 
+		UpdateCrtDisplay();
+
+		// restore vram texture before restoring mask bits
 		m_renderer.UpdateVRam( 0, 0, VRamWidth, VRamHeight, m_vram.get() );
 
 		m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
@@ -1833,8 +1838,6 @@ void Gpu::Serialize( SaveStateSerializer& serializer )
 		m_renderer.SetMaskBits( m_status.setMaskOnDraw, m_status.checkMaskOnDraw );
 		m_renderer.SetColorDepth( m_status.GetDisplayAreaColorDepth() );
 		m_renderer.SetDisplayEnable( !m_status.displayDisable );
-
-		UpdateCrtDisplay();
 	}
 }
 
