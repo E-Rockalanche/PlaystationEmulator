@@ -215,6 +215,9 @@
     <ClInclude Include="inc\PlaystationCore\ResetDepthShader.h">
       <Filter>inc\shaders</Filter>
     </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\SaveState.h">
+      <Filter>inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
