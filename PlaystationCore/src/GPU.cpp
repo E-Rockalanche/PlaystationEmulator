@@ -4,6 +4,7 @@
 #include "EventManager.h"
 #include "InterruptControl.h"
 #include "Renderer.h"
+#include "SaveState.h"
 #include "Timers.h"
 
 #include <stdx/assert.h>
@@ -139,6 +140,14 @@ Gpu::Gpu( InterruptControl& interruptControl, Renderer& renderer, EventManager& 
 		{
 			UpdateCommandCycles( cpuCycles );
 		} );
+
+	s_renderCommandFunctions[ (size_t)RenderCommandType::Fill ] = &Gpu::Command_FillRectangle;
+	s_renderCommandFunctions[ (size_t)RenderCommandType::Copy ] = &Gpu::Command_CopyRectangle;
+	s_renderCommandFunctions[ (size_t)RenderCommandType::Write ] = &Gpu::Command_WriteToVRam;
+	s_renderCommandFunctions[ (size_t)RenderCommandType::Read ] = &Gpu::Command_ReadFromVRam;
+	s_renderCommandFunctions[ (size_t)RenderCommandType::Polygon ] = &Gpu::Command_RenderPolygon;
+	s_renderCommandFunctions[ (size_t)RenderCommandType::Line ] = &Gpu::Command_RenderLine;
+	s_renderCommandFunctions[ (size_t)RenderCommandType::Rectangle ] = &Gpu::Command_RenderRectangle;
 }
 
 Gpu::~Gpu() = default;
@@ -151,7 +160,7 @@ void Gpu::ClearCommandBuffer() noexcept
 	m_state = State::Idle;
 	m_commandBuffer.Clear();
 	m_remainingParamaters = 0;
-	m_commandFunction = nullptr;
+	m_renderCommandType = RenderCommandType::None;
 
 	m_transferBuffer.clear();
 	m_vramTransferState.reset();
@@ -293,7 +302,7 @@ void Gpu::ProcessCommandBuffer() noexcept
 				{
 					if ( m_commandBuffer.Size() >= m_remainingParamaters + 1 ) // +1 for command
 					{
-						std::invoke( m_commandFunction, this );
+						std::invoke( s_renderCommandFunctions[ (size_t)m_renderCommandType ], this );
 						continue;
 					}
 
@@ -426,14 +435,14 @@ void Gpu::UpdateCrtEventEarly()
 	m_crtEvent->UpdateEarly();
 }
 
-void Gpu::InitCommand( uint32_t paramaterCount, CommandFunction function ) noexcept
+void Gpu::InitCommand( uint32_t paramaterCount, RenderCommandType renderCommandType ) noexcept
 {
 	dbExpects( m_state == State::Idle );
 	dbExpects( paramaterCount > 0 );
-	dbExpects( function );
+	dbExpects( renderCommandType != RenderCommandType::None );
 
 	m_remainingParamaters = paramaterCount;
-	m_commandFunction = function;
+	m_renderCommandType = renderCommandType;
 	m_state = State::Parameters;
 }
 
@@ -613,19 +622,19 @@ void Gpu::ExecuteCommand() noexcept
 			break;
 
 		case 0x02: // fill rectangle in VRAM
-			InitCommand( 2, &Gpu::Command_FillRectangle );
+			InitCommand( 2, RenderCommandType::Fill );
 			break;
 
 		case 0x80: // copy rectangle (VRAM to VRAM)
-			InitCommand( 3, &Gpu::Command_CopyRectangle );
+			InitCommand( 3, RenderCommandType::Copy );
 			break;
 
 		case 0xa0: // copy rectangle (CPU to VRAM)
-			InitCommand( 2, &Gpu::Command_WriteToVRam );
+			InitCommand( 2, RenderCommandType::Write );
 			break;
 
 		case 0xc0: // copy rectangle (VRAM to CPU)
-			InitCommand( 2, &Gpu::Command_ReadFromVRam );
+			InitCommand( 2, RenderCommandType::Read );
 			break;
 
 		case 0x1f: // interrupt request
@@ -662,14 +671,14 @@ void Gpu::ExecuteCommand() noexcept
 				case PrimitiveType::Polygon:
 				{
 					const uint32_t params = ( command.quadPolygon ? 4 : 3 ) * ( 1 + command.textureMapping + command.shading ) - command.shading;
-					InitCommand( params, &Gpu::Command_RenderPolygon );
+					InitCommand( params, RenderCommandType::Polygon );
 					break;
 				}
 
 				case PrimitiveType::Line:
 				{
 					const uint32_t params = command.shading ? 3 : 2;
-					InitCommand( params, &Gpu::Command_RenderLine );
+					InitCommand( params, RenderCommandType::Line );
 
 					if ( command.numLines )
 					{
@@ -686,7 +695,7 @@ void Gpu::ExecuteCommand() noexcept
 				case PrimitiveType::Rectangle:
 				{
 					const uint32_t params = 1 + static_cast<uint32_t>( command.rectSize == 0 ) + command.textureMapping;
-					InitCommand( params, &Gpu::Command_RenderRectangle );
+					InitCommand( params, RenderCommandType::Rectangle );
 					break;
 				}
 
@@ -1724,6 +1733,91 @@ void Gpu::ScheduleCrtEvent() noexcept
 	const cycles_t cpuCycles = ConvertGpuToCpuCycles( gpuCycles, m_crtState.fractionalCycles );
 	m_cachedCyclesUntilNextEvent = cpuCycles;
 	m_crtEvent->Schedule( cpuCycles );
+}
+
+void Gpu::Serialize( SaveStateSerializer& serializer )
+{
+	dbAssert( !m_processingCommandBuffer );
+
+	if ( !serializer.Header( "GPU", 1 ) )
+		return;
+
+	m_crtEvent->Serialize( serializer );
+	m_commandEvent->Serialize( serializer );
+
+	serializer( m_state );
+	serializer( m_commandBuffer );
+	serializer( m_remainingParamaters );
+	serializer( m_renderCommandType );
+	serializer( m_pendingCommandCycles );
+
+	serializer( m_gpuRead );
+	serializer( m_status.value );
+
+	serializer( m_texturedRectFlipX );
+	serializer( m_texturedRectFlipY );
+
+	serializer( m_textureWindowMaskX );
+	serializer( m_textureWindowMaskY );
+	serializer( m_textureWindowOffsetX );
+	serializer( m_textureWindowOffsetY );
+
+	serializer( m_drawAreaLeft );
+	serializer( m_drawAreaTop );
+	serializer( m_drawAreaRight );
+	serializer( m_drawAreaBottom );
+
+	serializer( m_drawOffsetX );
+	serializer( m_drawOffsetY );
+
+	serializer( m_displayAreaStartX );
+	serializer( m_displayAreaStartY );
+
+	serializer( m_horDisplayRangeStart );
+	serializer( m_horDisplayRangeEnd );
+
+	serializer( m_verDisplayRangeStart );
+	serializer( m_verDisplayRangeEnd );
+
+	serializer( m_crtConstants.totalScanlines );
+	serializer( m_crtConstants.cyclesPerScanline );
+	serializer( m_crtConstants.visibleScanlineStart );
+	serializer( m_crtConstants.visibleScanlineEnd );
+	serializer( m_crtConstants.visibleCycleStart );
+	serializer( m_crtConstants.visibleCycleEnd );
+
+	serializer( m_crtState.fractionalCycles );
+	serializer( m_crtState.scanline );
+	serializer( m_crtState.cycleInScanline );
+	serializer( m_crtState.dotClockDivider );
+	serializer( m_crtState.dotFraction );
+	serializer( m_crtState.visibleCycleStart );
+	serializer( m_crtState.visibleCycleEnd );
+	serializer( m_crtState.visibleScanlineStart );
+	serializer( m_crtState.visibleScanlineEnd );
+	serializer( m_crtState.hblank );
+	serializer( m_crtState.vblank );
+	serializer( m_crtState.evenOddLine );
+	serializer( m_crtState.displayFrame );
+
+	serializer( m_crtState.displayFrame );
+
+	bool hasTransferState = m_vramTransferState.has_value();
+	serializer( hasTransferState );
+	if ( hasTransferState )
+	{
+		if ( serializer.Reading() )
+			m_vramTransferState.emplace();
+
+		serializer( m_vramTransferState->left );
+		serializer( m_vramTransferState->top );
+		serializer( m_vramTransferState->width );
+		serializer( m_vramTransferState->height );
+		serializer( m_vramTransferState->dx );
+		serializer( m_vramTransferState->dy );
+	}
+
+	serializer( m_cropMode );
 }
 
 } // namespace PSX
