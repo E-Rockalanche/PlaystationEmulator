@@ -275,7 +275,6 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 	ProcessCommandBuffer();
 }
 
-
 void Gpu::ProcessCommandBuffer() noexcept
 {
 	m_processingCommandBuffer = true;
@@ -539,6 +538,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_texturedRectFlipX = stdx::any_of<uint32_t>( value, 1 << 12 );
 			m_texturedRectFlipY = stdx::any_of<uint32_t>( value, 1 << 13 );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -554,6 +554,7 @@ void Gpu::ExecuteCommand() noexcept
 
 			m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -567,6 +568,7 @@ void Gpu::ExecuteCommand() noexcept
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -580,6 +582,7 @@ void Gpu::ExecuteCommand() noexcept
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -596,6 +599,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
 			GpuLog( "Gpu::ExecuteCommand() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -610,6 +614,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_status.checkMaskOnDraw = checkMask;
 			m_renderer.SetMaskBits( setMask, checkMask );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -617,6 +622,7 @@ void Gpu::ExecuteCommand() noexcept
 		case 0x01: // clear cache
 			GpuLog( "Gpu::ExecuteCommand() -- clear GPU cache" );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 
@@ -645,13 +651,10 @@ void Gpu::ExecuteCommand() noexcept
 				m_interruptControl.SetInterrupt( Interrupt::Gpu );
 			}
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
-
-		case 0x03: // unknown. Takes up space in FIFO
-			m_commandBuffer.Pop();
-			break;
 
 		default:
 		{
@@ -692,9 +695,10 @@ void Gpu::ExecuteCommand() noexcept
 				default:
 				{
 					// check if NOP
-					if ( !( opcode == 0x00 || ( 0x04 <= opcode && opcode <= 0x1e ) || opcode == 0xe0 || ( 0xe7 <= opcode && opcode <= 0xef ) ) )
+					if ( !( opcode == 0x00 || opcode == 0x03 || ( 0x04 <= opcode && opcode <= 0x1e ) || opcode == 0xe0 || ( 0xe7 <= opcode && opcode <= 0xef ) ) )
 						dbBreakMessage( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
 
+					m_pendingCommandCycles++;
 					m_commandBuffer.Pop();
 					break;
 				}
