@@ -23,7 +23,7 @@ public:
 
 	void RunFrame();
 
-	bool LoadRom( const fs::path& filename );
+	void SetCDRom( std::unique_ptr<CDRom> cdrom );
 
 	void HookExe( fs::path filename );
 

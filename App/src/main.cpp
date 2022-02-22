@@ -34,6 +34,22 @@ void PrintSdlError( const char* message )
 	std::cout << "SDL error: " << SDL_GetError() << '\n';
 }
 
+bool LoadRom( PSX::Playstation& psx, fs::path filename )
+{
+	auto cdrom = PSX::CDRom::Open( filename );
+	if ( cdrom )
+	{
+		Log( "Loaded %s", filename.string().c_str() );
+		psx.SetCDRom( std::move( cdrom ) );
+		return true;
+	}
+	else
+	{
+		LogError( "Failed to load %s", filename.string().c_str() );
+		return false;
+	}
+}
+
 fs::path MakeSaveStatePath( fs::path path, std::string_view postfix = "_quicksave" )
 {
 	auto filename = path.filename();
@@ -211,7 +227,7 @@ int main( int argc, char** argv )
 	};
 
 	bool paused = true;
-	if ( !romFilename.empty() && playstationCore->LoadRom( romFilename ) )
+	if ( !romFilename.empty() && LoadRom( *playstationCore, romFilename ) )
 	{
 		windowTitle = romFilename.string();
 		paused = false;
@@ -345,6 +361,12 @@ int main( int argc, char** argv )
 							playstationCore->GetAudioQueue().SetPaused( paused );
 							break;
 						}
+
+						case SDLK_r:
+						{
+							playstationCore->Reset();
+							break;
+						}
 					}
 
 					auto it = keyboardButtonMap.find( key );
@@ -447,30 +469,30 @@ int main( int argc, char** argv )
 
 					if ( filename.extension() == fs::path( ".exe" ) )
 					{
-						exeFilename = filename;
-						playstationCore->HookExe( std::move( filename ) );
+						playstationCore->HookExe( filename );
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
 						paused = false;
+						exeFilename = std::move( filename );
 					}
 					else if ( filename.extension() == fs::path( ".save" ) )
 					{
-						auto memCard = PSX::MemoryCard::Load( std::move( filename ) );
+						auto memCard = PSX::MemoryCard::Load( filename );
 						if ( memCard )
 						{
 							memCard1 = std::move( memCard );
 							playstationCore->SetMemoryCard( 0, memCard1.get() );
-							memCard1Filename = memCard->GetFilename();
+							memCard1Filename = std::move( filename );
 						}
 					}
-					else if ( playstationCore->LoadRom( filename ) )
+					else if ( LoadRom( *playstationCore, filename ) )
 					{
-						memCard1 = openMemoryCardForGame( std::move( filename ) );
+						memCard1 = openMemoryCardForGame( filename );
 						playstationCore->SetMemoryCard( 0, memCard1.get() );
 						playstationCore->Reset();
 						windowTitle = event.drop.file;
 						paused = false;
-						romFilename = memCard1->GetFilename();
+						romFilename = std::move( filename );
 					}
 					break;
 				}

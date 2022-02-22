@@ -134,20 +134,9 @@ void Playstation::RunFrame()
 	m_renderer->DisplayFrame();
 }
 
-bool Playstation::LoadRom( const fs::path& filename )
+void Playstation::SetCDRom( std::unique_ptr<CDRom> cdrom )
 {
-	auto cdrom = CDRom::Open( filename );
-	if ( cdrom )
-	{
-		Log( "Playstation::LoadRom -- loaded %s", filename.u8string().c_str() );
-		m_cdromDrive->SetCDRom( std::move( cdrom ) );
-		return true;
-	}
-	else
-	{
-		Log( "Playstation::LoadRom -- failed to load %s", filename.u8string().c_str() );
-		return false;
-	}
+	m_cdromDrive->SetCDRom( std::move( cdrom ) );
 }
 
 void Playstation::HookExe( fs::path filename )
