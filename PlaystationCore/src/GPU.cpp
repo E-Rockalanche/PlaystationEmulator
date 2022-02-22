@@ -653,15 +653,6 @@ void Gpu::ExecuteCommand() noexcept
 			m_commandBuffer.Pop();
 			break;
 
-		case 0x00:
-		case 0x04:
-		case 0x1e:
-		case 0xe0:
-		case 0xe7:
-		case 0xef:
-			m_commandBuffer.Pop();
-			break; // NOP
-
 		default:
 		{
 			const RenderCommand command{ value };
@@ -700,7 +691,10 @@ void Gpu::ExecuteCommand() noexcept
 
 				default:
 				{
-					dbBreakMessage( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
+					// check if NOP
+					if ( !( opcode == 0x00 || ( 0x04 <= opcode && opcode <= 0x1e ) || opcode == 0xe0 || ( 0xe7 <= opcode && opcode <= 0xef ) ) )
+						dbBreakMessage( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
+
 					m_commandBuffer.Pop();
 					break;
 				}
