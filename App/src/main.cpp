@@ -107,17 +107,19 @@ bool LoadState( PSX::Playstation& psx, fs::path filename )
 
 SDL_GameController* TryOpenController( int32_t deviceIndex )
 {
-	SDL_GameController* controller = nullptr;
-	if ( SDL_IsGameController( deviceIndex ) )
+	if ( !SDL_IsGameController( deviceIndex ) )
 	{
-		controller = SDL_GameControllerOpen( deviceIndex );
-		if ( controller )
-		{
-			Log( "Opened SDL game controller [%s]", SDL_GameControllerName( controller ) );
-		}
-
-		LogError( "Cannot open SDL game controller [%s]", SDL_GameControllerNameForIndex( deviceIndex ) );
+		LogError( "Device is not an SDL game controller" );
+		return nullptr;
 	}
+
+	SDL_GameController* controller = SDL_GameControllerOpen( deviceIndex );
+
+	if ( controller )
+		Log( "Opened SDL game controller [%s]", SDL_GameControllerName( controller ) );
+	else
+		LogError( "Cannot open SDL game controller [%s]", SDL_GameControllerNameForIndex( deviceIndex ) );
+
 	return controller;
 }
 
