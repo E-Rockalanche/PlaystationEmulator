@@ -7,6 +7,11 @@
 namespace PSX
 {
 
+namespace
+{
+	constexpr size_t npos = std::numeric_limits<size_t>::max();
+}
+
 Event::~Event()
 {
 	m_manager.RemoveEvent( this );
@@ -32,7 +37,7 @@ void Event::UpdateEarly()
 		m_manager.UpdateEvent( this, updateCycles );
 	}
 
-	m_manager.ScheduleNextEvent();
+	m_manager.ScheduleNextEvent( this );
 }
 
 void Event::Schedule( cycles_t cyclesFromNow )
@@ -45,9 +50,14 @@ void Event::Schedule( cycles_t cyclesFromNow )
 		m_pendingCycles = -m_manager.GetPendingCycles();
 		m_active = true;
 	}
+	else if ( m_cyclesUntilEvent == cyclesFromNow )
+	{
+		// no change, don't reschedule
+		return;
+	}
 
 	m_cyclesUntilEvent = cyclesFromNow;
-	m_manager.ScheduleNextEvent();
+	m_manager.ScheduleNextEvent( this );
 }
 
 void Event::Cancel()
@@ -57,7 +67,7 @@ void Event::Cancel()
 		m_pendingCycles = 0;
 		m_cyclesUntilEvent = 0;
 		m_active = false;
-		m_manager.ScheduleNextEvent();
+		m_manager.ScheduleNextEvent(this );
 	}
 }
 
@@ -68,7 +78,7 @@ void Event::Pause()
 
 	m_pendingCycles += m_manager.GetPendingCycles();
 	m_active = false;
-	m_manager.ScheduleNextEvent();
+	m_manager.ScheduleNextEvent( this );
 }
 
 void Event::Resume()
@@ -78,7 +88,7 @@ void Event::Resume()
 
 	m_pendingCycles -= m_manager.GetPendingCycles();
 	m_active = true;
-	m_manager.ScheduleNextEvent();
+	m_manager.ScheduleNextEvent( this );
 }
 
 cycles_t Event::GetPendingCycles() const noexcept
@@ -177,7 +187,7 @@ void EventManager::UpdateNextEvent()
 
 		UpdateEvent( event, event->m_cyclesUntilEvent );
 
-		ScheduleNextEvent();
+		ScheduleNextEvent( nullptr );
 	}
 	while ( ReadyForNextEvent() );
 }
@@ -190,29 +200,68 @@ void EventManager::UpdateEvent( Event* event, cycles_t cycles )
 	m_updating = false;
 }
 
-void EventManager::ScheduleNextEvent()
+void EventManager::ScheduleNextEvent( const Event* changedEvent )
 {
+	// prevent recursive scheduling
+	// event will be scheduled after update
 	if ( m_updating )
-		return; // event will be scheduled after update
+		return;
+
+	// early out if changed event doesn't change order
+	if ( m_nextEvent && changedEvent )
+	{
+		const auto newCyclesUntilEvent = changedEvent->IsActive() ? changedEvent->GetLocalRemainingCycles() : InfiniteCycles;
+		if ( m_nextEvent == changedEvent )
+		{
+			if ( newCyclesUntilEvent < m_cyclesUntilNextEvent )
+			{
+				m_cyclesUntilNextEvent = newCyclesUntilEvent;
+				return;
+			}
+		}
+		else
+		{
+			if ( newCyclesUntilEvent >= m_cyclesUntilNextEvent )
+			{
+				return;
+			}
+		}
+	}
+
+	// schedule next event
+	const auto [minIndex, minCycles] = FindNextEvent();
+	dbAssert( minIndex != npos );
+	dbAssert( minCycles != InfiniteCycles );
+
+	m_nextEvent = m_events[ minIndex ];
+	dbAssert( m_nextEvent->IsActive() );
+	dbAssert( m_nextEvent->m_cyclesUntilEvent > 0 );
+
+	m_cyclesUntilNextEvent = minCycles;
+}
+
+std::pair<size_t, cycles_t> EventManager::FindNextEvent() const
+{
 
 	// find next event
-	auto it = std::min_element( m_events.begin(), m_events.end(), []( const Event* lhs, const Event* rhs )
+	size_t minIndex = npos;
+	cycles_t minCycles = InfiniteCycles;
+	for ( size_t i = 0; i < m_events.size(); ++i )
+	{
+		auto* event = m_events[ i ];
+		dbAssert( event );
+		if ( event->IsActive() )
 		{
-			if ( lhs->IsActive() != rhs->IsActive() )
-				return lhs->IsActive();
+			const cycles_t remainingCycles = event->GetLocalRemainingCycles();
+			if ( remainingCycles < minCycles )
+			{
+				minCycles = remainingCycles;
+				minIndex = i;
+			}
+		}
+	}
 
-			return lhs->GetLocalRemainingCycles() < rhs->GetLocalRemainingCycles();
-		} );
-
-	dbAssert( it != m_events.end() );
-	Event* event = *it;
-
-	dbAssert( event->IsActive() );
-	dbAssert( event->m_cyclesUntilEvent > 0 );
-	m_nextEvent = event;
-
-	// cache cycles until event
-	m_cyclesUntilNextEvent = event->GetLocalRemainingCycles();
+	return std::make_pair( minIndex, minCycles );
 }
 
 void EventManager::RemoveEvent( Event* event )
@@ -244,7 +293,7 @@ void EventManager::Serialize( SaveStateSerializer& serializer )
 	serializer( m_cyclesUntilGteComplete );
 	serializer( m_cyclesThisFrame );
 
-	ScheduleNextEvent();
+	ScheduleNextEvent( nullptr );
 }
 
 }

@@ -152,11 +152,13 @@ public:
 	void Serialize( SaveStateSerializer& serializer );
 
 private:
-	void ScheduleNextEvent();
+	void ScheduleNextEvent( const Event* event );
 
 	void UpdateEvent( Event* event, cycles_t cycles );
 
 	void RemoveEvent( Event* event );
+
+	std::pair<size_t, cycles_t> FindNextEvent() const;
 
 private:
 	cycles_t m_cyclesUntilNextEvent = 0; // cached from event
