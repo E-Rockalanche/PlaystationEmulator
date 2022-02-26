@@ -226,7 +226,7 @@ bool MemoryCard::Communicate( uint8_t input, uint8_t& output )
 			if ( m_address < SectorCount )
 			{
 				auto& byte = m_memory[ m_address * SectorSize + m_dataCount ];
-				m_written |= ( byte != input );
+				m_dirty = m_dirty || ( byte != input );
 				byte = input;
 			}
 			
@@ -325,31 +325,44 @@ void MemoryCard::Format()
 bool MemoryCard::Save()
 {
 	if ( m_filename.empty() )
+	{
+		LogError( "Memory card has no filename" );
 		return false;
+	}
 
 	std::ofstream fout( m_filename, std::ios::binary );
 	if ( !fout.is_open() )
+	{
+		LogError( "Cannot save memory card to %s", m_filename.string().c_str() );
 		return false;
+	}
 
 	fout.write( (const char*)m_memory.data(), TotalSize );
 	fout.close();
 
-	m_written = false;
+	m_dirty = false;
 	return true;
 }
 
 
 void MemoryCard::Serialize( SaveStateSerializer& serializer )
 {
+	if ( serializer.Reading() )
+		Save();
+
 	if ( !serializer.Header( "MemoryCard", 1 ) )
 		return;
 
 	serializer( m_state );
 	serializer( m_flag.value );
+
 	serializer( m_dataCount );
 	serializer( m_address );
 	serializer( m_previousData );
 	serializer( m_writeChecksum );
+
+	serializer( m_memory );
+	serializer( m_dirty );
 }
 
 }

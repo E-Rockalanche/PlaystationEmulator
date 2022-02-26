@@ -169,10 +169,12 @@ private:
 		MemoryCard,
 	};
 
-	static constexpr uint32_t ControllerAckCycles = 338;
-	static constexpr uint32_t MemoryCardAckCycles = 170;
+	static constexpr cycles_t ControllerAckCycles = 338;
+	static constexpr cycles_t MemoryCardAckCycles = 170;
 	
-	static constexpr uint32_t AckLowCycles = 100; // nocash docs
+	static constexpr cycles_t AckLowCycles = 100; // nocash docs
+
+	static constexpr cycles_t MemoryCardSaveDelay = CpuCyclesPerSecond * 5; // Duckstation seems to have increased its delay from 1 to 3 to 5 seconds. Probably for a reason
 
 private:
 	void UpdateStatus() noexcept;
@@ -198,9 +200,14 @@ private:
 	void SerializeController( SaveStateSerializer& serializer, size_t slot );
 	void SerializeMemoryCard( SaveStateSerializer& serializer, size_t slot );
 
+	void ScheduleMemoryCardSaveToDisk();
+	void SaveMemoryCardsToDisk();
+
 private:
 	InterruptControl& m_interruptControl;
+
 	EventHandle m_communicateEvent;
+	EventHandle m_saveEvent;
 
 	// registers
 	Status m_status;

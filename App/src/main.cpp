@@ -583,12 +583,10 @@ int main( int argc, char** argv )
 		avgFps = FpsSmoothing * avgFps + ( 1.0f - FpsSmoothing ) * curFps;
 	}
 
-	if ( memCard1 && memCard1->Written() )
-		memCard1->Save();
+	// reset console to save memory cards
+	playstationCore->Reset();
 
-	if ( memCard2 && memCard2->Written() )
-		memCard2->Save();
-
+	// destroy console
 	playstationCore.reset();
 
 	if ( sdlGameController )
