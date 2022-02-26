@@ -105,6 +105,22 @@ bool LoadState( PSX::Playstation& psx, fs::path filename )
 	return true;
 }
 
+SDL_GameController* TryOpenController( int32_t deviceIndex )
+{
+	SDL_GameController* controller = nullptr;
+	if ( SDL_IsGameController( deviceIndex ) )
+	{
+		controller = SDL_GameControllerOpen( deviceIndex );
+		if ( controller )
+		{
+			Log( "Opened SDL game controller [%s]", SDL_GameControllerName( controller ) );
+		}
+
+		LogError( "Cannot open SDL game controller [%s]", SDL_GameControllerNameForIndex( deviceIndex ) );
+	}
+	return controller;
+}
+
 int main( int argc, char** argv )
 {
 	CommandLine::Initialize( argc, argv );
@@ -167,17 +183,9 @@ int main( int argc, char** argv )
 	SDL_GameController* sdlGameController = nullptr;
 	for ( int i = 0; i < SDL_NumJoysticks(); ++i )
 	{
-		if ( SDL_IsGameController( i ) )
-		{
-			sdlGameController = SDL_GameControllerOpen( i );
-			if ( sdlGameController )
-			{
-				Log( "Opened SDL game controller [%s]", SDL_GameControllerName( sdlGameController ) );
-				break;
-			}
-
-			LogError( "Cannot open SDL game controller [%i]", i );
-		}
+		sdlGameController = TryOpenController( i );
+		if ( sdlGameController )
+			break;
 	}
 
 	// psxController mapping
@@ -493,6 +501,34 @@ int main( int argc, char** argv )
 						windowTitle = event.drop.file;
 						paused = false;
 						romFilename = std::move( filename );
+					}
+					break;
+				}
+
+				case SDL_JOYDEVICEADDED:
+				{
+					if ( !sdlGameController )
+					{
+						// open new controller
+						sdlGameController = TryOpenController( event.jdevice.which );
+					}
+					break;
+				}
+
+				case SDL_JOYDEVICEREMOVED:
+				{
+					if ( sdlGameController && !SDL_GameControllerGetAttached( sdlGameController ) )
+					{
+						SDL_GameControllerClose( sdlGameController );
+						sdlGameController = nullptr;
+
+						// try to open a different controller
+						for ( int32_t i = 0; i < SDL_NumJoysticks(); ++i )
+						{
+							sdlGameController = TryOpenController( i );
+							if ( sdlGameController )
+								break;
+						}
 					}
 					break;
 				}
