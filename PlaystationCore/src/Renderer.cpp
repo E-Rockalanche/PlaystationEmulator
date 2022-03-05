@@ -186,7 +186,13 @@ void Renderer::Reset()
 
 	// reset renderer state
 
-	m_uniform = {};
+	m_texturePageX = 0;
+	m_texturePageY = 0;
+
+	m_texWindowMaskX = 0;
+	m_texWindowMaskY = 0;
+	m_texWindowOffsetX = 0;
+	m_texWindowOffsetY = 0;
 
 	m_vertices.clear();
 
@@ -217,14 +223,14 @@ void Renderer::EnableVRamView( bool enable )
 
 void Renderer::SetTextureWindow( uint32_t maskX, uint32_t maskY, uint32_t offsetX, uint32_t offsetY )
 {
-	if ( m_uniform.texWindowMaskX != maskX || m_uniform.texWindowMaskY != maskY || m_uniform.texWindowOffsetX != offsetX || m_uniform.texWindowOffsetY != offsetY )
+	if ( m_texWindowMaskX != maskX || m_texWindowMaskY != maskY || m_texWindowOffsetX != offsetX || m_texWindowOffsetY != offsetY )
 	{
 		DrawBatch();
 
-		m_uniform.texWindowMaskX = maskX;
-		m_uniform.texWindowMaskY = maskY;
-		m_uniform.texWindowOffsetX = offsetX;
-		m_uniform.texWindowOffsetY = offsetY;
+		m_texWindowMaskX = maskX;
+		m_texWindowMaskY = maskY;
+		m_texWindowOffsetX = offsetX;
+		m_texWindowOffsetY = offsetY;
 
 		glUniform2i( m_texWindowMask, maskX, maskY );
 		glUniform2i( m_texWindowOffset, offsetX, offsetY );
@@ -800,8 +806,8 @@ void Renderer::RestoreRenderState()
 	glUniform1i( m_drawTransparentPixelsLoc, true );
 	glUniform1i( m_ditherLoc, m_dither );
 	glUniform1i( m_realColorLoc, m_realColor );
-	glUniform2i( m_texWindowMask, m_uniform.texWindowMaskX, m_uniform.texWindowMaskY );
-	glUniform2i( m_texWindowOffset, m_uniform.texWindowOffsetX, m_uniform.texWindowOffsetY );
+	glUniform2i( m_texWindowMask, m_texWindowMaskX, m_texWindowMaskY );
+	glUniform2i( m_texWindowOffset, m_texWindowOffsetX, m_texWindowOffsetY );
 
 	glViewport( 0, 0, VRamWidth, VRamHeight );
 

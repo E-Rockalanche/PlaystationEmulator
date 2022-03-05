@@ -197,17 +197,13 @@ private:
 	TexPage m_texPage;
 	ClutAttribute m_clut;
 
-	struct Uniform
-	{
-		int32_t texturePageX = 0;
-		int32_t texturePageY = 0;
+	int32_t m_texturePageX = 0;
+	int32_t m_texturePageY = 0;
 
-		uint32_t texWindowMaskX = 0;
-		uint32_t texWindowMaskY = 0;
-		uint32_t texWindowOffsetX = 0;
-		uint32_t texWindowOffsetY = 0;
-	};
-	Uniform m_uniform;
+	uint32_t m_texWindowMaskX = 0;
+	uint32_t m_texWindowMaskY = 0;
+	uint32_t m_texWindowOffsetX = 0;
+	uint32_t m_texWindowOffsetY = 0;
 
 	std::vector<Vertex> m_vertices;
 
