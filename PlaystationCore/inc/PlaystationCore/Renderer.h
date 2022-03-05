@@ -70,7 +70,7 @@ public:
 
 	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint8_t r, uint8_t g, uint8_t b );
 
-	void CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height );
+	void CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height );
 
 	void PushTriangle( Vertex vertices[ 3 ], bool semiTransparent );
 	void PushQuad( Vertex vertices[ 4 ], bool semiTransparent );
@@ -132,6 +132,12 @@ private:
 		return UsingTexture() && ( m_textureArea.Intersects( bounds ) || ( UsingClut() && m_clutArea.Intersects( bounds ) ) );
 	}
 
+	uint32_t GetVRamTextureWidth() const noexcept { return VRamWidth * m_resolutionScale; }
+	uint32_t GetVRamTextureHeight() const noexcept { return VRamHeight * m_resolutionScale; }
+
+	void SetViewport( uint32_t left, uint32_t top, uint32_t width, uint32_t height );
+	void SetScissor( uint32_t left, uint32_t top, uint32_t width, uint32_t height );
+
 private:
 	SDL_Window* m_window = nullptr;
 
@@ -161,8 +167,9 @@ private:
 	GLint m_drawTransparentPixelsLoc = -1;
 	GLint m_ditherLoc = -1;
 	GLint m_realColorLoc = -1;
-	GLint m_texWindowMask = -1;
-	GLint m_texWindowOffset = -1;
+	GLint m_texWindowMaskLoc = -1;
+	GLint m_texWindowOffsetLoc = -1;
+	GLint m_resolutionScaleLoc = -1;
 
 	Render::Shader m_vramViewShader;
 
@@ -215,9 +222,13 @@ private:
 	DepthType m_currentDepth = 0;
 
 	// not serialized
+	uint32_t m_resolutionScale = 1;
+	int m_cachedWindowWidth = 0;
+	int m_cachedWindowHeight = 0;
 	bool m_stretchToFit = true;
 	bool m_viewVRam = false;
 	bool m_realColor = false;
+
 };
 
 }
