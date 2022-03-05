@@ -53,7 +53,7 @@ struct Rectangle
 		return ( left < other.right ) && ( other.left < right ) && ( top < other.bottom ) && ( other.top < bottom );
 	}
 
-	Rectangle& operator*( T value ) noexcept
+	Rectangle& operator*=( T value ) noexcept
 	{
 		left *= value;
 		top *= value;
@@ -62,9 +62,9 @@ struct Rectangle
 		return *this;
 	}
 
-	Rectangle& operator/( T value ) noexcept
+	Rectangle& operator/=( T value ) noexcept
 	{
-		dbAssert( value != 0 );
+		dbExpects( value != 0 );
 		left /= value;
 		top /= value;
 		right /= value;
