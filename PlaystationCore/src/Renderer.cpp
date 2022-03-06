@@ -88,6 +88,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	// set shader attribute locations in VAO
 	constexpr auto Stride = sizeof( Vertex );
 
+	// get shader uniform locations
 	m_clutShader.Bind();
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_pos" ), 4, Render::Type::Short, false, Stride, offsetof( Vertex, Vertex::position ) );
 	m_vramDrawVAO.AddFloatAttribute( m_clutShader.GetAttributeLocation( "v_color" ), 3, Render::Type::UByte, true, Stride, offsetof( Vertex, Vertex::color ) );
@@ -95,24 +96,7 @@ bool Renderer::Initialize( SDL_Window* window )
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_clut" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::clut ) );
 	m_vramDrawVAO.AddIntAttribute( m_clutShader.GetAttributeLocation( "v_texPage" ), 1, Render::Type::UShort, Stride, offsetof( Vertex, Vertex::texPage ) );
 	
-	// get shader uniform locations
-
-	// VRAM draw texture
-	m_vramDrawFramebuffer = Render::Framebuffer::Create();
-	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, GetVRamTextureWidth(), GetVRamTextureHeight(), Render::PixelFormat::RGBA, Render::PixelType::UByte );
-	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
-	m_vramDrawDepthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth16, GetVRamTextureWidth(), GetVRamTextureHeight(), Render::PixelFormat::Depth, Render::PixelType::Short );
-	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Depth, m_vramDrawDepthBuffer );
-	dbAssert( m_vramDrawFramebuffer.IsComplete() );
-	m_vramDrawFramebuffer.Unbind();
-
-	// VRAM read texture
-	m_vramReadFramebuffer = Render::Framebuffer::Create();
-	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, GetVRamTextureWidth(), GetVRamTextureHeight(), Render::PixelFormat::RGBA, Render::PixelType::UByte );
-	m_vramReadTexture.SetTextureWrap( true );
-	m_vramReadFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
-	dbAssert( m_vramReadFramebuffer.IsComplete() );
-	m_vramReadFramebuffer.Unbind();
+	InitializeVRamFramebuffers();
 
 	// VRAM transfer texture
 	m_vramTransferFramebuffer = Render::Framebuffer::Create();
@@ -131,6 +115,26 @@ bool Renderer::Initialize( SDL_Window* window )
 	RestoreRenderState();
 
 	return true;
+}
+
+void Renderer::InitializeVRamFramebuffers()
+{
+	// VRAM draw texture
+	m_vramDrawFramebuffer = Render::Framebuffer::Create();
+	m_vramDrawTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, GetVRamTextureWidth(), GetVRamTextureHeight(), Render::PixelFormat::RGBA, Render::PixelType::UByte );
+	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramDrawTexture );
+	m_vramDrawDepthBuffer = Render::Texture2D::Create( Render::InternalFormat::Depth16, GetVRamTextureWidth(), GetVRamTextureHeight(), Render::PixelFormat::Depth, Render::PixelType::Short );
+	m_vramDrawFramebuffer.AttachTexture( Render::AttachmentType::Depth, m_vramDrawDepthBuffer );
+	dbAssert( m_vramDrawFramebuffer.IsComplete() );
+	m_vramDrawFramebuffer.Unbind();
+
+	// VRAM read texture
+	m_vramReadFramebuffer = Render::Framebuffer::Create();
+	m_vramReadTexture = Render::Texture2D::Create( Render::InternalFormat::RGBA8, GetVRamTextureWidth(), GetVRamTextureHeight(), Render::PixelFormat::RGBA, Render::PixelType::UByte );
+	m_vramReadTexture.SetTextureWrap( true );
+	m_vramReadFramebuffer.AttachTexture( Render::AttachmentType::Color, m_vramReadTexture );
+	dbAssert( m_vramReadFramebuffer.IsComplete() );
+	m_vramReadFramebuffer.Unbind();
 }
 
 constexpr Renderer::Rect Renderer::GetWrappedBounds( uint32_t left, uint32_t top, uint32_t width, uint32_t height ) noexcept
@@ -204,6 +208,46 @@ void Renderer::Reset()
 	m_currentDepth = ResetDepth;
 
 	RestoreRenderState();
+}
+
+bool Renderer::SetResolutionScale( uint32_t scale )
+{
+	if ( scale < 1 )
+		return false;
+
+	if ( scale == m_resolutionScale )
+		return true;
+
+	const auto newWidth = VRamWidth * scale;
+	const auto newHeight = VRamHeight * scale;
+	if ( newWidth > GL_MAX_TEXTURE_SIZE || newHeight > GL_MAX_TEXTURE_SIZE )
+		return false;
+
+	const auto oldWidth = VRamWidth * m_resolutionScale;
+	const auto oldHeight = VRamHeight * m_resolutionScale;
+
+	m_resolutionScale = scale;
+
+	// keep old vram objects
+	auto oldFramebuffer = std::move( m_vramDrawFramebuffer );
+	auto oldDrawTexture = std::move( m_vramDrawTexture );
+	auto oldDepthBuffer = std::move( m_vramDrawDepthBuffer );
+
+	InitializeVRamFramebuffers();
+
+	// copy old vram to new framebuffers
+	glDisable( GL_SCISSOR_TEST );
+	oldFramebuffer.Bind( Render::FramebufferBinding::Read );
+
+	m_vramDrawFramebuffer.Bind( Render::FramebufferBinding::Draw );
+	glBlitFramebuffer( 0, 0, oldWidth, oldHeight, 0, 0, newWidth, newHeight, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST );
+
+	m_vramReadFramebuffer.Bind( Render::FramebufferBinding::Draw );
+	glBlitFramebuffer( 0, 0, oldWidth, oldHeight, 0, 0, newWidth, newHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST );
+
+	RestoreRenderState();
+
+	return true;
 }
 
 void Renderer::SetViewport( uint32_t left, uint32_t top, uint32_t width, uint32_t height )

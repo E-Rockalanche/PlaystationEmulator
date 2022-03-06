@@ -57,7 +57,7 @@ public:
 		m_displayEnable = enable;
 	}
 
-	bool UsingRealColor() const { return m_realColor; }
+	bool GetRealColor() const { return m_realColor; }
 	void SetRealColor( bool realColor );
 
 	void SetDisplayArea( const DisplayArea& vramDisplayArea, const DisplayArea& targetDisplayArea, float aspectRatio );
@@ -77,6 +77,12 @@ public:
 
 	void DisplayFrame();
 
+	uint32_t GetResolutionScale() const noexcept { return m_resolutionScale; }
+	bool SetResolutionScale( uint32_t scale );
+
+	uint32_t GetTargetTextureWidth() const noexcept { return m_targetDisplayArea.width * m_resolutionScale; }
+	uint32_t GetTargetTextureHeight() const noexcept { return static_cast<uint32_t>( GetTargetTextureWidth() / m_aspectRatio ); }
+
 private:
 	using DepthType = int16_t;
 	static constexpr DepthType MaxDepth = std::numeric_limits<DepthType>::max();
@@ -85,6 +91,8 @@ private:
 	using Rect = Math::Rectangle<int32_t>;
 
 private:
+	void InitializeVRamFramebuffers();
+
 	// update read texture with dirty area of draw texture
 	void UpdateReadTexture();
 

@@ -123,6 +123,21 @@ SDL_GameController* TryOpenController( int32_t deviceIndex )
 	return controller;
 }
 
+
+void SetResolutionScale( SDL_Window* window, PSX::Renderer& renderer, uint32_t scale )
+{
+	if ( !renderer.SetResolutionScale( scale ) )
+	{
+		LogError( "Cannot set resolution scale to %u", scale );
+		return;
+	}
+
+	const int windowWidth = renderer.GetTargetTextureWidth();
+	const int windowHeight = renderer.GetTargetTextureHeight();
+	SDL_SetWindowSize( window, windowWidth, windowHeight );
+	Log( "Set resolution scale to %u", scale );
+};
+
 int main( int argc, char** argv )
 {
 	CommandLine::Initialize( argc, argv );
@@ -342,16 +357,29 @@ int main( int argc, char** argv )
 						}
 
 						case SDLK_F6:
+						{
 							// toggle vram view
-							playstationCore->GetRenderer().EnableVRamView( !playstationCore->GetRenderer().IsVRamViewEnabled() );
+							auto& renderer = playstationCore->GetRenderer();
+							renderer.EnableVRamView( !renderer.IsVRamViewEnabled() );
 							break;
+						}
+
+						case SDLK_F7:
+						{
+							// toggle real color
+							auto& renderer = playstationCore->GetRenderer();
+							renderer.SetRealColor( !renderer.GetRealColor() );
+							break;
+						}
 
 						case SDLK_F9:
+						{
 							if ( !romFilename.empty() )
 								LoadState( *playstationCore, MakeSaveStatePath( romFilename ) );
 							else
 								LogError( "No rom file to load state" );
 							break;
+						}
 
 						case SDLK_F11:
 						{
@@ -375,6 +403,22 @@ int main( int argc, char** argv )
 						case SDLK_r:
 						{
 							playstationCore->Reset();
+							break;
+						}
+
+						case SDLK_PLUS:
+						case SDLK_EQUALS:
+						{
+							auto& renderer = playstationCore->GetRenderer();
+							SetResolutionScale( window, renderer, renderer.GetResolutionScale() + 1 );
+							break;
+						}
+
+						case SDLK_MINUS:
+						case SDLK_UNDERSCORE:
+						{
+							auto& renderer = playstationCore->GetRenderer();
+							SetResolutionScale( window, renderer, renderer.GetResolutionScale() - 1 );
 							break;
 						}
 					}
