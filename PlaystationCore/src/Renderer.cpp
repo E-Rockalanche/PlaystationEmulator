@@ -24,6 +24,8 @@ namespace
 
 constexpr size_t VertexBufferSize = 1024;
 
+constexpr uint32_t MaxResolutionScale = 4;
+
 constexpr GLint GetPixelStoreAlignment( uint32_t x, uint32_t w ) noexcept
 {
 	const bool odd = ( x % 2 != 0 ) || ( w % 2 != 0 );
@@ -212,15 +214,16 @@ void Renderer::Reset()
 
 bool Renderer::SetResolutionScale( uint32_t scale )
 {
-	if ( scale < 1 )
+	if ( scale < 1 || scale > MaxResolutionScale )
 		return false;
 
 	if ( scale == m_resolutionScale )
 		return true;
 
-	const auto newWidth = VRamWidth * scale;
-	const auto newHeight = VRamHeight * scale;
-	if ( newWidth > GL_MAX_TEXTURE_SIZE || newHeight > GL_MAX_TEXTURE_SIZE )
+	const GLint newWidth = VRamWidth * scale;
+	const GLint newHeight = VRamHeight * scale;
+	const GLint maxTextureSize = Render::GetMaxTextureSize();
+	if ( newWidth > maxTextureSize || newHeight > maxTextureSize )
 		return false;
 
 	const auto oldWidth = VRamWidth * m_resolutionScale;

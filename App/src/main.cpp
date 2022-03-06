@@ -181,9 +181,10 @@ int main( int argc, char** argv )
 	dbLog( "loading OpenGL procedures" );
 	gladLoadGLLoader( SDL_GL_GetProcAddress );
 
-	std::cout << "vendor: " << glGetString( GL_VENDOR ) << '\n';
-	std::cout << "renderer: " << glGetString( GL_RENDERER ) << '\n';
-	std::cout << "version: " << glGetString( GL_VERSION ) << '\n';
+	Log( "vendor: %s", glGetString( GL_VENDOR ) );
+	Log( "renderer: %s", glGetString( GL_RENDERER ) );
+	Log( "version: %s", glGetString( GL_VERSION ) );
+	Log( "max texture size: %i", Render::GetMaxTextureSize() );
 
 	glViewport( 0, 0, windowWidth, windowHeight );
 

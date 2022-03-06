@@ -159,6 +159,8 @@ enum class PixelType : GLenum
 	UInt_2_10_10_10_Rev = GL_UNSIGNED_INT_2_10_10_10_REV
 };
 
+GLint GetMaxTextureSize();
+
 namespace Detail
 {
 
@@ -298,8 +300,8 @@ public:
 	{
 		dbExpects( width > 0 );
 		dbExpects( height > 0 );
-		dbExpects( width < GL_MAX_TEXTURE_SIZE );
-		dbExpects( height < GL_MAX_TEXTURE_SIZE );
+		dbExpects( width < GetMaxTextureSize() );
+		dbExpects( height < GetMaxTextureSize() );
 
 		Bind();
 		glTexImage2D( GetType(), mipmapLevel, static_cast<GLenum>( internalColorFormat ), width, height, 0, static_cast<GLenum>( pixelFormat ), static_cast<GLenum>( pixelType ), pixels );

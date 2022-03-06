@@ -234,6 +234,7 @@
     <ClCompile Include="src\Error.cpp" />
     <ClCompile Include="src\FrameBuffer.cpp" />
     <ClCompile Include="src\Shader.cpp" />
+    <ClCompile Include="src\Texture.cpp" />
     <ClCompile Include="src\VertexArrayObject.cpp" />
   </ItemGroup>
   <ItemGroup>
