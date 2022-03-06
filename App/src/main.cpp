@@ -321,6 +321,7 @@ int main( int argc, char** argv )
 			{
 				case SDL_QUIT:
 					quit = true;
+					Log( "quitting" );
 					break;
 
 				case SDL_KEYDOWN:
@@ -332,6 +333,7 @@ int main( int argc, char** argv )
 						case SDLK_F1:
 							paused = !paused;
 							playstationCore->GetAudioQueue().SetPaused( paused );
+							Log( "paused: %i", paused );
 							break;
 
 						case SDLK_F2:
@@ -369,7 +371,9 @@ int main( int argc, char** argv )
 						{
 							// toggle real color
 							auto& renderer = playstationCore->GetRenderer();
-							renderer.SetRealColor( !renderer.GetRealColor() );
+							const bool realColor = !renderer.GetRealColor();
+							renderer.SetRealColor( realColor );
+							Log( "real color: %i", realColor );
 							break;
 						}
 
@@ -403,6 +407,7 @@ int main( int argc, char** argv )
 
 						case SDLK_r:
 						{
+							Log( "resetting" );
 							playstationCore->Reset();
 							break;
 						}
