@@ -24,7 +24,7 @@ namespace
 
 constexpr size_t VertexBufferSize = 1024;
 
-constexpr uint32_t MaxResolutionScale = 4;
+constexpr uint32_t MaxResolutionScale = 8;
 
 constexpr GLint GetPixelStoreAlignment( uint32_t x, uint32_t w ) noexcept
 {
