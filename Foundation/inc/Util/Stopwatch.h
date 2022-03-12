@@ -4,7 +4,7 @@
 
 #include <chrono>
 
-namespace System
+namespace Util
 {
 
 class Stopwatch

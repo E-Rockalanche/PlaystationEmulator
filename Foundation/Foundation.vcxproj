@@ -247,12 +247,12 @@
     <ClInclude Include="inc\stdx\scope.h" />
     <ClInclude Include="inc\stdx\string.h" />
     <ClInclude Include="inc\stdx\type_traits.h" />
-    <ClInclude Include="inc\System\CommandLine.h" />
-    <ClInclude Include="inc\System\Stopwatch.h" />
+    <ClInclude Include="inc\Util\CommandLine.h" />
+    <ClInclude Include="inc\Util\Stopwatch.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp" />
-    <ClCompile Include="src\System\CommandLine.cpp" />
+    <ClCompile Include="src\Util\CommandLine.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

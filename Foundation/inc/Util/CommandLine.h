@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace CommandLine
+namespace Util::CommandLine
 {
 
 class CommandLineOptions;

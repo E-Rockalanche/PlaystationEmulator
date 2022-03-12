@@ -13,14 +13,14 @@
     <Filter Include="inc\Math">
       <UniqueIdentifier>{35ad4d97-a468-46c4-a58d-dddc5671f186}</UniqueIdentifier>
     </Filter>
-    <Filter Include="inc\System">
-      <UniqueIdentifier>{7f3a18ed-6169-4375-8b9c-fed17c3aaa1c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="src\System">
-      <UniqueIdentifier>{c1845e95-c314-4381-9808-ab0685a19882}</UniqueIdentifier>
-    </Filter>
     <Filter Include="inc\ByteIO">
       <UniqueIdentifier>{2fbffd5b-a74b-437b-aaed-c3648e50bd71}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="inc\Util">
+      <UniqueIdentifier>{7f3a18ed-6169-4375-8b9c-fed17c3aaa1c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\Util">
+      <UniqueIdentifier>{c1845e95-c314-4381-9808-ab0685a19882}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -63,9 +63,6 @@
     <ClInclude Include="inc\stdx\log.h">
       <Filter>inc\stdx</Filter>
     </ClInclude>
-    <ClInclude Include="inc\System\CommandLine.h">
-      <Filter>inc\System</Filter>
-    </ClInclude>
     <ClInclude Include="inc\stdx\heap_array.h">
       <Filter>inc\stdx</Filter>
     </ClInclude>
@@ -75,19 +72,22 @@
     <ClInclude Include="inc\stdx\type_traits.h">
       <Filter>inc\stdx</Filter>
     </ClInclude>
-    <ClInclude Include="inc\System\Stopwatch.h">
-      <Filter>inc\System</Filter>
-    </ClInclude>
     <ClInclude Include="inc\ByteIO\ByteStream.h">
       <Filter>inc\ByteIO</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\Util\CommandLine.h">
+      <Filter>inc\Util</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\Util\Stopwatch.h">
+      <Filter>inc\Util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dummy.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="src\System\CommandLine.cpp">
-      <Filter>src\System</Filter>
+    <ClCompile Include="src\Util\CommandLine.cpp">
+      <Filter>src\Util</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

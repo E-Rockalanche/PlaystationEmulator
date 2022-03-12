@@ -11,8 +11,8 @@
 
 #include <Render/Error.h>
 
-#include <System/CommandLine.h>
-#include <System/Stopwatch.h>
+#include <Util/CommandLine.h>
+#include <Util/Stopwatch.h>
 
 #include <ByteIO/ByteStream.h>
 
@@ -140,13 +140,13 @@ void SetResolutionScale( SDL_Window* window, PSX::Renderer& renderer, uint32_t s
 
 int main( int argc, char** argv )
 {
-	CommandLine::Initialize( argc, argv );
+	Util::CommandLine::Initialize( argc, argv );
 
-	fs::path romFilename = CommandLine::Get().GetOption( "rom", fs::path{} );
-	fs::path exeFilename = CommandLine::Get().GetOption( "exe", fs::path{} );
-	fs::path memCard1Filename = CommandLine::Get().GetOption( "memcard1", fs::path{} );
-	fs::path memCard2Filename = CommandLine::Get().GetOption( "memcard2", fs::path{} );
-	fs::path biosFilename = CommandLine::Get().GetOption( "bios", fs::path{ "bios.bin" } );
+	fs::path romFilename = Util::CommandLine::Get().GetOption( "rom", fs::path{} );
+	fs::path exeFilename = Util::CommandLine::Get().GetOption( "exe", fs::path{} );
+	fs::path memCard1Filename = Util::CommandLine::Get().GetOption( "memcard1", fs::path{} );
+	fs::path memCard2Filename = Util::CommandLine::Get().GetOption( "memcard2", fs::path{} );
+	fs::path biosFilename = Util::CommandLine::Get().GetOption( "bios", fs::path{ "bios.bin" } );
 
 	dbLog( "initializing SDL" );
 	if ( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER ) < 0 )
@@ -309,7 +309,7 @@ int main( int argc, char** argv )
 	float avgFps = 0.0f;
 	static constexpr float FpsSmoothing = 0.9f;
 
-	System::Stopwatch stopwatch;
+	Util::Stopwatch stopwatch;
 	stopwatch.Start();
 
 	while ( !quit )
@@ -625,7 +625,7 @@ int main( int argc, char** argv )
 		// compensate for any lag from the last frame
 		const auto totalElapsed = std::chrono::duration_cast<MillisecondsD>( stopwatch.GetElapsed() );
 		const MillisecondsD compensation = ( totalElapsed > targetMilliseconds && totalElapsed < targetMilliseconds * 2 ) ? ( totalElapsed - targetMilliseconds ) : MillisecondsD{};
-		stopwatch.Start( std::chrono::duration_cast<System::Stopwatch::Duration>( compensation ) );
+		stopwatch.Start( std::chrono::duration_cast<Util::Stopwatch::Duration>( compensation ) );
 
 		if ( coreElapsed > targetMilliseconds )
 			dbLogDebug( "target millis: %f, elapsed: %f, core elapsed: %f, compensation: %f", targetMilliseconds.count(), totalElapsed.count(), coreElapsed.count(), compensation.count() );
