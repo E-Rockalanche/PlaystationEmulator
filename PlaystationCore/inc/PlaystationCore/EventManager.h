@@ -60,6 +60,13 @@ public:
 		return m_cyclesUntilEvent - GetPendingCycles();
 	}
 
+	// returns progress fraction from 0 to 1
+	float GetProgress() const noexcept
+	{
+		dbAssert( m_cyclesUntilEvent > 0 );
+		return std::clamp( static_cast<float>( GetPendingCycles() ) / static_cast<float>( m_cyclesUntilEvent ), 0.0f, 1.0f );
+	}
+
 	const std::string& GetName() const noexcept { return m_name; }
 
 	void Serialize( SaveStateSerializer& serializer );
