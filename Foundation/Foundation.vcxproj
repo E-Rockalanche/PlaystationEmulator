@@ -248,6 +248,7 @@
     <ClInclude Include="inc\stdx\string.h" />
     <ClInclude Include="inc\stdx\type_traits.h" />
     <ClInclude Include="inc\Util\CommandLine.h" />
+    <ClInclude Include="inc\Util\EventSink.h" />
     <ClInclude Include="inc\Util\Stopwatch.h" />
   </ItemGroup>
   <ItemGroup>
