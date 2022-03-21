@@ -243,6 +243,8 @@ public:
 
 	virtual ~CDRom() = default;
 
+	const fs::path& GetFilename() const { return m_filename; }
+
 	// seek position on disk
 	bool Seek( LogicalSector position );
 	bool Seek( uint32_t trackNumber, Location locationInTrack );

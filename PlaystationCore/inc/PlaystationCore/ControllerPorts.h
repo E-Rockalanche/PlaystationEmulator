@@ -151,6 +151,8 @@ public:
 		m_memCards[ slot ] = memCard;
 	}
 
+	void SaveMemoryCardsToDisk();
+
 	void Serialize( SaveStateSerializer& serializer );
 
 private:
@@ -201,7 +203,6 @@ private:
 	void SerializeMemoryCard( SaveStateSerializer& serializer, size_t slot );
 
 	void ScheduleMemoryCardSaveToDisk();
-	void SaveMemoryCardsToDisk();
 
 private:
 	InterruptControl& m_interruptControl;

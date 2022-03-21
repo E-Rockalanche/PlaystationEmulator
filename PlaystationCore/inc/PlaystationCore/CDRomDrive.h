@@ -29,6 +29,7 @@ public:
 	void Write( uint32_t index, uint8_t value ) noexcept;
 
 	void SetCDRom( std::unique_ptr<CDRom> cdrom );
+	CDRom* GetCDRom() { return m_cdrom.get(); }
 
 	bool CanReadDisk() const noexcept
 	{

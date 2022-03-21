@@ -24,6 +24,7 @@ public:
 	void RunFrame();
 
 	void SetCDRom( std::unique_ptr<CDRom> cdrom );
+	CDRom* GetCDRom();
 
 	void HookExe( fs::path filename );
 

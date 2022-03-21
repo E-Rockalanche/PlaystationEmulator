@@ -139,6 +139,11 @@ void Playstation::SetCDRom( std::unique_ptr<CDRom> cdrom )
 	m_cdromDrive->SetCDRom( std::move( cdrom ) );
 }
 
+CDRom* Playstation::GetCDRom()
+{
+	return m_cdromDrive->GetCDRom();
+}
+
 void Playstation::HookExe( fs::path filename )
 {
 	m_cpu->SetHookExecutable( std::move( filename ) );
