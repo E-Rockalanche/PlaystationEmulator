@@ -10,7 +10,7 @@
 namespace PSX
 {
 
-#define CDROMDRIVE_LOG( ... ) dbLogDebug( __VA_ARGS__ )
+#define CDROMDRIVE_LOG( ... ) dbLog( __VA_ARGS__ )
 
 namespace
 {
@@ -541,16 +541,15 @@ void CDRomDrive::SetAsyncInterrupt( uint8_t response ) noexcept
 // queue status and second interrupt
 void CDRomDrive::SendAsyncStatusAndInterrupt( uint8_t response ) noexcept
 {
-	if ( m_queuedInterrupt == response )
+	if ( !CanReadDisk() )
 	{
-		// same interrupt is already queued
-		m_secondResponseBuffer.Clear();
+		SendAsyncError( ErrorCode::DriveDoorOpened );
 		return;
 	}
 
-	dbAssert( m_queuedInterrupt == 0 );
+	m_secondResponseBuffer.Clear();
 	m_secondResponseBuffer.Push( m_driveStatus.value );
-	m_queuedInterrupt = response;
+	SetAsyncInterrupt( response );
 }
 
 void CDRomDrive::ClearAsyncInterrupt() noexcept
@@ -579,12 +578,15 @@ void CDRomDrive::CheckInterrupt() noexcept
 {
 	if ( ( m_interruptFlags & m_interruptEnable ) != 0 )
 	{
+		CDROMDRIVE_LOG( "triggering CDROM interrupt" );
 		m_interruptControl.SetInterrupt( Interrupt::CDRom );
 	}
 }
 
 void CDRomDrive::ShiftQueuedInterrupt() noexcept
 {
+	CDROMDRIVE_LOG( "CDRomDrive::ShiftQueuedInterrupt" );
+
 	dbExpects( m_interruptFlags == 0 );
 	dbExpects( m_queuedInterrupt != 0 );
 
@@ -593,9 +595,9 @@ void CDRomDrive::ShiftQueuedInterrupt() noexcept
 		m_readSectorBuffer = m_writeSectorBuffer;
 
 	m_interruptFlags = m_queuedInterrupt;
-	m_responseBuffer = m_secondResponseBuffer;
-
 	m_queuedInterrupt = 0;
+
+	m_responseBuffer = m_secondResponseBuffer;
 	m_secondResponseBuffer.Clear();
 
 	CheckInterrupt();
@@ -765,6 +767,8 @@ bool CDRomDrive::CompleteSeek() noexcept
 			dbLogWarning( "CDRomDrive::CompleteSeek -- seeked to lead out track" );
 			ok = false;
 		}
+
+		m_currentPosition = m_cdrom->GetCurrentSeekSector();
 	}
 
 	return ok;
@@ -1555,7 +1559,6 @@ void CDRomDrive::ExecuteCommandSecondResponse() noexcept
 			break;
 	}
 
-	dbAssert( m_queuedInterrupt != 0 ); // there is always an async response
 	if ( m_interruptFlags == 0 )
 		ShiftQueuedInterrupt();
 }
@@ -1630,6 +1633,8 @@ void CDRomDrive::ExecuteDriveState() noexcept
 		{
 			CDROMDRIVE_LOG( "CDRomDrive::ExecuteDriveState -- read complete" );
 
+			m_currentPosition = m_cdrom->GetCurrentSeekSector();
+
 			CDRom::Sector sector;
 			if ( !m_cdrom->ReadSector( sector, m_lastSubQ ) )
 			{
@@ -1702,7 +1707,7 @@ void CDRomDrive::RequestData() noexcept
 	else
 	{
 		// Duckstation reads old bytes
-		dbBreakMessage( "CDRomDrive::RequestData -- sector buffer %u is empty", m_readSectorBuffer );
+		dbLogWarning( "CDRomDrive::RequestData -- sector buffer %u is empty", m_readSectorBuffer );
 		m_dataBuffer.Push( sector.bytes.data(), DataBufferSize );
 	}
 
@@ -1741,6 +1746,9 @@ void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
 	if ( buffer.size > 0 )
 		dbLogWarning( "CDRomDrive::ExecuteDriveState -- overwriting buffer [%u]", m_writeSectorBuffer );
 
+	if ( m_mode.ignoreBit )
+		dbLogWarning( "CDRomDrive::ExecuteDriveState -- mode ignore bit set on sector read" );
+
 	if ( m_mode.sectorSize )
 	{
 		std::copy_n( sector.audio.data() + CDRom::SyncSize, DataBufferSize, buffer.bytes.data() );
@@ -1766,6 +1774,21 @@ void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
 			default:	dbBreak();											break;
 		}
 		buffer.size = CDRom::DataBytesPerSector;
+	}
+
+	CDROMDRIVE_LOG( "CDRomDrive::ProcessDataSector -- read sector %u into buffer %u", m_currentPosition, m_writeSectorBuffer );
+
+	if ( m_queuedInterrupt != 0 )
+	{
+		dbLogWarning( "CDRomDrive::ProcessDataSector -- clearing queued interrrupt" );
+		ClearAsyncInterrupt();
+	}
+
+	if ( m_interruptFlags != 0 )
+	{
+		const uint32_t missedSectors = ( m_writeSectorBuffer - m_readSectorBuffer ) % NumSectorBuffers;
+		if ( missedSectors > 1 )
+			dbLogWarning( "CDRomDrive::ProcessDataSector -- interrupt not processed in time. Missed %u sectors", missedSectors - 1 );
 	}
 
 	// TODO: interrupt retry
@@ -1808,7 +1831,7 @@ void CDRomDrive::ProcessCDDASector( const CDRom::Sector& sector )
 
 		m_secondResponseBuffer.Push( static_cast<uint8_t>( peak ) );
 		m_secondResponseBuffer.Push( static_cast<uint8_t>( peak >> 8 ) );
-		m_queuedInterrupt = InterruptResponse::ReceivedData;
+		SetAsyncInterrupt( InterruptResponse::ReceivedData );
 	}
 
 	if ( m_muted )
@@ -1856,6 +1879,8 @@ void CDRomDrive::DecodeAdpcmSector( const CDRom::Sector& sector )
 		m_xaFilter.channel = subHeader.channel;
 		m_xaFilter.set = true;
 	}
+
+	CDROMDRIVE_LOG( "CDRomDrive::DecodeAdpcmSector -- Decoding sector" );
 
 	// reset current file on EOF, and play the file in the next sector
 	if ( subHeader.subMode.endOfFile )
