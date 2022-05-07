@@ -23,8 +23,5 @@
     <ClInclude Include="src\App.h">
       <Filter>inc</Filter>
     </ClInclude>
-    <ClInclude Include="src\Controller.h">
-      <Filter>inc</Filter>
-    </ClInclude>
   </ItemGroup>
 </Project>
