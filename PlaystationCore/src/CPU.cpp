@@ -36,7 +36,7 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 	while ( !m_eventManager.ReadyForNextEvent() )
 	{
 
-#ifndef SHIPPING
+#ifdef PSX_HOOK_EXE
 		if ( !m_exeFilename.empty() && m_pc == HookAddress )
 		{
 			LoadExecutable( m_exeFilename, *this, m_memoryMap.GetRam() );
@@ -69,7 +69,7 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 		m_pc = m_nextPC;
 		m_nextPC += 4;
 		
-#ifndef SHIPPING
+#ifdef PSX_HOOK_BIOS
 		if ( EnableBiosIntercept )
 			InterceptBios( m_currentPC );
 #endif

@@ -6,6 +6,14 @@
 #include <limits>
 #include <memory>
 
+#ifdef STDX_RELEASE
+#define PSX_HOOK_EXE
+#endif
+
+#ifdef STDX_RELEASE
+#define PSX_HOOK_BIOS
+#endif
+
 struct SDL_Window;
 
 namespace PSX
