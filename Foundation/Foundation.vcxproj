@@ -127,6 +127,7 @@
       <SupportJustMyCode>false</SupportJustMyCode>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <PreprocessorDefinitions>STDX_DEBUG;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -144,6 +145,7 @@
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <PreprocessorDefinitions>STDX_DEBUG;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -159,6 +161,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <PreprocessorDefinitions>STDX_RELEASE;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -178,7 +181,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
-      <PreprocessorDefinitions>SHIPPING;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>STDX_SHIPPING;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <BufferSecurityCheck>false</BufferSecurityCheck>
@@ -199,6 +202,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalIncludeDirectories>./inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <PreprocessorDefinitions>STDX_RELEASE;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -218,7 +222,7 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
-      <PreprocessorDefinitions>SHIPPING;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>STDX_SHIPPING;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <BufferSecurityCheck>false</BufferSecurityCheck>
