@@ -110,6 +110,11 @@ bool App::Initialize()
 		return false;
 	}
 
+	if ( const auto romFilename = cl.FindOption( "rom" ); romFilename.has_value() )
+	{
+		LoadRom( *romFilename );
+	}
+
 	m_playstation->Reset();
 
 	m_psxController = std::make_unique<PSX::Controller>();
