@@ -415,9 +415,7 @@ void CDRomDrive::SetCDRom( std::unique_ptr<CDRom> cdrom )
 	m_cdrom = std::move( cdrom );
 
 	if ( m_cdrom )
-	{
 		StartMotor();
-	}
 
 	if ( m_interruptFlags == 0 && m_queuedInterrupt != 0 )
 		ShiftQueuedInterrupt();
@@ -425,10 +423,16 @@ void CDRomDrive::SetCDRom( std::unique_ptr<CDRom> cdrom )
 
 void CDRomDrive::DmaRead( uint32_t* data, uint32_t count )
 {
-	const uint32_t available = std::min( count * 4, m_dataBuffer.Size() );
+	const uint32_t requestedBytes = count * 4;
+	const uint32_t available = std::min( requestedBytes, m_dataBuffer.Size() );
 	m_dataBuffer.Pop( reinterpret_cast<uint8_t*>( data ), available );
-	const uint32_t over = count * 4 - available;
-	std::fill_n( reinterpret_cast<uint8_t*>( data ) + available, over, uint8_t( 0xff ) );
+
+	if ( available < requestedBytes )
+	{
+		dbLogWarning( "CDRomDrive::DmaRead -- data fifo is empty" );
+		std::fill_n( reinterpret_cast<uint8_t*>( data ) + available, requestedBytes - available, uint8_t( 0xff ) );
+	}
+
 	UpdateStatus();
 }
 
