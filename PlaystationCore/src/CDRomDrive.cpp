@@ -10,7 +10,7 @@
 namespace PSX
 {
 
-#define CDROMDRIVE_LOG( ... ) dbLog( __VA_ARGS__ )
+#define CDROMDRIVE_LOG( ... ) dbLogDebug( __VA_ARGS__ )
 
 namespace
 {
