@@ -403,9 +403,11 @@ void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 	}
 
 	if ( count > m_commandBuffer.Capacity() )
-		dbBreakMessage( "GPU::DmaIn -- command buffer overrun" );
+	{
+		dbLogWarning( "GPU::DmaIn -- command buffer overrun" );
+		count = m_commandBuffer.Capacity();
+	}
 
-	count = std::min( count, m_commandBuffer.Capacity() );
 	m_commandBuffer.Push( input, count );
 
 	// prevent recursive calls
