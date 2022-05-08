@@ -157,7 +157,7 @@ private:
 
 	static constexpr uint32_t ControlRegisterResetValue = 0x07654321;
 	static constexpr uint32_t LinkedListTerminator = 0x00ffffff;
-	static constexpr uint32_t DmaAddressMask = RamAddressMask & ChannelState::BaseAddressMask;
+	static constexpr uint32_t DmaAddressMask = RamAddressMask & 0xfffffffc;
 	static constexpr uint32_t ForwardStep = 4;
 	static constexpr uint32_t BackwardStep = uint32_t( -4 );
 
