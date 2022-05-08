@@ -1780,7 +1780,7 @@ void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
 		buffer.size = CDRom::DataBytesPerSector;
 	}
 
-	CDROMDRIVE_LOG( "CDRomDrive::ProcessDataSector -- read sector %u into buffer %u", m_currentPosition, m_writeSectorBuffer );
+	CDROMDRIVE_LOG( "CDRomDrive::ProcessDataSector -- read sector %u (track %X) into buffer %u", m_currentPosition, m_lastSubQ.trackNumberBCD, m_writeSectorBuffer );
 
 	if ( m_queuedInterrupt != 0 )
 	{
