@@ -288,7 +288,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 
 			cycles_t remainingCycles = state.control.choppingEnable ? state.GetChoppingDmaWindowSize() : InfiniteCycles;
 
-			do
+			while ( state.request && blocksRemaining > 0 && remainingCycles > 0 )
 			{
 				if ( toRam )
 					TransferToRam( channel, currentAddress, blockSize, addressStep );
@@ -301,8 +301,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 				remainingCycles -= blockCycles;
 				totalCycles += blockCycles;
 			}
-			while ( state.request && blocksRemaining > 0 && remainingCycles > 0 );
-
+			
 			state.SetBaseAddress( currentAddress );
 			state.blockCount = static_cast<uint16_t>( blocksRemaining );
 
