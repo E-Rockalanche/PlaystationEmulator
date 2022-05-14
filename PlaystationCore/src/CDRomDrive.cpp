@@ -634,7 +634,7 @@ void CDRomDrive::StopMotor() noexcept
 	}
 }
 
-void CDRomDrive::BeginSeeking() noexcept
+void CDRomDrive::BeginSeeking( bool logical ) noexcept
 {
 	if ( IsSeeking() )
 		UpdatePositionWhileSeeking();
@@ -660,7 +660,7 @@ void CDRomDrive::BeginSeeking() noexcept
 
 	m_currentSectorHeaders.reset();
 
-	ScheduleDriveEvent( DriveState::Seeking, seekCycles );
+	ScheduleDriveEvent( logical ? DriveState::SeekingLogical : DriveState::SeekingPhysical, seekCycles );
 
 	CDROMDRIVE_LOG( "CDRomDrive::BeginSeeking -- seeking to %u:%u:%u", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
 
@@ -682,7 +682,7 @@ void CDRomDrive::BeginReading() noexcept
 	if ( m_pendingSeek )
 	{
 		m_pendingRead = true;
-		BeginSeeking();
+		BeginSeeking( true );
 		return;
 	}
 
@@ -730,7 +730,7 @@ void CDRomDrive::BeginPlaying( uint8_t trackBCD ) noexcept
 	if ( m_pendingSeek )
 	{
 		m_pendingPlay = true;
-		BeginSeeking();
+		BeginSeeking( false );
 		return;
 	}
 
@@ -749,31 +749,60 @@ void CDRomDrive::BeginPlaying( uint8_t trackBCD ) noexcept
 	ScheduleDriveEvent( DriveState::Playing, GetReadCycles() );
 }
 
-bool CDRomDrive::CompleteSeek() noexcept
+bool CDRomDrive::CompleteSeek( bool logical ) noexcept
 {
-	bool ok = m_cdrom->ReadSubQ( m_lastSubQ );
-
+	CDRom::SubQ subq;
+	bool ok = m_cdrom->ReadSubQ( subq );
 	if ( ok )
 	{
-		if ( !m_lastSubQ.control.dataSector )
-		{
-			// From Duckstation:
-			// If CDDA mode isn't enabled and we're reading an audio sector, we need to fail the seek.
-			// Test cases:
-			//  - Wizard's Harmony does a logical seek to an audio sector, and expects it to succeed.
-			//  - Vib-ribbon starts a read at an audio sector, and expects it to fail.
-			if ( m_pendingRead )
-				ok = m_mode.cdda;
-		}
+		m_lastSubQ = subq;
 
-		if ( m_lastSubQ.trackNumberBCD == CDRom::LeadOutTrackNumber )
+		// test if subq is correct
+		const auto [mm, ss, ff] = m_cdrom->GetCurrentSeekLocation().ToBCD();
+		
+		ok = ( mm == subq.absoluteMinuteBCD ) && ( ss == subq.absoluteSecondBCD ) && ( ff == subq.absoluteSectorBCD );
+		if ( ok )
 		{
-			dbLogWarning( "CDRomDrive::CompleteSeek -- seeked to lead out track" );
-			ok = false;
+			if ( logical )
+			{
+				if ( subq.control.dataSector )
+				{
+					// TODO: process sector header
+					CDRom::Sector sector;
+					dbVerify( m_cdrom->ReadSector( sector ) );
+					m_currentSectorHeaders = SectorHeaders{ sector.header, sector.mode2.subHeader };
+
+					// Duckstation checks the position again, but this won't work if seeking to pregap
+					// ok = ( mm == sector.header.minuteBCD ) && ( ss == sector.header.secondBCD ) && ( ff == sector.header.sectorBCD );
+				}
+				else
+				{
+					dbLogWarning( "CDRomDrive::CompleteSeek -- logical seek to non-data sector" );
+
+					// From Duckstation:
+					// If CDDA mode isn't enabled and we're reading an audio sector, we need to fail the seek.
+					// Test cases:
+					//  - Wizard's Harmony does a logical seek to an audio sector, and expects it to succeed.
+					//  - Vib-ribbon starts a read at an audio sector, and expects it to fail.
+					if ( m_pendingRead )
+						ok = m_mode.cdda;
+				}
+			}
+
+			if ( m_lastSubQ.trackNumberBCD == CDRom::LeadOutTrackNumber )
+			{
+				dbLogWarning( "CDRomDrive::CompleteSeek -- seeked to lead out track" );
+				ok = false;
+			}
 		}
 
 		m_currentPosition = m_cdrom->GetCurrentSeekSector();
 	}
+
+	// TODO: duckstation updates physical position here
+
+	if ( !ok )
+		dbLogWarning( "CDRomDrive::CompleteSeek -- failed seek to %u:%u:%u", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
 
 	return ok;
 }
@@ -1073,7 +1102,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 				// Duckstation says this is supposed to produce an error, but it completes the seek instead
 				m_pendingRead = false;
 				m_pendingPlay = false;
-				CompleteSeek();
+				CompleteSeek( m_driveState == DriveState::SeekingLogical );
 			}
 
 			m_driveState = DriveState::Idle;
@@ -1098,7 +1127,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			const uint8_t sect = m_parameterBuffer.Pop();
 			CDROMDRIVE_LOG( "CDRomDrive::ExecuteCommand -- SetLoc [%X:%X:%X]", mm, ss, sect );
 
-			if ( IsValidBCDAndLess( mm, CDRom::MinutesPerDiskBCD ) &&
+			if ( IsValidBCD( mm ) &&
 				IsValidBCDAndLess( ss, CDRom::SecondsPerMinuteBCD ) &&
 				IsValidBCDAndLess( sect, CDRom::SectorsPerSecondBCD ) )
 			{
@@ -1116,13 +1145,13 @@ void CDRomDrive::ExecuteCommand() noexcept
 		case Command::SeekL:
 		case Command::SeekP:
 		{
-			[[maybe_unused]] const bool logical = ( command == Command::SeekL );
+			const bool logical = ( command == Command::SeekL );
 			CDROMDRIVE_LOG( "CDRomDrive::ExecuteCommand -- %s", logical ? "SeekL" : "SeekP" );
 
 			if ( CanReadDisk() )
 			{
 				SendStatusAndInterrupt();
-				BeginSeeking();
+				BeginSeeking( logical );
 			}
 			else
 			{
@@ -1595,9 +1624,10 @@ void CDRomDrive::ExecuteDriveState() noexcept
 			break;
 		}
 
-		case DriveState::Seeking:
+		case DriveState::SeekingLogical:
+		case DriveState::SeekingPhysical:
 		{
-			if ( CompleteSeek() )
+			if ( CompleteSeek( state == DriveState::SeekingLogical ) )
 			{
 				CDROMDRIVE_LOG( "CDRomDrive::ExecuteDriveState -- seek complete" );
 

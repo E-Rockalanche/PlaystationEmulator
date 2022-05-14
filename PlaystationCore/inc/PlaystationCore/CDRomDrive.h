@@ -83,7 +83,8 @@ private:
 	{
 		Idle,
 		StartingMotor,
-		Seeking,
+		SeekingLogical,
+		SeekingPhysical,
 		Reading,
 		ReadingNoRetry,
 		Playing,
@@ -244,7 +245,7 @@ private:
 	// drive
 	void StartMotor() noexcept;
 	void StopMotor() noexcept;
-	void BeginSeeking() noexcept;
+	void BeginSeeking( bool logical ) noexcept;
 	void BeginReading() noexcept;
 	void BeginPlaying( uint8_t track ) noexcept;
 	void RequestData() noexcept;
@@ -266,12 +267,12 @@ private:
 			sector.size = 0;
 	}
 
-	bool IsSeeking() const noexcept { return m_driveState == DriveState::Seeking; }
+	bool IsSeeking() const noexcept { return m_driveState == DriveState::SeekingLogical || m_driveState == DriveState::SeekingPhysical; }
 	bool IsReading() const noexcept { return m_driveState == DriveState::Reading; }
 	bool IsPlaying() const noexcept { return m_driveState == DriveState::Playing; }
 
 	// returns true if seek was successful
-	bool CompleteSeek() noexcept;
+	bool CompleteSeek( bool logical ) noexcept;
 
 	void SendDataEndResponse() noexcept;
 

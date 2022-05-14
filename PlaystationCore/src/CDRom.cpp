@@ -97,6 +97,32 @@ bool CDRom::ReadSector( Sector& sector, SubQ& subq )
 			return false;
 	}
 
+	if ( !ReadSector( sector ) )
+		return false;
+
+	subq = GetSubQFromIndex( *m_currentIndex, m_position );
+
+	++m_position;
+	++m_positionInIndex;
+	++m_positionInTrack;
+
+	return true;
+}
+
+bool CDRom::ReadSubQ( SubQ& subq ) const
+{
+	if ( !m_currentIndex )
+		return false;
+
+	subq = GetSubQFromIndex( *m_currentIndex, m_position );
+	return true;
+}
+
+bool CDRom::ReadSector( Sector& sector ) const
+{
+	if ( !m_currentIndex )
+		return false;
+
 	if ( m_currentIndex->trackNumber == LeadOutTrackNumber )
 	{
 		sector.rawData.fill( LeadOutTrackNumber );
@@ -110,30 +136,7 @@ bool CDRom::ReadSector( Sector& sector, SubQ& subq )
 		return false;
 	}
 
-	subq = GetSubQFromIndex( *m_currentIndex, m_position );
-
-	++m_position;
-	++m_positionInIndex;
-	++m_positionInTrack;
 	return true;
-}
-
-bool CDRom::ReadSubQ( SubQ& subq ) const
-{
-	if ( !m_currentIndex )
-		return false;
-
-	subq = GetSubQFromIndex( *m_currentIndex, m_position );
-	return true;
-}
-
-bool CDRom::ReadSectorFromPosition( LogicalSector position, Sector& sector ) const
-{
-	const Index* index = FindIndex( position );
-	if ( !index )
-		return false;
-
-	return ReadSectorFromIndex( *index, position - index->position, sector );
 }
 
 bool CDRom::ReadSubQFromPosition( LogicalSector position, SubQ& subq ) const
