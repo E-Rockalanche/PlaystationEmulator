@@ -102,6 +102,7 @@ void Playstation::Reset()
 	m_ram->Fill( 0 );
 	m_renderer->Reset();
 	m_scratchpad->Fill( 0 );
+	m_serialPort->Reset();
 	m_spu->Reset();
 	m_timers->Reset();
 

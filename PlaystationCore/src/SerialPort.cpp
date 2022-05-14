@@ -7,11 +7,20 @@ namespace PSX
 
 void SerialPort::Reset()
 {
+	SoftReset();
+}
+
+void SerialPort::SoftReset()
+{
 	m_status.value = 0;
 	m_mode.value = 0;
 	m_control.value = 0;
 	m_misc = 0;
 	m_baudrateReloadValue = DefaultBadrateReloadValue;
+
+	// Duckstation sets transfer to started and finished
+	m_status.txReadyStarted = true;
+	m_status.txReadyFinished = true;
 }
 
 uint32_t SerialPort::ReadData() noexcept
@@ -43,15 +52,7 @@ void SerialPort::WriteControl( uint16_t value ) noexcept
 
 	if ( m_control.reset )
 	{
-		// soft reset
-		m_control.value = 0;
-		m_status.value = 0;
-		m_mode.value = 0;
-		m_baudrateReloadValue = DefaultBadrateReloadValue;
-
-		// Duckstation sets transfer to started and finished
-		m_status.txReadyStarted = true;
-		m_status.txReadyFinished = true;
+		SoftReset();
 	}
 }
 

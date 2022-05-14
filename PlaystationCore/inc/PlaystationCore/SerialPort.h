@@ -135,6 +135,10 @@ private:
 	static constexpr uint16_t DefaultBadrateReloadValue = 0x00dc;
 
 private:
+
+	void SoftReset();
+
+private:
 	Status m_status;
 	Mode m_mode;
 	Control m_control;
