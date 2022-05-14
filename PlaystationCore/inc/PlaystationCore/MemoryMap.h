@@ -82,6 +82,7 @@ public:
 		MemoryControl& memControl,
 		Ram& ram,
 		Scratchpad& scratchpad,
+		SerialPort& serialPort,
 		Spu& spu,
 		Timers& timers )
 		: m_bios{ bios }
@@ -94,6 +95,7 @@ public:
 		, m_memoryControl{ memControl }
 		, m_ram{ ram }
 		, m_scratchpad{ scratchpad }
+		, m_serialPort{ serialPort }
 		, m_spu{ spu }
 		, m_timers{ timers }
 	{}
@@ -214,6 +216,9 @@ private:
 	void AccessControllerPort( uint32_t offset, T& value ) const noexcept;
 
 	template <typename T, bool Read>
+	void AccessSerialPort( uint32_t offset, T& value ) const noexcept;
+
+	template <typename T, bool Read>
 	void AccessSpu( uint32_t offset, T& value ) const noexcept;
 
 	bool CheckAndPrefetchICache( uint32_t address ) noexcept;
@@ -229,6 +234,7 @@ private:
 	MemoryControl& m_memoryControl;
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
+	SerialPort& m_serialPort;
 	Spu& m_spu;
 	Timers& m_timers;
 

@@ -13,6 +13,7 @@
 #include "Memory.h"
 #include "MemoryControl.h"
 #include "RAM.h"
+#include "SerialPort.h"
 #include "SPU.h"
 #include "SaveState.h"
 #include "Timers.h"
@@ -63,8 +64,7 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	}
 	else if ( Within( address, SerialPortStart, SerialPortSize ) )
 	{
-		if constexpr ( Read )
-			value = T( -1 );
+		AccessSerialPort<T, Read>( address - SerialPortStart, value );
 	}
 	else if ( Within( address, MemControlRamStart, MemControlRamSize ) )
 	{
@@ -219,6 +219,54 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 			case 5:	m_controllerPorts.WriteControl( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
 			case 6:																									break;
 			case 7:	m_controllerPorts.WriteBaudrateReloadValue( ShiftValueForWrite<uint16_t>( value, offset ) );	break;
+
+			default:
+				dbBreak();
+				break;
+		}
+	}
+}
+
+template <typename T, bool Read>
+void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) const noexcept
+{
+	if constexpr ( Read )
+	{
+		switch ( offset / 2 )
+		{
+			// 32bit registers
+			case 0:
+			case 1:	value = static_cast<T>( m_serialPort.ReadData() );					break;
+			case 2:
+			case 3:	value = static_cast<T>( m_serialPort.ReadStatus() );				break;
+
+			// 16bit registers
+			case 4:	value = static_cast<T>( m_serialPort.ReadMode() );					break;
+			case 5:	value = static_cast<T>( m_serialPort.ReadControl() );				break;
+			case 6:	value = static_cast<T>( m_serialPort.ReadMisc() );					break;
+			case 7:	value = static_cast<T>( m_serialPort.ReadBaudrateReloadValue() );	break;
+
+			default:
+				dbBreak();
+				value = static_cast<T>( -1 );
+				break;
+		}
+	}
+	else
+	{
+		switch ( offset / 2 )
+		{
+			// 32bit registers
+			case 0:
+			case 1:	m_serialPort.WriteData( ShiftValueForWrite<uint32_t>( value, offset ) );				break;
+			case 2:
+			case 3:																							break; // status is read-only
+
+			// 16bit registers
+			case 4:	m_serialPort.WriteMode( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
+			case 5:	m_serialPort.WriteControl( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
+			case 6:	m_serialPort.WriteMisc( ShiftValueForWrite<uint16_t>( value, offset ) );				break;
+			case 7:	m_serialPort.WriteBaudrateReloadValue( ShiftValueForWrite<uint16_t>( value, offset ) );	break;
 
 			default:
 				dbBreak();

@@ -254,6 +254,7 @@
     <ClCompile Include="src\Playstation.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
     <ClCompile Include="src\SaveState.cpp" />
+    <ClCompile Include="src\SerialPort.cpp" />
     <ClCompile Include="src\SPU.cpp" />
     <ClCompile Include="src\Timers.cpp" />
     <ClCompile Include="src\VRamCopyShader.cpp" />
@@ -287,6 +288,7 @@
     <ClInclude Include="inc\PlaystationCore\DisplayShader.h" />
     <ClInclude Include="inc\PlaystationCore\ResetDepthShader.h" />
     <ClInclude Include="inc\PlaystationCore\SaveState.h" />
+    <ClInclude Include="inc\PlaystationCore\SerialPort.h" />
     <ClInclude Include="inc\PlaystationCore\VRamViewShader.h" />
     <ClInclude Include="inc\PlaystationCore\GPU.h" />
     <ClInclude Include="inc\PlaystationCore\GpuDefs.h" />

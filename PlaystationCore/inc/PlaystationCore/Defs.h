@@ -45,6 +45,7 @@ class MipsR3000Cpu;
 class Playstation;
 class Renderer;
 class SaveStateSerializer;
+class SerialPort;
 class Spu;
 class Timers;
 class AudioQueue;

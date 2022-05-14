@@ -17,6 +17,7 @@
 #include "RAM.h"
 #include "Renderer.h"
 #include "SaveState.h"
+#include "SerialPort.h"
 #include "SPU.h"
 #include "Timers.h"
 
@@ -68,11 +69,13 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 	m_controllerPorts = std::make_unique<ControllerPorts>( *m_interruptControl, *m_eventManager );
 
-	m_memoryMap = std::make_unique<MemoryMap>( *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_memoryControl, *m_ram, *m_scratchpad, *m_spu, *m_timers );
+	m_serialPort = std::make_unique<SerialPort>();
+
+	m_memoryMap = std::make_unique<MemoryMap>( *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_memoryControl, *m_ram, *m_scratchpad, *m_serialPort, *m_spu, *m_timers );
 
 	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_interruptControl, *m_eventManager );
 
-	// resolve circular dependancy
+	// resolve circular dependancies
 	m_timers->SetGpu( *m_gpu );
 	m_gpu->SetTimers( *m_timers );
 	m_gpu->SetDma( *m_dma );
