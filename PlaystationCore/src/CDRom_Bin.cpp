@@ -10,13 +10,13 @@ class CDRom_Bin : public CDRom
 public:
 	bool Open( const fs::path & filename );
 
-	bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) override;
+	bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) const override;
 
 private:
 	static constexpr Track::Type TrackType = Track::Type::Mode2_2352;
 
 private:
-	std::ifstream m_binFile;
+	mutable std::ifstream m_binFile;
 };
 
 bool CDRom_Bin::Open( const fs::path& filename )
@@ -74,7 +74,7 @@ bool CDRom_Bin::Open( const fs::path& filename )
 	return SeekTrack1();
 }
 
-bool CDRom_Bin::ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector )
+bool CDRom_Bin::ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) const
 {
 	const auto filePos = ( std::streampos( index.filePosition ) + std::streampos( position ) ) * BytesPerSector;
 

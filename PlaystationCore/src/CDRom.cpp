@@ -17,7 +17,7 @@ constexpr bool Within( uint32_t value, uint32_t base, uint32_t length ) noexcept
 
 }
 
-bool CDRom::Seek( LogicalSector position )
+bool CDRom::Seek( LogicalSector position ) noexcept
 {
 	const Index* newIndex = nullptr;
 
@@ -42,7 +42,7 @@ bool CDRom::Seek( LogicalSector position )
 	return true;
 }
 
-bool CDRom::Seek( uint32_t trackNumber, Location locationInTrack )
+bool CDRom::Seek( uint32_t trackNumber, Location locationInTrack ) noexcept
 {
 	if ( trackNumber == 0 || trackNumber > m_tracks.size() )
 	{
@@ -61,7 +61,7 @@ bool CDRom::Seek( uint32_t trackNumber, Location locationInTrack )
 	return Seek( track.position + positionInTrack );
 }
 
-const CDRom::Index* CDRom::FindIndex( LogicalSector position ) const
+const CDRom::Index* CDRom::FindIndex( LogicalSector position ) const noexcept
 {
 	for ( auto& index : m_indices )
 	{
@@ -118,7 +118,7 @@ bool CDRom::ReadSector( Sector& sector, SubQ& subq )
 	return true;
 }
 
-bool CDRom::ReadSubQ( SubQ& subq )
+bool CDRom::ReadSubQ( SubQ& subq ) const
 {
 	if ( !m_currentIndex )
 		return false;
@@ -127,7 +127,16 @@ bool CDRom::ReadSubQ( SubQ& subq )
 	return true;
 }
 
-bool CDRom::ReadSubQFromPosition( LogicalSector position, SubQ& subq )
+bool CDRom::ReadSectorFromPosition( LogicalSector position, Sector& sector ) const
+{
+	const Index* index = FindIndex( position );
+	if ( !index )
+		return false;
+
+	return ReadSectorFromIndex( *index, position - index->position, sector );
+}
+
+bool CDRom::ReadSubQFromPosition( LogicalSector position, SubQ& subq ) const
 {
 	const Index* index = FindIndex( position );
 	if ( !index )
