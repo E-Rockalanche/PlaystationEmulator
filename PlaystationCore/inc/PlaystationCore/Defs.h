@@ -6,11 +6,11 @@
 #include <limits>
 #include <memory>
 
-#ifdef STDX_RELEASE
+#ifndef STDX_SHIPPING
 #define PSX_HOOK_EXE
 #endif
 
-#ifdef STDX_RELEASE
+#ifndef STDX_SHIPPING
 #define PSX_HOOK_BIOS
 #endif
 
