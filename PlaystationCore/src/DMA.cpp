@@ -247,11 +247,11 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 	{
 		case SyncMode::Manual:
 		{
-			const uint32_t words = state.GetWordCount();
+			const uint32_t totalWords = state.GetWordCount();
 
-			DMA_LOG( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: $%X, words: $%X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, words, (int32_t)addressStep );
+			DMA_LOG( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: $%X, words: $%X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, totalWords, (int32_t)addressStep );
 
-			/*
+			uint32_t words = totalWords;
 			result = DmaResult::Finished;
 			if ( state.control.choppingEnable )
 			{
@@ -265,7 +265,6 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 				state.wordCount = static_cast<uint16_t>( totalWords - words );
 				state.SetBaseAddress( state.baseAddress + words * addressStep );
 			}
-			*/
 
 			if ( toRam )
 				TransferToRam( channel, startAddress, words, addressStep );
@@ -273,7 +272,6 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 				TransferFromRam( channel, startAddress, words, addressStep );
 
 			totalCycles += GetCyclesForWords( words );
-			result = DmaResult::Finished;
 			break;
 		}
 
@@ -526,6 +524,7 @@ void Dma::ClearOrderTable( uint32_t address, uint32_t wordCount )
 
 void Dma::ResumeDma()
 {
+	// initialize empty list of channels to resume
 	struct ResumeEntry
 	{
 		Channel channel{};
@@ -534,6 +533,7 @@ void Dma::ResumeDma()
 	std::array<ResumeEntry, ChannelCount> m_resumeChannels;
 	size_t resumeCount = 0;
 
+	// insert channels that can resume
 	for ( size_t i = 0; i < ChannelCount; ++i )
 	{
 		const auto channel = static_cast<Channel>( i );
@@ -541,14 +541,16 @@ void Dma::ResumeDma()
 			m_resumeChannels[ resumeCount++ ] = { channel, GetChannelPriority( channel ) };
 	}
 
+	// sort channels by priority
 	std::sort(
 		m_resumeChannels.data(),
 		m_resumeChannels.data() + resumeCount,
 		[]( auto& lhs, auto& rhs ) { return lhs.priority > rhs.priority; } );
 
+	// resume DMAs (break if chopping again)
 	for ( size_t i = 0; i < resumeCount; ++i )
 	{
-		if ( StartDma( static_cast<Channel>( i ) ) == DmaResult::Chopping )
+		if ( StartDma( m_resumeChannels[ i ].channel ) == DmaResult::Chopping )
 			break;
 	}
 }
