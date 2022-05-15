@@ -91,8 +91,7 @@ void Cop0::SetException( uint32_t pc, ExceptionCode code, uint32_t coprocessor, 
 
 	if ( code != ExceptionCode::Interrupt && code != ExceptionCode::Breakpoint && code != ExceptionCode::Syscall )
 	{
-		dbLogWarning( "Cop0::SetException() -- pc: %X, code: %u, coprocessor?: %u, branchDelay: %s", pc, static_cast<uint32_t>( code ), coprocessor, branchDelay ? "true" : "false" );
-		dbBreak();
+		dbLogError( "Cop0::SetException() -- pc: %X, code: %u, coprocessor?: %u, branchDelay: %s", pc, static_cast<uint32_t>( code ), coprocessor, branchDelay ? "true" : "false" );
 	}
 
 	m_trapReturnAddress = pc;
