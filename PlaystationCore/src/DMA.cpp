@@ -450,7 +450,8 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 			break;
 
 		default:
-			dbLogWarning( "Dma::TransferToRam -- invalid channel [%X]", channel );
+			dbLogWarning( "Dma::TransferToRam -- invalid channel [%s]", ChannelNames[ (size_t)channel ] );
+			// Can't pass dma chain-looping test if we fill with high bits
 			std::fill_n( dest, wordCount, 0xffffffffu );
 			break;
 	}
@@ -507,7 +508,7 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 			break;
 
 		default:
-			dbLogWarning( "Dma::TransferFromRam -- invalid channel [%X]", channel );
+			dbLogWarning( "Dma::TransferFromRam -- invalid channel [%s]", ChannelNames[ (size_t)channel ] );
 			break;
 	}
 }
