@@ -185,15 +185,17 @@ private:
 
 	void FinishTransfer( Channel channel ) noexcept;
 
+	// DMA is using DRAM Hyper Page mode, allowing it to access DRAM rows at 1 clock cycle per word
+	// (effectively around 17 clks per 16 words, due to required row address loading, probably plus some further minimal overload due to refresh cycles).
+	// This is making DMA much faster than CPU memory accesses (CPU DRAM access takes 1 opcode cycle plus 6 waitstates, ie. 7 cycles in total)
 	static constexpr cycles_t GetCyclesForWords( uint32_t words ) noexcept
 	{
-		return static_cast<cycles_t>( ( words * 0x110 ) / 0x100 );
+		return static_cast<cycles_t>( ( words * 17 + 15 ) / 16 );
 	}
 
 	static constexpr uint32_t GetWordsForCycles( cycles_t cycles ) noexcept
 	{
-		dbExpects( cycles >= 0 );
-		return static_cast<uint32_t>( ( cycles * 0x100 + 0x10 ) / 0x110 );
+		return static_cast<uint32_t>( ( cycles * 16 + 16 ) / 17 );
 	}
 
 	void ResizeTempBuffer( uint32_t newSize )
