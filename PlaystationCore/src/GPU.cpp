@@ -1645,10 +1645,20 @@ void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 		m_crtState.scanline += curScanlinesToDraw;
 		dbAssert( m_crtState.scanline <= m_crtConstants.totalScanlines );
 
-		if ( prevScanline < m_verDisplayRangeStart && m_crtState.scanline >= m_verDisplayRangeEnd )
+		if ( prevScanline < m_verDisplayRangeStart && m_crtState.scanline >= std::min( m_verDisplayRangeEnd, m_crtConstants.totalScanlines ) )
 		{
 			// skipped over vertical display range, set vblank to false
 			m_crtState.vblank = false;
+		}
+
+		// wrap scanline
+		if ( m_crtState.scanline == m_crtConstants.totalScanlines )
+		{
+			m_crtState.scanline = 0;
+			if ( m_status.verticalInterlace )
+				m_status.interlaceField = !m_status.interlaceField;
+			else
+				m_status.interlaceField = 0;
 		}
 
 		const bool vblank = m_crtState.scanline < m_verDisplayRangeStart || m_crtState.scanline >= m_verDisplayRangeEnd;
@@ -1669,15 +1679,6 @@ void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 			{
 				GpuLog( "VBLANK END\n\n\n" );
 			}
-		}
-
-		if ( m_crtState.scanline == m_crtConstants.totalScanlines )
-		{
-			m_crtState.scanline = 0;
-			if ( m_status.verticalInterlace )
-				m_status.interlaceField = !m_status.interlaceField;
-			else
-				m_status.interlaceField = 0;
 		}
 	}
 
@@ -1729,7 +1730,7 @@ void Gpu::ScheduleCrtEvent() noexcept
 
 	// schedule next update
 	const cycles_t cpuCycles = ConvertGpuToCpuCycles( gpuCycles, m_crtState.fractionalCycles );
-	m_crtEvent->Schedule( cpuCycles );
+	m_crtEvent->Schedule( std::max( cpuCycles, 1 ) );
 }
 
 void Gpu::Serialize( SaveStateSerializer& serializer )
