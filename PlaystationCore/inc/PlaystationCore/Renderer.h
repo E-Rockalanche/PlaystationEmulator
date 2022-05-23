@@ -83,6 +83,8 @@ public:
 	uint32_t GetTargetTextureWidth() const noexcept { return m_targetDisplayArea.width * m_resolutionScale; }
 	uint32_t GetTargetTextureHeight() const noexcept { return static_cast<uint32_t>( GetTargetTextureWidth() / m_aspectRatio ); }
 
+	SDL_Surface* ReadDisplayTexture();
+
 private:
 	using DepthType = int16_t;
 	static constexpr DepthType MaxDepth = std::numeric_limits<DepthType>::max();

@@ -17,6 +17,7 @@
 #include <glad/glad.h>
 
 #include <SDL.h>
+#include <SDL_image.h>
 
 #include <fstream>
 
@@ -61,6 +62,13 @@ bool App::Initialize()
 	if ( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER ) < 0 )
 	{
 		LogError( "Failed to initialize SDL [%s]", SDL_GetError() );
+		return false;
+	}
+
+	const auto imageFlags = IMG_INIT_PNG;
+	if ( IMG_Init( imageFlags ) != imageFlags )
+	{
+		LogError( "Failed to initialize SDL_Image [%s]", IMG_GetError() );
 		return false;
 	}
 
@@ -571,6 +579,11 @@ bool App::HandleHotkeyPress( SDL_Keycode key )
 			SetFullscreen( !IsFullscreen() );
 			return true;
 
+		case SDLK_F12:
+			if ( !SaveScreenshot() )
+				dbLogError( "Failed to save screenshot" );
+			return true;
+
 		case SDLK_PLUS:
 		case SDLK_EQUALS:
 			SetResolutionScale( m_playstation->GetRenderer().GetResolutionScale() + 1 );
@@ -636,6 +649,31 @@ void App::Run()
 		const float curFps = 1000.0f / totalElapsed.count();
 		m_smoothedAverageFPS = FpsSmoothingFactor * m_smoothedAverageFPS + ( 1.0f - FpsSmoothingFactor ) * curFps;
 	}
+}
+
+fs::path App::GetScreenshotFolder()
+{
+	return Util::CommandLine::Get().GetOption<fs::path>( "screenshotFolder", "screenshots" );
+}
+
+bool App::SaveScreenshot()
+{
+	SDL_Surface* surface = m_playstation->GetRenderer().ReadDisplayTexture();
+	if ( !surface )
+		return false;
+
+	const fs::path folder = GetScreenshotFolder();
+	fs::create_directory( folder );
+
+	fs::path filename = folder / fs::path( "screenshot_" + std::to_string( std::time( nullptr ) ) + ".png" );
+
+	const bool result = ( IMG_SavePNG( surface, filename.string().c_str() ) == 0 );
+
+	// renderer allocates pixel buffer so we must free it
+	delete[] surface->pixels;
+	SDL_FreeSurface( surface );
+
+	return result;
 }
 
 }

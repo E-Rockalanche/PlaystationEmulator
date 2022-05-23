@@ -891,6 +891,39 @@ void Renderer::RestoreRenderState()
 	dbCheckRenderErrors();
 }
 
+SDL_Surface* Renderer::ReadDisplayTexture()
+{
+	m_displayFramebuffer.Bind();
+	int width = m_displayTexture.GetWidth();
+	int height = m_displayTexture.GetHeight();
+
+	if ( width * height == 0 )
+		return nullptr;
+
+	const int BytesPerPixel = 3;
+	const int pitch = ( width + ( width % 2 ) ) * BytesPerPixel;
+
+	char* pixels = new char[ pitch * height ];
+	glReadPixels( 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels );
+
+	// need to flip the image vertically since I render everything upside-down in opengl
+	for ( int y = 0; y < height / 2; ++y )
+	{
+		char* row1 = pixels + pitch * y;
+		char* row2 = pixels + pitch * ( height - 1 - y );
+		std::swap_ranges( row1, row1 + pitch, row2 );
+	}
+
+	// restore render state
+	m_vramDrawFramebuffer.Bind();
+
+	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom( pixels, width, height, 24, pitch, 0x0000ff, 0x00ff00, 0xff0000, 0x000000 );
+	if ( surface == nullptr )
+		dbLogError( "Renderer::ReadDisplayTexture -- failed to create surface [%s]", SDL_GetError() );
+
+	return surface;
+}
+
 void Renderer::DisplayFrame()
 {
 	DrawBatch();
@@ -911,34 +944,46 @@ void Renderer::DisplayFrame()
 
 	m_noAttributeVAO.Bind();
 
+	// calculate src and target sizes
+	uint32_t targetWidth = 0;
+	uint32_t targetHeight = 0;
+	uint32_t srcWidth = 0;
+	uint32_t srcHeight = 0;
 	if ( m_viewVRam )
 	{
-		// render entire vram to window
+		targetWidth = VRamWidth * m_resolutionScale;
+		targetHeight = VRamHeight * m_resolutionScale;
+		srcWidth = VRamWidth * m_resolutionScale;
+		srcHeight = VRamHeight * m_resolutionScale;
+	}
+	else
+	{
+		targetWidth = m_targetDisplayArea.width * m_resolutionScale;
+		targetHeight = m_targetDisplayArea.height * m_resolutionScale;
+		srcWidth = m_vramDisplayArea.width * m_resolutionScale;
+		srcHeight = m_vramDisplayArea.height * m_resolutionScale;
+	}
+
+	// update target display texture size
+	if ( targetWidth != (uint32_t)m_displayTexture.GetWidth() || targetHeight != (uint32_t)m_displayTexture.GetHeight() )
+	{
+		m_displayTexture.UpdateImage( Render::InternalFormat::RGB, targetWidth, targetHeight, Render::PixelFormat::RGB, Render::PixelType::UByte );
+	}
+
+	// clear display texture
+	m_displayFramebuffer.Bind();
+	glViewport( 0, 0, targetWidth, targetHeight );
+	glClear( GL_COLOR_BUFFER_BIT );
+
+	// render to display texture
+	if ( m_viewVRam )
+	{
 		m_vramViewShader.Bind();
 		m_vramDrawTexture.Bind();
-		glViewport( 0, 0, GetVRamTextureWidth(), GetVRamTextureHeight() );
-
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
 	else
 	{
-		const uint32_t targetWidth = m_targetDisplayArea.width * m_resolutionScale;
-		const uint32_t targetHeight = m_targetDisplayArea.height * m_resolutionScale;
-		const uint32_t srcWidth = m_vramDisplayArea.width * m_resolutionScale;
-		const uint32_t srcHeight = m_vramDisplayArea.height * m_resolutionScale;
-
-		// update target display texture size
-		if ( targetWidth != (uint32_t)m_displayTexture.GetWidth() || targetHeight != (uint32_t)m_displayTexture.GetHeight() )
-		{
-			m_displayTexture.UpdateImage( Render::InternalFormat::RGB, targetWidth, targetHeight, Render::PixelFormat::RGB, Render::PixelType::UByte );
-		}
-
-		// clear display texture
-		m_displayFramebuffer.Bind();
-		glViewport( 0, 0, targetWidth, targetHeight );
-		glClear( GL_COLOR_BUFFER_BIT );
-
-		// render to display texture
 		if ( m_displayEnable )
 		{
 			auto setDisplayAreaUniform = [&]( GLint uniform )
@@ -962,27 +1007,27 @@ void Renderer::DisplayFrame()
 			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		}
 		m_displayFramebuffer.Unbind();
-
-		// render to window
-		m_displayShader.Bind();
-		m_displayTexture.Bind();
-
-		const float displayWidth = static_cast<float>( srcWidth );
-		const float displayHeight = displayWidth / m_aspectRatio;
-
-		float renderScale = std::min( winWidth / displayWidth, winHeight / displayHeight );
-		if ( !m_stretchToFit )
-			renderScale = std::max( 1.0f, std::floor( renderScale ) );
-
-		const int renderWidth = static_cast<int>( displayWidth * renderScale );
-		const int renderHeight = static_cast<int>( displayHeight * renderScale );
-		const int renderX = ( winWidth - renderWidth ) / 2;
-		const int renderY = ( winHeight - renderHeight ) / 2;
-
-		glViewport( renderX, renderY, renderWidth, renderHeight );
-
-		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
+
+	// render to window
+	m_displayShader.Bind();
+	m_displayTexture.Bind();
+
+	const float displayWidth = static_cast<float>( srcWidth );
+	const float displayHeight = m_viewVRam ? static_cast<float>( srcHeight ) : ( displayWidth / m_aspectRatio );
+
+	float renderScale = std::min( winWidth / displayWidth, winHeight / displayHeight );
+	if ( !m_stretchToFit )
+		renderScale = std::max( 1.0f, std::floor( renderScale ) );
+
+	const int renderWidth = static_cast<int>( displayWidth * renderScale );
+	const int renderHeight = static_cast<int>( displayHeight * renderScale );
+	const int renderX = ( winWidth - renderWidth ) / 2;
+	const int renderY = ( winHeight - renderHeight ) / 2;
+
+	glViewport( renderX, renderY, renderWidth, renderHeight );
+
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
 	dbCheckRenderErrors();
 

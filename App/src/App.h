@@ -46,6 +46,8 @@ public:
 	bool SaveState( fs::path filename );
 	bool LoadState( fs::path filename );
 
+	fs::path GetScreenshotFolder();
+
 private:
 	void OpenMemoryCardForRom( fs::path filename, size_t slot );
 
@@ -56,6 +58,8 @@ private:
 	fs::path GetQuicksaveFilename() const;
 
 	bool SetResolutionScale( uint32_t scale );
+
+	bool SaveScreenshot();
 
 private:
 	SDL_Window* m_window = nullptr;
