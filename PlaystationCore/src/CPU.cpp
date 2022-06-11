@@ -67,6 +67,9 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 		m_currentPC = m_pc;
 		m_pc = m_nextPC;
 		m_nextPC += 4;
+
+		// CPU is pipelined so that each instruction takes 1 cycle
+		m_eventManager.AddCycles( 1 );
 		
 #ifdef PSX_HOOK_BIOS
 		if ( EnableBiosIntercept )
@@ -79,9 +82,6 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 			ExecuteInstruction( *instruction );
 
 			m_registers.Update();
-
-			// on average: 1 cycle to execute instruction, 1 cycle for memory load
-			m_eventManager.AddCycles( 2 ); // TODO: more accurate CPU timing
 		}
 		else
 		{

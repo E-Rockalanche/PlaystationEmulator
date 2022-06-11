@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Defs.h"
+#include "MemoryControl.h"
 
 #include <stdx/assert.h>
 
@@ -72,6 +73,7 @@ public:
 
 public:
 	MemoryMap(
+		EventManager& eventManager,
 		Bios& bios,
 		CDRomDrive& cdRomDrive,
 		ControllerPorts& controllerPorts,
@@ -79,20 +81,19 @@ public:
 		Gpu& gpu,
 		InterruptControl& interruptControl,
 		MacroblockDecoder& mdec,
-		MemoryControl& memControl,
 		Ram& ram,
 		Scratchpad& scratchpad,
 		SerialPort& serialPort,
 		Spu& spu,
 		Timers& timers )
-		: m_bios{ bios }
+		: m_eventManager{ eventManager }
+		, m_bios{ bios }
 		, m_cdRomDrive{ cdRomDrive }
 		, m_controllerPorts{ controllerPorts }
 		, m_dma{ dma }
 		, m_gpu{ gpu }
 		, m_interruptControl{ interruptControl }
 		, m_mdec{ mdec }
-		, m_memoryControl{ memControl }
 		, m_ram{ ram }
 		, m_scratchpad{ scratchpad }
 		, m_serialPort{ serialPort }
@@ -102,11 +103,12 @@ public:
 
 	void Reset()
 	{
+		m_memoryControl.Reset();
 		m_icacheFlags.fill( ICacheFlags() );
 	}
 
 	template <typename T>
-	T Read( uint32_t address ) const noexcept
+	T Read( uint32_t address ) noexcept
 	{
 		using UT = std::make_unsigned_t<T>;
 		UT value;
@@ -115,7 +117,7 @@ public:
 	}
 
 	template <typename T>
-	void Write( uint32_t address, T value ) const noexcept
+	void Write( uint32_t address, T value ) noexcept
 	{
 		using UT = std::make_unsigned_t<T>;
 		Access<UT, false>( address, *reinterpret_cast<UT*>( &value ) );
@@ -143,6 +145,9 @@ public:
 	void Serialize( SaveStateSerializer& serializer );
 
 private:
+	static constexpr cycles_t RamReadCycles = 6;
+	static constexpr cycles_t DeviceReadCycles = 2;
+
 	// masks help strip region bits from virtual address to make a physical address
 	// KSEG2 doesn't mirror the other regions so it's essentially ignored
 	static constexpr std::array<uint32_t, 8> RegionMasks
@@ -171,7 +176,7 @@ private:
 
 private:
 	template <typename T, bool Read>
-	void Access( uint32_t address, T& value ) const noexcept;
+	void Access( uint32_t address, T& value ) noexcept;
 
 	// returns byte shift amount for unaligned register address
 	template <typename RegType>
@@ -195,7 +200,7 @@ private:
 	}
 
 	template <typename T, bool Read, typename MemoryType>
-	inline void AccessMemory( MemoryType& memory, uint32_t offset, T& value ) const noexcept
+	inline void AccessMemory( MemoryType& memory, uint32_t offset, T& value ) noexcept
 	{
 		if constexpr ( Read )
 			value = memory.template Read<T>( offset );
@@ -204,7 +209,7 @@ private:
 	}
 
 	template <typename T, bool Read, typename Component>
-	inline void AccessComponent32( Component& component, uint32_t offset, T& value ) const noexcept
+	inline void AccessComponent32( Component& component, uint32_t offset, T& value ) noexcept
 	{
 		if constexpr ( Read )
 			value = ShiftValueForRead<T>( component.Read( offset / 4 ), offset );
@@ -213,17 +218,18 @@ private:
 	}
 
 	template <typename T, bool Read>
-	void AccessControllerPort( uint32_t offset, T& value ) const noexcept;
+	void AccessControllerPort( uint32_t offset, T& value ) noexcept;
 
 	template <typename T, bool Read>
-	void AccessSerialPort( uint32_t offset, T& value ) const noexcept;
+	void AccessSerialPort( uint32_t offset, T& value ) noexcept;
 
 	template <typename T, bool Read>
-	void AccessSpu( uint32_t offset, T& value ) const noexcept;
+	void AccessSpu( uint32_t offset, T& value ) noexcept;
 
 	bool CheckAndPrefetchICache( uint32_t address ) noexcept;
 
 private:
+	EventManager& m_eventManager;
 	Bios& m_bios;
 	CDRomDrive& m_cdRomDrive;
 	ControllerPorts& m_controllerPorts;
@@ -231,7 +237,6 @@ private:
 	Gpu& m_gpu;
 	InterruptControl& m_interruptControl;
 	MacroblockDecoder& m_mdec;
-	MemoryControl& m_memoryControl;
 	Ram& m_ram;
 	Scratchpad& m_scratchpad;
 	SerialPort& m_serialPort;
@@ -239,6 +244,8 @@ private:
 	Timers& m_timers;
 
 	DualSerialPort* m_dualSerialPort = nullptr;
+
+	MemoryControl m_memoryControl;
 
 	std::array<ICacheFlags, 256> m_icacheFlags;
 };

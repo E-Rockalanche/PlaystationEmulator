@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Defs.h"
+
 #include <stdx/assert.h>
 
 #include <array>
@@ -13,7 +15,7 @@ class SaveStateSerializer;
 class MemoryControl
 {
 public:
-	enum class DelaySizeIndex
+	enum class DelaySizeType
 	{
 		Expansion1,
 		Expansion3,
@@ -47,8 +49,7 @@ public:
 	struct DelaySize
 	{
 		DelaySizeRegister reg;
-		uint16_t firstAccessTime = 0;
-		uint16_t seqAccessTime = 0;
+		std::array<cycles_t, 3> accessTimes{}; // 8bit, 16bit, 32bit
 	};
 
 public:
@@ -80,12 +81,14 @@ public:
 		m_cacheControl = value & CacheControl::WriteMask;
 	}
 
-	const DelaySize& GetDelaySize( DelaySizeIndex index ) const noexcept
-	{
-		return m_delaySizes[ static_cast<size_t>( index ) ];
-	}
-
 	void Serialize( SaveStateSerializer& serializer );
+
+	template <typename T>
+	cycles_t GetAccessCycles( DelaySizeType type ) const noexcept
+	{
+		static constexpr size_t cyclesIndex = ( sizeof( T ) == 4 ) ? 2 : sizeof( T );
+		return m_delaySizes[ static_cast<size_t>( type ) ].accessTimes[ cyclesIndex ];
+	}
 
 private:
 

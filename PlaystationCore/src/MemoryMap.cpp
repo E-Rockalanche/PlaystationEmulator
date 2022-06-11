@@ -32,9 +32,11 @@ inline constexpr bool Within( uint32_t address, uint32_t start, uint32_t size ) 
 }
 
 template <typename T, bool Read>
-void MemoryMap::Access( uint32_t address, T& value ) const noexcept
+void MemoryMap::Access( uint32_t address, T& value ) noexcept
 {
 	static_assert( std::is_unsigned_v<T> ); // don't want to duplicate Access function for signed and unsigned types
+
+	cycles_t cycles = Read ? DeviceReadCycles : 0;
 
 	// upper 3 bits determine segment
 	// convert virtual address to physical address
@@ -43,12 +45,17 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	if ( address <= RamMirrorSize ) // ram starts at 0
 	{
 		AccessMemory<T, Read>( m_ram, address & ( RamSize - 1 ), value );
+		if constexpr ( Read )
+			cycles = RamReadCycles;
 	}
 	else if ( Within( address, BiosStart, BiosSize ) )
 	{
 		// read only
 		if constexpr ( Read )
+		{
 			value = m_bios.Read<T>( address - BiosStart );
+			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Bios );
+		}
 	}
 	else if ( Within( address, ScratchpadStart, ScratchpadSize ) )
 	{
@@ -100,6 +107,7 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 			{
 				value = m_cdRomDrive.Read( offset );
 			}
+			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::CDRom );
 		}
 		else
 		{
@@ -117,6 +125,8 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	else if ( Within( address, SpuStart, SpuSize ) )
 	{
 		AccessSpu<T, Read>( address - SpuStart, value );
+		if constexpr ( Read )
+			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Spu );
 	}
 	else if ( Within( address, CacheControlStart, CacheControlSize ) )
 	{
@@ -129,21 +139,33 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 	{
 		// TODO
 		if constexpr ( Read )
+		{
 			value = T( -1 );
+			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Expansion1 );
+		}
 	}
 	else if ( Within( address, Expansion2Start, Expansion2Size ) )
 	{
 		if constexpr ( Read )
+		{
 			value = m_dualSerialPort
-			? static_cast<T>( m_dualSerialPort->Read( address - Expansion2Start ) )
-			: T( -1 );
+				? static_cast<T>( m_dualSerialPort->Read( address - Expansion2Start ) )
+				: T( -1 );
+
+			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Expansion2 );
+		}
 		else if ( m_dualSerialPort )
+		{
 			m_dualSerialPort->Write( address - Expansion2Start, static_cast<uint8_t>( value ) );
+		}
 	}
 	else if ( Within( address, Expansion3Start, Expansion3Size ) )
 	{
 		if constexpr ( Read )
+		{
 			value = T( -1 );
+			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Expansion3 );
+		}
 	}
 	else
 	{
@@ -151,36 +173,40 @@ void MemoryMap::Access( uint32_t address, T& value ) const noexcept
 		{
 			dbLogWarning( "Unhandled memory read [%X]", address );
 			value = T( -1 );
+			cycles = 1;
 		}
 		else
 		{
 			dbLogWarning( "Unhandled memory write [%X <= %X]", address, value );
 		}
 	}
+
+	if constexpr ( Read )
+		m_eventManager.AddCycles( cycles );
 }
 
 // force template instantiations for unsigned read/write access
 
 template
-void MemoryMap::Access<uint8_t, true>( uint32_t address, uint8_t& value ) const noexcept;
+void MemoryMap::Access<uint8_t, true>( uint32_t address, uint8_t& value ) noexcept;
 
 template
-void MemoryMap::Access<uint8_t, false>( uint32_t address, uint8_t& value ) const noexcept;
+void MemoryMap::Access<uint8_t, false>( uint32_t address, uint8_t& value ) noexcept;
 
 template
-void MemoryMap::Access<uint16_t, true>( uint32_t address, uint16_t& value ) const noexcept;
+void MemoryMap::Access<uint16_t, true>( uint32_t address, uint16_t& value ) noexcept;
 
 template
-void MemoryMap::Access<uint16_t, false>( uint32_t address, uint16_t& value ) const noexcept;
+void MemoryMap::Access<uint16_t, false>( uint32_t address, uint16_t& value ) noexcept;
 
 template
-void MemoryMap::Access<uint32_t, true>( uint32_t address, uint32_t& value ) const noexcept;
+void MemoryMap::Access<uint32_t, true>( uint32_t address, uint32_t& value ) noexcept;
 
 template
-void MemoryMap::Access<uint32_t, false>( uint32_t address, uint32_t& value ) const noexcept;
+void MemoryMap::Access<uint32_t, false>( uint32_t address, uint32_t& value ) noexcept;
 
 template <typename T, bool Read>
-void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
+void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) noexcept
 {
 	if constexpr ( Read )
 	{
@@ -228,7 +254,7 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) const noexcept
 }
 
 template <typename T, bool Read>
-void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) const noexcept
+void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) noexcept
 {
 	if constexpr ( Read )
 	{
@@ -276,7 +302,7 @@ void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) const noexcept
 }
 
 template <typename T, bool Read>
-void MemoryMap::AccessSpu( uint32_t offset, T& value ) const noexcept
+void MemoryMap::AccessSpu( uint32_t offset, T& value ) noexcept
 {
 	dbExpects( offset % 2 == 0 );
 
@@ -376,13 +402,15 @@ const uint8_t* MemoryMap::GetRealAddress( uint32_t address ) const noexcept
 
 void MemoryMap::Serialize( SaveStateSerializer& serializer )
 {
-	if ( !serializer.Header( "MemoryMap", 1 ) )
+	if ( !serializer.Header( "MemoryMap", 2 ) )
 		return;
 
 	for ( auto& cache : m_icacheFlags )
 	{
 		serializer( cache.value );
 	}
+
+	m_memoryControl.Serialize( serializer );
 }
 
 }

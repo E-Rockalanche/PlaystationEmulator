@@ -9,14 +9,15 @@ void MemoryControl::Reset()
 {
 	m_expension1BaseAddress = 0;
 	m_expension2BaseAddress = 0;
-
-	m_delaySizes.fill( DelaySize{} );
-
 	m_comDelay.value = 0;
-
 	m_ramSize.value = 0;
-
 	m_cacheControl = 0;
+
+	for ( auto& delaySize : m_delaySizes )
+	{
+		delaySize = {};
+		CalculateAccessTime( delaySize );
+	}
 }
 
 uint32_t MemoryControl::Read( uint32_t index ) const noexcept
@@ -124,13 +125,18 @@ void MemoryControl::CalculateAccessTime( DelaySize& delaySize ) noexcept
 	first = std::max( first, min + 6 );
 	seq = std::max( seq, min + 2 );
 
-	delaySize.firstAccessTime = static_cast<uint16_t>( first );
-	delaySize.seqAccessTime = static_cast<uint16_t>( seq );
+	const cycles_t accessTime8bit = first;
+	const cycles_t accessTime16bit = reg.dataBusWidth ? first : ( first + seq );
+	const cycles_t accessTime32bit = reg.dataBusWidth ? ( first + seq ) : ( first + seq * 3 );
+
+	delaySize.accessTimes[ 0 ] = std::max( accessTime8bit - 1, 0 );
+	delaySize.accessTimes[ 1 ] = std::max( accessTime16bit - 1, 0 );
+	delaySize.accessTimes[ 2 ] = std::max( accessTime32bit - 1, 0 );
 }
 
 void MemoryControl::Serialize( SaveStateSerializer& serializer )
 {
-	if ( !serializer.Header( "MemoryControl", 1 ) )
+	if ( !serializer.Header( "MemoryControl", 2 ) )
 		return;
 
 	serializer( m_expension1BaseAddress );
@@ -139,8 +145,7 @@ void MemoryControl::Serialize( SaveStateSerializer& serializer )
 	for ( auto& delay : m_delaySizes )
 	{
 		serializer( delay.reg.value );
-		serializer( delay.firstAccessTime );
-		serializer( delay.seqAccessTime );
+		serializer( delay.accessTimes );
 	}
 
 	serializer( m_comDelay.value );

@@ -52,7 +52,6 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 	m_ram = std::make_unique<Ram>();
 	m_scratchpad = std::make_unique<Scratchpad>();
-	m_memoryControl = std::make_unique<MemoryControl>();
 	m_interruptControl = std::make_unique<InterruptControl>();
 	m_eventManager = std::make_unique<EventManager>();
 	m_mdec = std::make_unique<MacroblockDecoder>( *m_eventManager );
@@ -71,7 +70,7 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 	m_serialPort = std::make_unique<SerialPort>();
 
-	m_memoryMap = std::make_unique<MemoryMap>( *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_memoryControl, *m_ram, *m_scratchpad, *m_serialPort, *m_spu, *m_timers );
+	m_memoryMap = std::make_unique<MemoryMap>( *m_eventManager, *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_ram, *m_scratchpad, *m_serialPort, *m_spu, *m_timers );
 
 	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_interruptControl, *m_eventManager );
 
@@ -96,7 +95,6 @@ void Playstation::Reset()
 	m_dma->Reset();
 	m_interruptControl->Reset();
 	m_mdec->Reset();
-	m_memoryControl->Reset();
 	m_memoryMap->Reset();
 	m_cpu->Reset();
 	m_ram->Fill( 0 );
@@ -173,7 +171,6 @@ bool Playstation::Serialize( SaveStateSerializer& serializer )
 	m_gpu->Serialize( serializer );
 	m_interruptControl->Serialize( serializer );
 	m_mdec->Serialize( serializer );
-	m_memoryControl->Serialize( serializer );
 	m_memoryMap->Serialize( serializer );
 	m_cpu->Serialize( serializer );
 	m_spu->Serialize( serializer );
