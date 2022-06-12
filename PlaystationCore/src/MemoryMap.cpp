@@ -94,25 +94,10 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	}
 	else if ( Within( address, CdRomStart, CdRomSize ) )
 	{
+		AccessCDRomDrive<T, Read>( address - CdRomStart, value );
+
 		if constexpr ( Read )
-		{
-			const uint32_t offset = address - CdRomStart;
-			if ( offset == 2 )
-			{
-				value = m_cdRomDrive.Read( 2 );
-				if constexpr ( sizeof( T ) >= 2 )
-					value |= static_cast<T>( m_cdRomDrive.Read( 2 ) << 8 );
-			}
-			else
-			{
-				value = m_cdRomDrive.Read( offset );
-			}
 			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::CDRom );
-		}
-		else
-		{
-			m_cdRomDrive.Write( address - CdRomStart, static_cast<uint8_t>( value ) );
-		}
 	}
 	else if ( Within( address, GpuStart, GpuSize ) )
 	{
@@ -206,7 +191,7 @@ template
 void MemoryMap::Access<uint32_t, false>( uint32_t address, uint32_t& value ) noexcept;
 
 template <typename T, bool Read>
-void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) noexcept
+STDX_forceinline void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) noexcept
 {
 	if constexpr ( Read )
 	{
@@ -254,7 +239,7 @@ void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) noexcept
 }
 
 template <typename T, bool Read>
-void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) noexcept
+STDX_forceinline void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) noexcept
 {
 	if constexpr ( Read )
 	{
@@ -302,7 +287,7 @@ void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) noexcept
 }
 
 template <typename T, bool Read>
-void MemoryMap::AccessSpu( uint32_t offset, T& value ) noexcept
+STDX_forceinline void MemoryMap::AccessSpu( uint32_t offset, T& value ) noexcept
 {
 	dbExpects( offset % 2 == 0 );
 
@@ -329,6 +314,37 @@ void MemoryMap::AccessSpu( uint32_t offset, T& value ) noexcept
 		else
 		{
 			m_spu.Write( offset / 2, static_cast<uint16_t>( value ) );
+		}
+	}
+}
+
+template <typename T, bool Read>
+STDX_forceinline void MemoryMap::AccessCDRomDrive( uint32_t offset, T& value ) noexcept
+{
+	if constexpr ( Read )
+	{
+		value = m_cdRomDrive.Read( offset );
+
+		if constexpr ( sizeof( T ) >= 2 )
+			value |= ( static_cast<T>( m_cdRomDrive.Read( offset + 1 ) ) << 8 );
+
+		if constexpr ( sizeof( T ) == 4 )
+		{
+			value |= ( static_cast<T>( m_cdRomDrive.Read( offset + 2 ) ) << 16 );
+			value |= ( static_cast<T>( m_cdRomDrive.Read( offset + 3 ) ) << 24 );
+		}
+	}
+	else
+	{
+		m_cdRomDrive.Write( offset, static_cast<uint8_t>( value ) );
+
+		if constexpr ( sizeof( T ) >= 2 )
+			m_cdRomDrive.Write( offset + 1, static_cast<uint8_t>( value >> 8 ) );
+
+		if constexpr ( sizeof( T ) == 4 )
+		{
+			m_cdRomDrive.Write( offset + 2, static_cast<uint8_t>( value >> 16 ) );
+			m_cdRomDrive.Write( offset + 3, static_cast<uint8_t>( value >> 24 ) );
 		}
 	}
 }
