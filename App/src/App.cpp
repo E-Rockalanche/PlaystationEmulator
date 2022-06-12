@@ -658,9 +658,14 @@ fs::path App::GetScreenshotFolder()
 
 bool App::SaveScreenshot()
 {
-	SDL_Surface* surface = m_playstation->GetRenderer().ReadDisplayTexture();
+	auto bitmap = m_playstation->GetRenderer().ReadDisplayTexture();
+
+	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom( bitmap.pixels.get(), bitmap.width, bitmap.height, bitmap.depth, bitmap.pitch, bitmap.rmask, bitmap.gmask, bitmap.bmask, bitmap.amask );
 	if ( !surface )
+	{
+		LogError( "App::SaveScreenshot -- failed to create SDL_Surface" );
 		return false;
+	}
 
 	const fs::path folder = GetScreenshotFolder();
 	fs::create_directory( folder );
@@ -668,9 +673,9 @@ bool App::SaveScreenshot()
 	fs::path filename = folder / fs::path( "screenshot_" + std::to_string( std::time( nullptr ) ) + ".png" );
 
 	const bool result = ( IMG_SavePNG( surface, filename.string().c_str() ) == 0 );
+	if ( !result )
+		LogError( "App::SaveScreenshot -- failed to save PNG" );
 
-	// renderer allocates pixel buffer so we must free it
-	delete[] surface->pixels;
 	SDL_FreeSurface( surface );
 
 	return result;

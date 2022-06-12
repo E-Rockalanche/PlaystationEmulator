@@ -22,6 +22,19 @@
 namespace PSX
 {
 
+struct Surface
+{
+	std::unique_ptr<char[]> pixels;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	uint32_t depth = 0;
+	uint32_t pitch = 0;
+	uint32_t rmask = 0;
+	uint32_t gmask = 0;
+	uint32_t bmask = 0;
+	uint32_t amask = 0;
+};
+
 class Renderer
 {
 public:
@@ -83,7 +96,7 @@ public:
 	uint32_t GetTargetTextureWidth() const noexcept { return m_targetDisplayArea.width * m_resolutionScale; }
 	uint32_t GetTargetTextureHeight() const noexcept { return static_cast<uint32_t>( GetTargetTextureWidth() / m_aspectRatio ); }
 
-	SDL_Surface* ReadDisplayTexture();
+	Surface ReadDisplayTexture();
 
 private:
 	using DepthType = int16_t;

@@ -891,23 +891,25 @@ void Renderer::RestoreRenderState()
 	dbCheckRenderErrors();
 }
 
-SDL_Surface* Renderer::ReadDisplayTexture()
+Surface Renderer::ReadDisplayTexture()
 {
-	m_displayFramebuffer.Bind();
-	int width = m_displayTexture.GetWidth();
-	int height = m_displayTexture.GetHeight();
+	int width = 0;
+	int height = 0;
+	SDL_GetWindowSize( m_window, &width, &height );
 
-	if ( width * height == 0 )
-		return nullptr;
+	if ( width <= 0 || height <= 0 )
+		return {};
 
-	const int BytesPerPixel = 3;
-	const int pitch = ( width + ( width % 2 ) ) * BytesPerPixel;
+	const uint32_t BytesPerPixel = 3;
+	const uint32_t pitch = ( width + ( width % 2 ) ) * BytesPerPixel;
 
 	char* pixels = new char[ pitch * height ];
+
+	Render::Framebuffer::Unbind( Render::FramebufferBinding::ReadAndDraw );
 	glReadPixels( 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels );
 
-	// need to flip the image vertically since I render everything upside-down in opengl
-	for ( int y = 0; y < height / 2; ++y )
+	// need to flip the image vertically since we render everything upside-down in opengl
+	for ( int y = 0; y < ( height / 2 ); ++y )
 	{
 		char* row1 = pixels + pitch * y;
 		char* row2 = pixels + pitch * ( height - 1 - y );
@@ -917,11 +919,7 @@ SDL_Surface* Renderer::ReadDisplayTexture()
 	// restore render state
 	m_vramDrawFramebuffer.Bind();
 
-	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom( pixels, width, height, 24, pitch, 0x0000ff, 0x00ff00, 0xff0000, 0x000000 );
-	if ( surface == nullptr )
-		dbLogError( "Renderer::ReadDisplayTexture -- failed to create surface [%s]", SDL_GetError() );
-
-	return surface;
+	return Surface{ std::unique_ptr<char[]>( pixels ), (uint32_t)width, (uint32_t)height, 24, pitch, 0x000000ff, 0x0000ff00, 0x00ff0000, 0x00000000 };
 }
 
 void Renderer::DisplayFrame()
@@ -933,14 +931,6 @@ void Renderer::DisplayFrame()
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
 	glDisable( GL_DEPTH_TEST );
-
-	// clear window
-	int winWidth = 0;
-	int winHeight = 0;
-	SDL_GetWindowSize( m_window, &winWidth, &winHeight );
-	glViewport( 0, 0, winWidth, winHeight );
-	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
-	glClear( GL_COLOR_BUFFER_BIT );
 
 	m_noAttributeVAO.Bind();
 
@@ -976,38 +966,44 @@ void Renderer::DisplayFrame()
 	glClear( GL_COLOR_BUFFER_BIT );
 
 	// render to display texture
+	m_vramDrawTexture.Bind();
 	if ( m_viewVRam )
 	{
 		m_vramViewShader.Bind();
-		m_vramDrawTexture.Bind();
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
-	else
+	else if ( m_displayEnable )
 	{
-		if ( m_displayEnable )
+		auto setDisplayAreaUniform = [&]( GLint uniform )
 		{
-			auto setDisplayAreaUniform = [&]( GLint uniform )
-			{
-				glUniform4i( uniform, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
-			};
+			glUniform4i( uniform, m_vramDisplayArea.x, m_vramDisplayArea.y, m_vramDisplayArea.width, m_vramDisplayArea.height );
+		};
 
-			if ( m_colorDepth == DisplayAreaColorDepth::B24 )
-			{
-				m_output24bppShader.Bind();
-				setDisplayAreaUniform( m_srcRect24Loc );
-			}
-			else
-			{
-				m_output16bppShader.Bind();
-				setDisplayAreaUniform( m_srcRect16Loc );
-			}
-
-			m_vramDrawTexture.Bind();
-			glViewport( m_targetDisplayArea.x * m_resolutionScale, m_targetDisplayArea.y * m_resolutionScale, srcWidth, srcHeight );
-			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+		if ( m_colorDepth == DisplayAreaColorDepth::B24 )
+		{
+			m_output24bppShader.Bind();
+			setDisplayAreaUniform( m_srcRect24Loc );
 		}
-		m_displayFramebuffer.Unbind();
+		else
+		{
+			m_output16bppShader.Bind();
+			setDisplayAreaUniform( m_srcRect16Loc );
+		}
+
+		m_vramDrawTexture.Bind();
+		glViewport( m_targetDisplayArea.x * m_resolutionScale, m_targetDisplayArea.y * m_resolutionScale, srcWidth, srcHeight );
+		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	}
+	m_displayFramebuffer.Unbind();
+
+	int winWidth = 0;
+	int winHeight = 0;
+	SDL_GetWindowSize( m_window, &winWidth, &winHeight );
+
+	// clear window
+	glViewport( 0, 0, winWidth, winHeight );
+	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
+	glClear( GL_COLOR_BUFFER_BIT );
 
 	// render to window
 	m_displayShader.Bind();
@@ -1026,7 +1022,6 @@ void Renderer::DisplayFrame()
 	const int renderY = ( winHeight - renderHeight ) / 2;
 
 	glViewport( renderX, renderY, renderWidth, renderHeight );
-
 	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 
 	dbCheckRenderErrors();
