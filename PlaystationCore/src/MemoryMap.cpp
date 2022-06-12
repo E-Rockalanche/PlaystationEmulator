@@ -60,6 +60,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	else if ( Within( address, ScratchpadStart, ScratchpadSize ) )
 	{
 		AccessMemory<T, Read>( m_scratchpad, address - ScratchpadStart, value );
+		cycles = 1;
 	}
 	else if ( Within( address, MemControlStart, MemControlSize ) )
 	{
@@ -116,9 +117,14 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	else if ( Within( address, CacheControlStart, CacheControlSize ) )
 	{
 		if constexpr ( Read )
+		{
 			value = static_cast<T>( m_memoryControl.ReadCacheControl() );
+			cycles = 1;
+		}
 		else
+		{
 			m_memoryControl.WriteCacheControl( ShiftValueForWrite<uint32_t>( value, address ) );
+		}
 	}
 	else if ( Within( address, Expansion1Start, Expansion1Size ) )
 	{
@@ -289,32 +295,29 @@ STDX_forceinline void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) n
 template <typename T, bool Read>
 STDX_forceinline void MemoryMap::AccessSpu( uint32_t offset, T& value ) noexcept
 {
-	dbExpects( offset % 2 == 0 );
+	const auto shortOffset = offset / 2;
 
 	if constexpr ( Read )
 	{
+		if constexpr ( sizeof( T ) >= 2 )
+			value = m_spu.Read( shortOffset );
+
 		if constexpr ( sizeof( T ) == 4 )
-		{
-			const uint32_t low = m_spu.Read( offset / 2 );
-			const uint32_t high = m_spu.Read( offset / 2 + 1 );
-			value = static_cast<T>( low | ( high << 16 ) );
-		}
-		else
-		{
-			value = static_cast<T>( m_spu.Read( offset / 2 ) );
-		}
+			value |= static_cast<T>( m_spu.Read( shortOffset + 1 ) ) << 16;
+
+		if constexpr ( sizeof( T ) == 1 )
+			value = ShiftValueForRead<T>( m_spu.Read( shortOffset ), offset );
 	}
 	else
 	{
+		if constexpr ( sizeof( T ) >= 2 )
+			m_spu.Write( shortOffset, static_cast<uint16_t>( value ) );
+
 		if constexpr ( sizeof( T ) == 4 )
-		{
-			m_spu.Write( offset / 2, static_cast<uint16_t>( value ) );
-			m_spu.Write( offset / 2 + 1, static_cast<uint16_t>( value >> 16 ) );
-		}
-		else
-		{
-			m_spu.Write( offset / 2, static_cast<uint16_t>( value ) );
-		}
+			m_spu.Write( shortOffset + 1, static_cast<uint16_t>( value >> 16 ) );
+
+		if constexpr ( sizeof( T ) == 1 )
+			m_spu.Write( shortOffset, ShiftValueForWrite<uint16_t>( value, offset ) );
 	}
 }
 

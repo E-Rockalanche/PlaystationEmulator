@@ -86,7 +86,7 @@ public:
 	template <typename T>
 	cycles_t GetAccessCycles( DelaySizeType type ) const noexcept
 	{
-		static constexpr size_t cyclesIndex = ( sizeof( T ) == 4 ) ? 2 : sizeof( T );
+		static constexpr size_t cyclesIndex = sizeof( T ) <= 2 ? sizeof( T ) - 1 : 2;
 		return m_delaySizes[ static_cast<size_t>( type ) ].accessTimes[ cyclesIndex ];
 	}
 

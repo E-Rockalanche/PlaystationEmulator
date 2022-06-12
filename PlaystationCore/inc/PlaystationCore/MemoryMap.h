@@ -145,7 +145,7 @@ public:
 	void Serialize( SaveStateSerializer& serializer );
 
 private:
-	static constexpr cycles_t RamReadCycles = 6;
+	static constexpr cycles_t RamReadCycles = 4;
 	static constexpr cycles_t DeviceReadCycles = 2;
 
 	// masks help strip region bits from virtual address to make a physical address
@@ -180,27 +180,27 @@ private:
 
 	// returns byte shift amount for unaligned register address
 	template <typename RegType>
-	static inline constexpr uint32_t GetShift( uint32_t address ) noexcept
+	STDX_forceinline static constexpr uint32_t GetShift( uint32_t address ) noexcept
 	{
 		return ( address % sizeof( RegType ) ) * 8;
 	}
 
 	// return shifted value for unaligned register write
 	template <typename RegType, typename T>
-	static inline constexpr RegType ShiftValueForWrite( T value, uint32_t address ) noexcept
+	STDX_forceinline static constexpr RegType ShiftValueForWrite( T value, uint32_t address ) noexcept
 	{
 		return static_cast<RegType>( value << GetShift<RegType>( address ) );
 	}
 
 	// return shifted value for unaligned register read
 	template <typename T, typename RegType>
-	static inline constexpr T ShiftValueForRead( RegType value, uint32_t address ) noexcept
+	STDX_forceinline static constexpr T ShiftValueForRead( RegType value, uint32_t address ) noexcept
 	{
 		return static_cast<T>( value >> GetShift<RegType>( address ) );
 	}
 
 	template <typename T, bool Read, typename MemoryType>
-	inline void AccessMemory( MemoryType& memory, uint32_t offset, T& value ) noexcept
+	STDX_forceinline static void AccessMemory( MemoryType& memory, uint32_t offset, T& value ) noexcept
 	{
 		if constexpr ( Read )
 			value = memory.template Read<T>( offset );
@@ -209,7 +209,7 @@ private:
 	}
 
 	template <typename T, bool Read, typename Component>
-	inline void AccessComponent32( Component& component, uint32_t offset, T& value ) noexcept
+	STDX_forceinline static void AccessComponent32( Component& component, uint32_t offset, T& value ) noexcept
 	{
 		if constexpr ( Read )
 			value = ShiftValueForRead<T>( component.Read( offset / 4 ), offset );
@@ -225,6 +225,9 @@ private:
 
 	template <typename T, bool Read>
 	void AccessSpu( uint32_t offset, T& value ) noexcept;
+
+	template <typename T, bool Read>
+	void AccessCDRomDrive( uint32_t offset, T& value ) noexcept;
 
 	bool CheckAndPrefetchICache( uint32_t address ) noexcept;
 
