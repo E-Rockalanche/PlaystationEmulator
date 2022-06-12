@@ -19,13 +19,17 @@ flat out ivec2 TexPageBase;
 flat out ivec2 ClutBase;
 flat out int TexPage;
 
+uniform float u_resolutionScale;
+
 void main()
 {
 	// From duckstation:
 	// Offset the vertex position by 0.5 to ensure correct interpolation of texture coordinates
 	// at 1x resolution scale. This doesn't work at >1x, we adjust the texture coordinates before
 	// uploading there instead.
-	float vertexOffset = 0.5;
+
+	// divide by render scale so vertices are always in the pixel centers
+	float vertexOffset = 0.5 / u_resolutionScale;
 
 	// calculate normalized screen coordinate
 	float x = ( v_pos.x + vertexOffset ) / 512.0 - 1.0;
@@ -130,9 +134,14 @@ int FloatToInt5( float value )
 	return int( floor( value * 31.0 + 0.5 ) );
 }
 
+vec4 SampleTexture( ivec2 pos )
+{
+	return texture( u_vram, vec2( pos ) / vec2( 1024.0, 512.0 ) );
+}
+
 int SampleUShort( ivec2 pos )
 {
-	vec4 c = texelFetch( u_vram, pos, 0 );
+	vec4 c = SampleTexture( pos );
 	int red = FloatToInt5( c.r );
 	int green = FloatToInt5( c.g );
 	int blue = FloatToInt5( c.b );
@@ -142,7 +151,7 @@ int SampleUShort( ivec2 pos )
 
 vec4 SampleColor( ivec2 pos )
 {
-	vec4 color = texelFetch( u_vram, pos, 0 );
+	vec4 color = SampleTexture( pos );
 	color.rgb = ConvertColorTo15bit( color.rgb );
 	return color;
 }
@@ -242,7 +251,7 @@ void main()
 	}
 	else if ( u_dither )
 	{
-		ivec2 pos = ivec2( int( floor( Position.x ) ), int( floor( Position.y ) ) );
+		ivec2 pos = ivec2( floor( Position.xy + vec2( 0.0001 ) ) );
 		color.rgb = Dither24bitTo15Bit( pos, color.rgb ) / 31.0;
 	}
 	else

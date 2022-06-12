@@ -22,6 +22,19 @@
 namespace PSX
 {
 
+struct Surface
+{
+	std::unique_ptr<char[]> pixels;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	uint32_t depth = 0;
+	uint32_t pitch = 0;
+	uint32_t rmask = 0;
+	uint32_t gmask = 0;
+	uint32_t bmask = 0;
+	uint32_t amask = 0;
+};
+
 class Renderer
 {
 public:
@@ -57,7 +70,7 @@ public:
 		m_displayEnable = enable;
 	}
 
-	bool UsingRealColor() const { return m_realColor; }
+	bool GetRealColor() const { return m_realColor; }
 	void SetRealColor( bool realColor );
 
 	void SetDisplayArea( const DisplayArea& vramDisplayArea, const DisplayArea& targetDisplayArea, float aspectRatio );
@@ -70,12 +83,20 @@ public:
 
 	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint8_t r, uint8_t g, uint8_t b );
 
-	void CopyVRam( int srcX, int srcY, int destX, int destY, int width, int height );
+	void CopyVRam( uint32_t srcX, uint32_t srcY, uint32_t destX, uint32_t destY, uint32_t width, uint32_t height );
 
 	void PushTriangle( Vertex vertices[ 3 ], bool semiTransparent );
 	void PushQuad( Vertex vertices[ 4 ], bool semiTransparent );
 
 	void DisplayFrame();
+
+	uint32_t GetResolutionScale() const noexcept { return m_resolutionScale; }
+	bool SetResolutionScale( uint32_t scale );
+
+	uint32_t GetTargetTextureWidth() const noexcept { return m_targetDisplayArea.width * m_resolutionScale; }
+	uint32_t GetTargetTextureHeight() const noexcept { return static_cast<uint32_t>( GetTargetTextureWidth() / m_aspectRatio ); }
+
+	Surface ReadDisplayTexture();
 
 private:
 	using DepthType = int16_t;
@@ -85,6 +106,8 @@ private:
 	using Rect = Math::Rectangle<int32_t>;
 
 private:
+	void InitializeVRamFramebuffers();
+
 	// update read texture with dirty area of draw texture
 	void UpdateReadTexture();
 
@@ -132,6 +155,12 @@ private:
 		return UsingTexture() && ( m_textureArea.Intersects( bounds ) || ( UsingClut() && m_clutArea.Intersects( bounds ) ) );
 	}
 
+	uint32_t GetVRamTextureWidth() const noexcept { return VRamWidth * m_resolutionScale; }
+	uint32_t GetVRamTextureHeight() const noexcept { return VRamHeight * m_resolutionScale; }
+
+	void SetViewport( uint32_t left, uint32_t top, uint32_t width, uint32_t height );
+	void SetScissor( uint32_t left, uint32_t top, uint32_t width, uint32_t height );
+
 private:
 	SDL_Window* m_window = nullptr;
 
@@ -161,8 +190,9 @@ private:
 	GLint m_drawTransparentPixelsLoc = -1;
 	GLint m_ditherLoc = -1;
 	GLint m_realColorLoc = -1;
-	GLint m_texWindowMask = -1;
-	GLint m_texWindowOffset = -1;
+	GLint m_texWindowMaskLoc = -1;
+	GLint m_texWindowOffsetLoc = -1;
+	GLint m_resolutionScaleLoc = -1;
 
 	Render::Shader m_vramViewShader;
 
@@ -197,17 +227,13 @@ private:
 	TexPage m_texPage;
 	ClutAttribute m_clut;
 
-	struct Uniform
-	{
-		int32_t texturePageX = 0;
-		int32_t texturePageY = 0;
+	int32_t m_texturePageX = 0;
+	int32_t m_texturePageY = 0;
 
-		uint32_t texWindowMaskX = 0;
-		uint32_t texWindowMaskY = 0;
-		uint32_t texWindowOffsetX = 0;
-		uint32_t texWindowOffsetY = 0;
-	};
-	Uniform m_uniform;
+	uint32_t m_texWindowMaskX = 0;
+	uint32_t m_texWindowMaskY = 0;
+	uint32_t m_texWindowOffsetX = 0;
+	uint32_t m_texWindowOffsetY = 0;
 
 	std::vector<Vertex> m_vertices;
 
@@ -219,9 +245,13 @@ private:
 	DepthType m_currentDepth = 0;
 
 	// not serialized
+	uint32_t m_resolutionScale = 1;
+	int m_cachedWindowWidth = 0;
+	int m_cachedWindowHeight = 0;
 	bool m_stretchToFit = true;
 	bool m_viewVRam = false;
 	bool m_realColor = false;
+
 };
 
 }

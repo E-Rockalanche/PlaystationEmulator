@@ -12,7 +12,7 @@ class CDRom_Cue : public CDRom
 public:
 	bool Open( const fs::path& filename );
 
-	bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) override;
+	bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) const override;
 
 private:
 
@@ -31,7 +31,7 @@ private:
 	struct FileEntry
 	{
 		std::string filename;
-		std::ifstream binFile;
+		mutable std::ifstream binFile;
 		uint32_t sectorCount = 0;
 	};
 
@@ -235,7 +235,7 @@ bool CDRom_Cue::Open( const fs::path& filename )
 	return SeekTrack1();
 }
 
-bool CDRom_Cue::ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector )
+bool CDRom_Cue::ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) const
 {
 	const auto filePos = ( std::streampos( index.filePosition ) + std::streampos( position ) ) * BytesPerSector;
 

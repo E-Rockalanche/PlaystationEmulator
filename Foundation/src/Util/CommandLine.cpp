@@ -1,11 +1,11 @@
-#include <System/CommandLine.h>
+#include <Util/CommandLine.h>
 
 #include <stdx/assert.h>
 
 #include <algorithm>
 #include <cctype>
 
-namespace CommandLine
+namespace Util::CommandLine
 {
 
 namespace

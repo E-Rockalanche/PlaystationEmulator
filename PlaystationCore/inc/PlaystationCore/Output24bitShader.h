@@ -39,7 +39,7 @@ uint FloatTo5bit( float value )
 
 uint SampleVRam16( ivec2 pos )
 {
-	vec4 c = texelFetch( u_vram, pos, 0 );
+	vec4 c = texture( u_vram, pos / vec2( 1024.0, 512.0 ) );
 	uint red = FloatTo5bit( c.r );
 	uint green = FloatTo5bit( c.g );
 	uint blue = FloatTo5bit( c.b );

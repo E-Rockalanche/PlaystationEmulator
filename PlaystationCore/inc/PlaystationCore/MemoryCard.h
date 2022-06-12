@@ -43,9 +43,9 @@ public:
 		return m_filename;
 	}
 
-	bool Written() const noexcept
+	bool IsDirty() const noexcept
 	{
-		return m_written;
+		return m_dirty;
 	}
 
 	void Serialize( SaveStateSerializer& serializer );
@@ -157,7 +157,6 @@ private:
 	uint8_t GetCurrentSectorChecksum() const;
 
 private:
-
 	State m_state = State::Idle;
 	Flag m_flag;
 
@@ -169,7 +168,7 @@ private:
 	// serialize this?
 	fs::path m_filename;
 	std::array<uint8_t, TotalSize> m_memory{};
-	bool m_written = false;
+	bool m_dirty = false;
 };
 
 }

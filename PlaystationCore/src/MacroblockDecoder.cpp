@@ -331,7 +331,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 			// This command has no function. Command bits 25-28 are reflected to Status bits 23-26 as usually.
 			// Command bits 0-15 are reflected to Status bits 0-15 (similar as the "number of parameter words" for MDEC(1),
 			// but without the "minus 1" effect, and without actually expecting any parameters).
-			dbBreakMessage( "MacroblockDecoder::StartCommand -- NoFunction" );
+			dbBreakMessage( "MacroblockDecoder::StartCommand -- NoFunction [%08X]", value );
 			m_status.remainingParameters = commandWord.parameterWords;
 			break;
 		}

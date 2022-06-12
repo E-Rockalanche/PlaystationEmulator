@@ -841,7 +841,7 @@ void Spu::Write( uint32_t offset, uint16_t value ) noexcept
 			}
 			else
 			{
-				dbBreakMessage( "Spu::Write -- unknown register [%X -> %u]", value, offset );
+				dbLogWarning( "Spu::Write -- unknown register [%X -> %u]", value, offset );
 			}
 			break;
 		}

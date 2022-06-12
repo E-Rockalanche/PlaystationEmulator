@@ -29,6 +29,7 @@ public:
 	void Write( uint32_t index, uint8_t value ) noexcept;
 
 	void SetCDRom( std::unique_ptr<CDRom> cdrom );
+	CDRom* GetCDRom() { return m_cdrom.get(); }
 
 	bool CanReadDisk() const noexcept
 	{
@@ -58,6 +59,8 @@ private:
 
 	static constexpr uint32_t AudioFifoSize = 44100; // 1 second of audio
 
+	static constexpr cycles_t MotorStartCycles = CpuCyclesPerSecond;
+
 	static const std::array<uint8_t, 256> ExpectedCommandParameters;
 
 	union Status
@@ -67,6 +70,7 @@ private:
 			uint8_t index : 2;
 			uint8_t adpBusy : 1;
 			uint8_t parameterFifoEmpty : 1;
+
 			uint8_t parameterFifoNotFull : 1;
 			uint8_t responseFifoNotEmpty : 1;
 			uint8_t dataFifoNotEmpty : 1;
@@ -79,7 +83,8 @@ private:
 	{
 		Idle,
 		StartingMotor,
-		Seeking,
+		SeekingLogical,
+		SeekingPhysical,
 		Reading,
 		ReadingNoRetry,
 		Playing,
@@ -146,6 +151,7 @@ private:
 			uint8_t : 1;
 			uint8_t motorOn : 1; // spinning up is off
 			uint8_t : 2;
+
 			uint8_t shellOpen : 1;
 			uint8_t read : 1;
 			uint8_t seek : 1;
@@ -239,7 +245,7 @@ private:
 	// drive
 	void StartMotor() noexcept;
 	void StopMotor() noexcept;
-	void BeginSeeking() noexcept;
+	void BeginSeeking( bool logical ) noexcept;
 	void BeginReading() noexcept;
 	void BeginPlaying( uint8_t track ) noexcept;
 	void RequestData() noexcept;
@@ -249,12 +255,11 @@ private:
 		return static_cast<cycles_t>( CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) ) );
 	}
 
-	static cycles_t GetSeekCycles() noexcept
-	{
-		return 20000; // TODO: account for motor spin up time, sector difference, etc
-	}
+	void UpdatePositionWhileSeeking() noexcept;
 
-	static cycles_t GetFirstResponseCycles( Command command ) noexcept;
+	cycles_t GetSeekCycles( CDRom::LogicalSector seekposition ) noexcept;
+
+	cycles_t GetFirstResponseCycles( Command command ) noexcept;
 
 	void ClearSectorBuffers() noexcept
 	{
@@ -262,12 +267,12 @@ private:
 			sector.size = 0;
 	}
 
-	bool IsSeeking() const noexcept { return m_driveState == DriveState::Seeking; }
+	bool IsSeeking() const noexcept { return m_driveState == DriveState::SeekingLogical || m_driveState == DriveState::SeekingPhysical; }
 	bool IsReading() const noexcept { return m_driveState == DriveState::Reading; }
 	bool IsPlaying() const noexcept { return m_driveState == DriveState::Playing; }
 
 	// returns true if seek was successful
-	bool CompleteSeek() noexcept;
+	bool CompleteSeek( bool logical ) noexcept;
 
 	void SendDataEndResponse() noexcept;
 
@@ -362,6 +367,10 @@ private:
 	std::optional<SectorHeaders> m_currentSectorHeaders;
 
 	CDRom::Location m_seekLocation;
+
+	CDRom::LogicalSector m_currentPosition = 0;
+	CDRom::LogicalSector m_seekStart = 0;
+	CDRom::LogicalSector m_seekEnd = 0;
 
 	// async flags
 	bool m_pendingSeek = false; // SetLoc was called, but we haven't called seek yet

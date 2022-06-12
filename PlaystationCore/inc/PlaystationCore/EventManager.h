@@ -60,6 +60,13 @@ public:
 		return m_cyclesUntilEvent - GetPendingCycles();
 	}
 
+	// returns progress fraction from 0 to 1
+	float GetProgress() const noexcept
+	{
+		dbAssert( m_cyclesUntilEvent > 0 );
+		return std::clamp( static_cast<float>( GetPendingCycles() ) / static_cast<float>( m_cyclesUntilEvent ), 0.0f, 1.0f );
+	}
+
 	const std::string& GetName() const noexcept { return m_name; }
 
 	void Serialize( SaveStateSerializer& serializer );
@@ -152,11 +159,13 @@ public:
 	void Serialize( SaveStateSerializer& serializer );
 
 private:
-	void ScheduleNextEvent();
+	void ScheduleNextEvent( const Event* event );
 
 	void UpdateEvent( Event* event, cycles_t cycles );
 
 	void RemoveEvent( Event* event );
+
+	std::pair<size_t, cycles_t> FindNextEvent() const;
 
 private:
 	cycles_t m_cyclesUntilNextEvent = 0; // cached from event

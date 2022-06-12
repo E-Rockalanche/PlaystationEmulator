@@ -275,7 +275,6 @@ void Gpu::WriteGP0( uint32_t value ) noexcept
 	ProcessCommandBuffer();
 }
 
-
 void Gpu::ProcessCommandBuffer() noexcept
 {
 	m_processingCommandBuffer = true;
@@ -404,9 +403,11 @@ void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 	}
 
 	if ( count > m_commandBuffer.Capacity() )
-		dbBreakMessage( "GPU::DmaIn -- command buffer overrun" );
+	{
+		dbLogWarning( "GPU::DmaIn -- command buffer overrun" );
+		count = m_commandBuffer.Capacity();
+	}
 
-	count = std::min( count, m_commandBuffer.Capacity() );
 	m_commandBuffer.Push( input, count );
 
 	// prevent recursive calls
@@ -539,6 +540,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_texturedRectFlipX = stdx::any_of<uint32_t>( value, 1 << 12 );
 			m_texturedRectFlipY = stdx::any_of<uint32_t>( value, 1 << 13 );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -554,6 +556,7 @@ void Gpu::ExecuteCommand() noexcept
 
 			m_renderer.SetTextureWindow( m_textureWindowMaskX, m_textureWindowMaskY, m_textureWindowOffsetX, m_textureWindowOffsetY );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -567,6 +570,7 @@ void Gpu::ExecuteCommand() noexcept
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -580,6 +584,7 @@ void Gpu::ExecuteCommand() noexcept
 
 			m_renderer.SetDrawArea( m_drawAreaLeft, m_drawAreaTop, m_drawAreaRight, m_drawAreaBottom );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -596,6 +601,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_drawOffsetY = signExtend( ( value >> 11 ) & 0x7ff );
 			GpuLog( "Gpu::ExecuteCommand() -- set draw offset [%u, %u]", m_drawOffsetX, m_drawOffsetY );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -610,6 +616,7 @@ void Gpu::ExecuteCommand() noexcept
 			m_status.checkMaskOnDraw = checkMask;
 			m_renderer.SetMaskBits( setMask, checkMask );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
@@ -617,6 +624,7 @@ void Gpu::ExecuteCommand() noexcept
 		case 0x01: // clear cache
 			GpuLog( "Gpu::ExecuteCommand() -- clear GPU cache" );
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 
@@ -624,15 +632,27 @@ void Gpu::ExecuteCommand() noexcept
 			InitCommand( 2, RenderCommandType::Fill );
 			break;
 
-		case 0x80: // copy rectangle (VRAM to VRAM)
+		case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: case 0x86: case 0x87:
+		case 0x88: case 0x89: case 0x8a: case 0x8b: case 0x8c: case 0x8d: case 0x8e: case 0x8f:
+		case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
+		case 0x98: case 0x99: case 0x9a: case 0x9b: case 0x9c: case 0x9d: case 0x9e: case 0x9f:
+			// copy rectangle (VRAM to VRAM)
 			InitCommand( 3, RenderCommandType::Copy );
 			break;
 
-		case 0xa0: // copy rectangle (CPU to VRAM)
+		case 0xa0: case 0xa1: case 0xa2: case 0xa3: case 0xa4: case 0xa5: case 0xa6: case 0xa7:
+		case 0xa8: case 0xa9: case 0xaa: case 0xab: case 0xac: case 0xad: case 0xae: case 0xaf:
+		case 0xb0: case 0xb1: case 0xb2: case 0xb3: case 0xb4: case 0xb5: case 0xb6: case 0xb7:
+		case 0xb8: case 0xb9: case 0xba: case 0xbb: case 0xbc: case 0xbd: case 0xbe: case 0xbf:
+			// copy rectangle (CPU to VRAM)
 			InitCommand( 2, RenderCommandType::Write );
 			break;
 
-		case 0xc0: // copy rectangle (VRAM to CPU)
+		case 0xc0: case 0xc1: case 0xc2: case 0xc3: case 0xc4: case 0xc5: case 0xc6: case 0xc7:
+		case 0xc8: case 0xc9: case 0xca: case 0xcb: case 0xcc: case 0xcd: case 0xce: case 0xcf:
+		case 0xd0: case 0xd1: case 0xd2: case 0xd3: case 0xd4: case 0xd5: case 0xd6: case 0xd7:
+		case 0xd8: case 0xd9: case 0xda: case 0xdb: case 0xdc: case 0xdd: case 0xde: case 0xdf:
+			// copy rectangle (VRAM to CPU)
 			InitCommand( 2, RenderCommandType::Read );
 			break;
 
@@ -645,22 +665,10 @@ void Gpu::ExecuteCommand() noexcept
 				m_interruptControl.SetInterrupt( Interrupt::Gpu );
 			}
 
+			m_pendingCommandCycles++;
 			m_commandBuffer.Pop();
 			break;
 		}
-
-		case 0x03: // unknown. Takes up space in FIFO
-			m_commandBuffer.Pop();
-			break;
-
-		case 0x00:
-		case 0x04:
-		case 0x1e:
-		case 0xe0:
-		case 0xe7:
-		case 0xef:
-			m_commandBuffer.Pop();
-			break; // NOP
 
 		default:
 		{
@@ -700,7 +708,11 @@ void Gpu::ExecuteCommand() noexcept
 
 				default:
 				{
-					dbBreakMessage( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
+					// check if NOP
+					if ( !( opcode == 0x00 || opcode == 0x03 || ( 0x04 <= opcode && opcode <= 0x1e ) || opcode == 0xe0 || ( 0xe7 <= opcode && opcode <= 0xef ) ) )
+						dbBreakMessage( "Gpu::ExecuteCommand() -- invalid GP0 opcode [%X]", opcode );
+
+					m_pendingCommandCycles++;
 					m_commandBuffer.Pop();
 					break;
 				}
@@ -1645,10 +1657,20 @@ void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 		m_crtState.scanline += curScanlinesToDraw;
 		dbAssert( m_crtState.scanline <= m_crtConstants.totalScanlines );
 
-		if ( prevScanline < m_verDisplayRangeStart && m_crtState.scanline >= m_verDisplayRangeEnd )
+		if ( prevScanline < m_verDisplayRangeStart && m_crtState.scanline >= std::min( m_verDisplayRangeEnd, m_crtConstants.totalScanlines ) )
 		{
 			// skipped over vertical display range, set vblank to false
 			m_crtState.vblank = false;
+		}
+
+		// wrap scanline
+		if ( m_crtState.scanline == m_crtConstants.totalScanlines )
+		{
+			m_crtState.scanline = 0;
+			if ( m_status.verticalInterlace )
+				m_status.interlaceField = !m_status.interlaceField;
+			else
+				m_status.interlaceField = 0;
 		}
 
 		const bool vblank = m_crtState.scanline < m_verDisplayRangeStart || m_crtState.scanline >= m_verDisplayRangeEnd;
@@ -1669,15 +1691,6 @@ void Gpu::UpdateCrtCycles( cycles_t cpuCycles ) noexcept
 			{
 				GpuLog( "VBLANK END\n\n\n" );
 			}
-		}
-
-		if ( m_crtState.scanline == m_crtConstants.totalScanlines )
-		{
-			m_crtState.scanline = 0;
-			if ( m_status.verticalInterlace )
-				m_status.interlaceField = !m_status.interlaceField;
-			else
-				m_status.interlaceField = 0;
 		}
 	}
 
@@ -1729,7 +1742,7 @@ void Gpu::ScheduleCrtEvent() noexcept
 
 	// schedule next update
 	const cycles_t cpuCycles = ConvertGpuToCpuCycles( gpuCycles, m_crtState.fractionalCycles );
-	m_crtEvent->Schedule( cpuCycles );
+	m_crtEvent->Schedule( std::max( cpuCycles, 1 ) );
 }
 
 void Gpu::Serialize( SaveStateSerializer& serializer )

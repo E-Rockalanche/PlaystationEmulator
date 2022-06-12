@@ -58,8 +58,9 @@ public:
 
 	static constexpr uint32_t PregapLength = 2 * SectorsPerSecond;
 	static constexpr uint32_t LeadOutLength = 6750;
+	static constexpr uint32_t SubsequentLeadOutLength = 2250;
 	static constexpr uint8_t LeadInTrackNumber = 0x00;
-	static constexpr uint8_t LeadOutTrackNumber = 0xa2;
+	static constexpr uint8_t LeadOutTrackNumber = 0xaa;
 
 	static constexpr uint32_t BytesPerSector = 0x930; // (2352)
 	static constexpr uint32_t RawDataBytesPerSector = 0x924; // (2340) includes headers
@@ -161,6 +162,13 @@ public:
 	};
 	static_assert( sizeof( SubQ ) == 10 );
 
+	struct LocationBCD
+	{
+		uint8_t minuteBCD = 0;
+		uint8_t secondBCD = 0;
+		uint8_t sectorBCD = 0;
+	};
+
 	struct Location
 	{
 		static constexpr Location FromBCD( uint8_t mm, uint8_t ss, uint8_t sect ) noexcept
@@ -184,6 +192,11 @@ public:
 		LogicalSector ToLogicalSector() const noexcept
 		{
 			return static_cast<LogicalSector>( minute * SectorsPerMinute + second * SectorsPerSecond + sector );
+		}
+
+		LocationBCD ToBCD() const noexcept
+		{
+			return LocationBCD{ BinaryToBCD( minute ), BinaryToBCD( second ), BinaryToBCD( sector ) };
 		}
 
 		uint8_t minute = 0;
@@ -243,19 +256,24 @@ public:
 
 	virtual ~CDRom() = default;
 
-	// seek position on disk
-	bool Seek( LogicalSector position );
-	bool Seek( uint32_t trackNumber, Location locationInTrack );
-	bool SeekTrack1() { return Seek( 1, Location{} ); }
+	const fs::path& GetFilename() const noexcept { return m_filename; }
 
-	// read sector from current seek position
+	// seek position on disk
+	bool Seek( LogicalSector position ) noexcept;
+	bool Seek( uint32_t trackNumber, Location locationInTrack ) noexcept;
+	bool SeekTrack1() noexcept { return Seek( 1, Location{} ); }
+
+	// read sector and increment current position
 	bool ReadSector( Sector& sector, SubQ& subq );
 
 	// read subq from current position
-	bool ReadSubQ( SubQ& subq );
+	bool ReadSubQ( SubQ& subq ) const;
+
+	// read sector without updating position
+	bool ReadSector( Sector& sector ) const;
 
 	// read subq data from given position
-	bool ReadSubQFromPosition( LogicalSector position, SubQ& subq );
+	bool ReadSubQFromPosition( LogicalSector position, SubQ& subq ) const;
 
 	uint32_t GetTrackCount() const noexcept
 	{
@@ -315,11 +333,11 @@ public:
 
 protected:
 	// best API for single or multi file formats with pregaps
-	virtual bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) = 0;
+	virtual bool ReadSectorFromIndex( const Index& index, LogicalSector position, Sector& sector ) const = 0;
 
 	static SubQ GetSubQFromIndex( const Index& index, LogicalSector position ) noexcept;
 
-	const Index* FindIndex( LogicalSector position ) const;
+	const Index* FindIndex( LogicalSector position ) const noexcept;
 
 	void AddLeadOutIndex();
 

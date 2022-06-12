@@ -13,13 +13,18 @@ ControllerPorts::ControllerPorts( InterruptControl& interruptControl, EventManag
 	: m_interruptControl{ interruptControl }
 {
 	m_communicateEvent = eventManager.CreateEvent( "ControllerPorts communicate event", [this]( cycles_t ) { UpdateCommunication(); } );
+
+	m_saveEvent = eventManager.CreateEvent( "ControllerPorts save memory cards", [this]( cycles_t ) { SaveMemoryCardsToDisk(); } );
 }
 
 ControllerPorts::~ControllerPorts() = default;
 
 void ControllerPorts::Reset()
 {
+	SaveMemoryCardsToDisk();
+
 	m_communicateEvent->Reset();
+	m_saveEvent->Reset();
 
 	m_status.value = 0;
 	m_mode.value = 0;
@@ -211,10 +216,18 @@ void ControllerPorts::DoTransfer()
 
 		case CurrentDevice::MemoryCard:
 		{
+			const bool wasDirty = memCard && memCard->IsDirty();
 			if ( memCard && memCard->Communicate( m_tranferringValue, output ) )
+			{
 				acked = true;
+
+				if ( !wasDirty && memCard->IsDirty() && !memCard->GetFilename().empty() )
+					ScheduleMemoryCardSaveToDisk();
+			}
 			else
+			{
 				m_currentDevice = CurrentDevice::None;
+			}
 		}
 	}
 
@@ -288,12 +301,30 @@ ControllerType ControllerPorts::GetControllerType( size_t slot ) const
 	return m_controllers[ slot ] ? m_controllers[ slot ]->GetType() : ControllerType::None;
 }
 
+void ControllerPorts::ScheduleMemoryCardSaveToDisk()
+{
+	if ( m_saveEvent->IsActive() )
+		return;
+
+	m_saveEvent->Schedule( MemoryCardSaveDelay );
+}
+
+void ControllerPorts::SaveMemoryCardsToDisk()
+{
+	for ( auto* memCard : m_memCards )
+	{
+		if ( memCard && memCard->IsDirty() && !memCard->GetFilename().empty() )
+			memCard->Save();
+	}
+}
+
 void ControllerPorts::Serialize( SaveStateSerializer& serializer )
 {
 	if ( !serializer.Header( "ControllerPorts", 1 ) )
 		return;
 
 	m_communicateEvent->Serialize( serializer );
+	m_saveEvent->Serialize( serializer );
 
 	serializer( m_status.value );
 	serializer( m_mode.value );

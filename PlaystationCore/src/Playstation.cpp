@@ -17,6 +17,7 @@
 #include "RAM.h"
 #include "Renderer.h"
 #include "SaveState.h"
+#include "SerialPort.h"
 #include "SPU.h"
 #include "Timers.h"
 
@@ -51,7 +52,6 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 	m_ram = std::make_unique<Ram>();
 	m_scratchpad = std::make_unique<Scratchpad>();
-	m_memoryControl = std::make_unique<MemoryControl>();
 	m_interruptControl = std::make_unique<InterruptControl>();
 	m_eventManager = std::make_unique<EventManager>();
 	m_mdec = std::make_unique<MacroblockDecoder>( *m_eventManager );
@@ -68,11 +68,13 @@ bool Playstation::Initialize( SDL_Window* window, const fs::path& biosFilename )
 
 	m_controllerPorts = std::make_unique<ControllerPorts>( *m_interruptControl, *m_eventManager );
 
-	m_memoryMap = std::make_unique<MemoryMap>( *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_memoryControl, *m_ram, *m_scratchpad, *m_spu, *m_timers );
+	m_serialPort = std::make_unique<SerialPort>();
+
+	m_memoryMap = std::make_unique<MemoryMap>( *m_eventManager, *m_bios, *m_cdromDrive, *m_controllerPorts, *m_dma, *m_gpu, *m_interruptControl, *m_mdec, *m_ram, *m_scratchpad, *m_serialPort, *m_spu, *m_timers );
 
 	m_cpu = std::make_unique<MipsR3000Cpu>( *m_memoryMap, *m_interruptControl, *m_eventManager );
 
-	// resolve circular dependancy
+	// resolve circular dependancies
 	m_timers->SetGpu( *m_gpu );
 	m_gpu->SetTimers( *m_timers );
 	m_gpu->SetDma( *m_dma );
@@ -93,12 +95,12 @@ void Playstation::Reset()
 	m_dma->Reset();
 	m_interruptControl->Reset();
 	m_mdec->Reset();
-	m_memoryControl->Reset();
 	m_memoryMap->Reset();
 	m_cpu->Reset();
 	m_ram->Fill( 0 );
 	m_renderer->Reset();
 	m_scratchpad->Fill( 0 );
+	m_serialPort->Reset();
 	m_spu->Reset();
 	m_timers->Reset();
 
@@ -134,20 +136,14 @@ void Playstation::RunFrame()
 	m_renderer->DisplayFrame();
 }
 
-bool Playstation::LoadRom( const fs::path& filename )
+void Playstation::SetCDRom( std::unique_ptr<CDRom> cdrom )
 {
-	auto cdrom = CDRom::Open( filename );
-	if ( cdrom )
-	{
-		Log( "Playstation::LoadRom -- loaded %s", filename.u8string().c_str() );
-		m_cdromDrive->SetCDRom( std::move( cdrom ) );
-		return true;
-	}
-	else
-	{
-		Log( "Playstation::LoadRom -- failed to load %s", filename.u8string().c_str() );
-		return false;
-	}
+	m_cdromDrive->SetCDRom( std::move( cdrom ) );
+}
+
+CDRom* Playstation::GetCDRom()
+{
+	return m_cdromDrive->GetCDRom();
 }
 
 void Playstation::HookExe( fs::path filename )
@@ -175,7 +171,6 @@ bool Playstation::Serialize( SaveStateSerializer& serializer )
 	m_gpu->Serialize( serializer );
 	m_interruptControl->Serialize( serializer );
 	m_mdec->Serialize( serializer );
-	m_memoryControl->Serialize( serializer );
 	m_memoryMap->Serialize( serializer );
 	m_cpu->Serialize( serializer );
 	m_spu->Serialize( serializer );

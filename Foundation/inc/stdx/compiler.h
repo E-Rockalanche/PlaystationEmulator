@@ -74,9 +74,3 @@ using enable_if_t = typename enable_if<Condition, T>::type;
 #define STDX_forceinline inline
 
 #endif
-
-#ifdef _DEBUG
-
-#define STDX_DEBUG true
-
-#endif

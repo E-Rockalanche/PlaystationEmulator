@@ -6,6 +6,14 @@
 #include <limits>
 #include <memory>
 
+#ifndef STDX_SHIPPING
+#define PSX_HOOK_EXE
+#endif
+
+#ifndef STDX_SHIPPING
+#define PSX_HOOK_BIOS
+#endif
+
 struct SDL_Window;
 
 namespace PSX
@@ -37,6 +45,7 @@ class MipsR3000Cpu;
 class Playstation;
 class Renderer;
 class SaveStateSerializer;
+class SerialPort;
 class Spu;
 class Timers;
 class AudioQueue;

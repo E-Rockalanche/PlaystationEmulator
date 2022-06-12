@@ -27,6 +27,7 @@
 #define dbBreakMessage( ... ) EMPTY_BLOCK
 #define dbAssert( condition ) EMPTY_BLOCK
 #define dbAssertMessage( condition, ... ) EMPTY_BLOCK
+#define dbVerify( condition ) ( condition )
 #define dbExpects( condition ) EMPTY_BLOCK
 #define dbEnsures( condition ) EMPTY_BLOCK
 
@@ -57,6 +58,14 @@
 	if ( STDX_unlikely( !( condition ) ) ) {	\
 		LogError( "%s:%u Assertion failed: %s", __FILE__, __LINE__, #condition );	\
 		LogError( __VA_ARGS__ );	\
+		dbBreak();	\
+	}	\
+	MULTI_LINE_MACRO_END
+
+#define dbVerify( condition )	\
+	MULTI_LINE_MACRO_BEGIN	\
+	if ( STDX_unlikely( !( condition ) ) ) {	\
+		LogError( "%s:%u Verification failed: %s", __FILE__, __LINE__, #condition );	\
 		dbBreak();	\
 	}	\
 	MULTI_LINE_MACRO_END

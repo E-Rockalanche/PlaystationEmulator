@@ -105,6 +105,9 @@
     <ClCompile Include="src\SaveState.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\SerialPort.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\PlaystationCore\BIOS.h">
@@ -222,6 +225,9 @@
       <Filter>inc\shaders</Filter>
     </ClInclude>
     <ClInclude Include="inc\PlaystationCore\SaveState.h">
+      <Filter>inc</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\PlaystationCore\SerialPort.h">
       <Filter>inc</Filter>
     </ClInclude>
   </ItemGroup>

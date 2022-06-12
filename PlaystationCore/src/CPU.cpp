@@ -36,7 +36,7 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 	while ( !m_eventManager.ReadyForNextEvent() )
 	{
 
-#ifndef SHIPPING
+#ifdef PSX_HOOK_EXE
 		if ( !m_exeFilename.empty() && m_pc == HookAddress )
 		{
 			LoadExecutable( m_exeFilename, *this, m_memoryMap.GetRam() );
@@ -56,8 +56,7 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 			// this usually results in polygon flickering
 			// to prevent this, delay the interrupt until after the GTE command
 			const auto instruction = m_memoryMap.FetchInstruction( m_pc );
-			dbAssert( instruction.has_value() );
-			if ( ( instruction->value & 0xfe000000 ) != 0x4a000000 )
+			if ( instruction.has_value() && ( instruction->value & 0xfe000000 ) != 0x4a000000 )
 			{
 				// update current PC now so we can save the proper return address
 				m_currentPC = m_pc;
@@ -68,8 +67,11 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 		m_currentPC = m_pc;
 		m_pc = m_nextPC;
 		m_nextPC += 4;
+
+		// CPU is pipelined so that each instruction takes 1 cycle
+		m_eventManager.AddCycles( 1 );
 		
-#ifndef SHIPPING
+#ifdef PSX_HOOK_BIOS
 		if ( EnableBiosIntercept )
 			InterceptBios( m_currentPC );
 #endif
@@ -80,9 +82,6 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 			ExecuteInstruction( *instruction );
 
 			m_registers.Update();
-
-			// on average: 1 cycle to execute instruction, 1 cycle for memory load
-			m_eventManager.AddCycles( 2 ); // TODO: more accurate CPU timing
 		}
 		else
 		{

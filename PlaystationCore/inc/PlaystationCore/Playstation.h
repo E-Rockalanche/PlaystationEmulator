@@ -23,7 +23,8 @@ public:
 
 	void RunFrame();
 
-	bool LoadRom( const fs::path& filename );
+	void SetCDRom( std::unique_ptr<CDRom> cdrom );
+	CDRom* GetCDRom();
 
 	void HookExe( fs::path filename );
 
@@ -41,12 +42,12 @@ public:
 	DualSerialPort*		GetDualSerialPort()		{ return m_dualSerialPort.get(); }
 	Gpu&				GetGpu()				{ dbAssert( m_gpu ); return *m_gpu; }
 	InterruptControl&	GetInterruptControl()	{ dbAssert( m_interruptControl ); return *m_interruptControl; }
-	MemoryControl&		GetMemoryControl()		{ dbAssert( m_memoryControl ); return *m_memoryControl; }
 	MemoryMap&			GetMemoryMap()			{ dbAssert( m_memoryMap ); return *m_memoryMap; }
 	MipsR3000Cpu&		GetCpu()				{ dbAssert( m_cpu ); return *m_cpu; }
 	Ram&				GetRam()				{ dbAssert( m_ram ); return *m_ram; }
 	Renderer&			GetRenderer()			{ dbAssert( m_renderer ); return *m_renderer; }
 	Scratchpad&			GetScratchpad()			{ dbAssert( m_scratchpad ); return *m_scratchpad; }
+	SerialPort&			GetSerialPort()			{ dbAssert( m_serialPort ); return *m_serialPort; }
 	Spu&				GetSpu()				{ dbAssert( m_spu ); return *m_spu; }
 	Timers&				GetTimers()				{ dbAssert( m_timers ); return *m_timers; }
 
@@ -61,12 +62,12 @@ private:
 	std::unique_ptr<Gpu> m_gpu;
 	std::unique_ptr<InterruptControl> m_interruptControl;
 	std::unique_ptr<MacroblockDecoder> m_mdec;
-	std::unique_ptr<MemoryControl> m_memoryControl;
 	std::unique_ptr<MemoryMap> m_memoryMap;
 	std::unique_ptr<MipsR3000Cpu> m_cpu;
 	std::unique_ptr<Ram> m_ram;
 	std::unique_ptr<Renderer> m_renderer;
 	std::unique_ptr<Scratchpad> m_scratchpad;
+	std::unique_ptr<SerialPort> m_serialPort;
 	std::unique_ptr<Spu> m_spu;
 	std::unique_ptr<Timers> m_timers;
 };
