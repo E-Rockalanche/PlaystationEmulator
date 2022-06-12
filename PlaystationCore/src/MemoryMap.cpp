@@ -50,7 +50,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 
 	if ( address <= RamMirrorSize ) // ram starts at 0
 	{
-		AccessMemory<T, Read>( m_ram, address & ( RamSize - 1 ), value );
+		AccessMemory<T, Read>( m_ram, address % RamSize, value );
 		if constexpr ( Read )
 			cycles = RamReadCycles;
 	}
