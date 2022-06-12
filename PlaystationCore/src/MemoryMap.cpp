@@ -31,6 +31,12 @@ inline constexpr bool Within( uint32_t address, uint32_t start, uint32_t size ) 
 
 }
 
+void MemoryMap::Reset()
+{
+	m_memoryControl.Reset();
+	m_icacheFlags.fill( ICacheFlags() );
+}
+
 template <typename T, bool Read>
 void MemoryMap::Access( uint32_t address, T& value ) noexcept
 {
@@ -118,7 +124,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	{
 		if constexpr ( Read )
 		{
-			value = static_cast<T>( m_memoryControl.ReadCacheControl() );
+			value = ShiftValueForRead<T>( m_memoryControl.ReadCacheControl(), address );
 			cycles = 1;
 		}
 		else

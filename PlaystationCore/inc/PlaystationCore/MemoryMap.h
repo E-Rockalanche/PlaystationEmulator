@@ -101,11 +101,7 @@ public:
 		, m_timers{ timers }
 	{}
 
-	void Reset()
-	{
-		m_memoryControl.Reset();
-		m_icacheFlags.fill( ICacheFlags() );
-	}
+	void Reset();
 
 	template <typename T>
 	T Read( uint32_t address ) noexcept
@@ -120,7 +116,8 @@ public:
 	void Write( uint32_t address, T value ) noexcept
 	{
 		using UT = std::make_unsigned_t<T>;
-		Access<UT, false>( address, *reinterpret_cast<UT*>( &value ) );
+		UT uvalue = static_cast<UT>( value );
+		Access<UT, false>( address, uvalue );
 	}
 
 	void SetDualSerialPort( DualSerialPort* dualSerialPort ) noexcept
@@ -189,7 +186,7 @@ private:
 	template <typename RegType, typename T>
 	STDX_forceinline static constexpr RegType ShiftValueForWrite( T value, uint32_t address ) noexcept
 	{
-		return static_cast<RegType>( value << GetShift<RegType>( address ) );
+		return static_cast<RegType>( value ) << GetShift<RegType>( address );
 	}
 
 	// return shifted value for unaligned register read
