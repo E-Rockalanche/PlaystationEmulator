@@ -28,8 +28,18 @@ namespace
 {
 
 const char* const ExecutableExtension = ".exe";
-const char* const MemoryCardExtension = ".mcr";
 const char* const SaveStateExtension = ".sav";
+const char* const DefaultMemoryCardExtension = ".mcr";
+const char* const MemoryCardExtensions[] = { ".mcr", ".mcd", ".mc" };
+
+bool IsMemoryCardExtension( const fs::path& extension )
+{
+	for ( auto& memcardExtension : MemoryCardExtensions )
+		if ( extension == memcardExtension )
+			return true;
+
+	return false;
+}
 
 constexpr float FpsSmoothingFactor = 0.9f;
 
@@ -252,9 +262,17 @@ void App::CreateMemoryCard( fs::path filename, size_t slot )
 
 void App::OpenMemoryCardForRom( fs::path filename, size_t slot )
 {
-	filename.replace_extension( MemoryCardExtension );
-	if ( !LoadMemoryCard( filename, slot ) )
-		CreateMemoryCard( filename, slot );
+	// try to open an existing memory card
+	for ( auto& ext : MemoryCardExtensions )
+	{
+		filename.replace_extension( ext );
+		if ( LoadMemoryCard( filename, slot ) )
+			return;
+	}
+
+	// create a new memory card
+	filename.replace_extension( DefaultMemoryCardExtension );
+	CreateMemoryCard( filename, slot );
 }
 
 bool App::SaveState( fs::path filename )
@@ -462,7 +480,7 @@ void App::PollEvents()
 					m_paused = false;
 					Log( "Loaded executable %s", event.drop.file );
 				}
-				else if ( extension == MemoryCardExtension )
+				else if ( IsMemoryCardExtension( extension ) )
 				{
 					LoadMemoryCard( std::move( filename ), 0 );
 				}

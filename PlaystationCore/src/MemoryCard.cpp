@@ -340,6 +340,8 @@ bool MemoryCard::Save()
 	fout.write( (const char*)m_memory.data(), TotalSize );
 	fout.close();
 
+	Log( "Saved memory card to %s", m_filename.string().c_str() );
+
 	m_dirty = false;
 	return true;
 }
