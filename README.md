@@ -10,6 +10,7 @@ A memory card file is automatically loaded or created for each game. Memory card
 
 ## System Requirements
 * An x86_64 CPU
+* Windows 10 (other versions of Windows may work but are not supported)
 * An OpenGL 3.3 compatible GPU
 
 ## Controls
