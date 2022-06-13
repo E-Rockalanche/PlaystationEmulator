@@ -1,6 +1,6 @@
 # Playstation Emulator
 
-This is an emulator of the Sony Playstation (PSX) written in c++ using SDL2 and OpenGL. This is a personal project I started with the goal of playing Final Fantasy VIII for the first time on my own emulator (I am currently playing through the game!). The emulator supports basic controller support, save states, and some graphical enhancements.
+This is an emulator of the Sony Playstation (PSX) written in c++ using SDL2 and OpenGL. This is a personal project I started with the goal of playing Final Fantasy VIII for the first time on my own emulator (I am currently playing through the game!). The emulator supports basic controller support, save states, and some graphical enhancements. This emulator is incomplete. Not all games or regions are supported.
 
 A BIOS ROM image is required to run games on the emulator. It must be named "bios.bin" and be placed in the working directory.
 
