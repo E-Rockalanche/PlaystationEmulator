@@ -1,12 +1,12 @@
 # Playstation Emulator
 
-This is an emulator of the Sony Playstation (PSX) written in c++ using SDL2 and OpenGL. This is a personal project I started with the goal of playing Final Fantasy VIII for the first time on my own emulator (I am currently playing through the game!). The emulator supports basic controller support, save states, and some graphical enhancements. This emulator is incomplete. Not all games or regions are supported.
+This is an emulator of the Sony Playstation (PSX) written in c++ using SDL2 and OpenGL. This is a personal project started with the goal of playing Final Fantasy VIII for the first time on my own emulator (I am currently playing through the game!). The emulator supports basic controller support, save states, and some graphical enhancements. This emulator is incomplete. Not all games or regions are supported.
 
 A BIOS ROM image is required to run games on the emulator. It must be named "bios.bin" and be placed in the working directory.
 
 Games are loaded by dragging the ROM file into the emulator window. The emulator currently supports ".bin" and ".cue" ROM formats.
 
-A memory card file is created for each game. Memory cards can also be loaded into slot 1 by dragging them into the emulator window. The emulator currently supports ".mcr", ".mcd", and ".mc" memory card file extensions. If the extension is something else, with the exception of ".gme", then you can probably rename it to any of the supported extensions.
+A memory card file is automatically loaded or created for each game. Memory cards can also be loaded into slot 1 by dragging them into the emulator window. The emulator currently supports ".mcr", ".mcd", and ".mc" memory card file extensions. If the extension is something else, with the exception of ".gme", then you can probably rename it to any of the supported extensions.
 
 ## System Requirements
 * An x86_64 CPU
