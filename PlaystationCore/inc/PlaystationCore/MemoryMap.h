@@ -127,6 +127,9 @@ public:
 
 	std::optional<Instruction> FetchInstruction( uint32_t address ) noexcept;
 
+	// doesn't add cycles or fill cache
+	std::optional<Instruction> PeekInstruction( uint32_t address ) noexcept;
+
 	void WriteICache( uint32_t address, uint32_t ) noexcept
 	{
 		dbExpects( address / 16 < m_icacheFlags.size() );
@@ -226,7 +229,11 @@ private:
 	template <typename T, bool Read>
 	void AccessCDRomDrive( uint32_t offset, T& value ) noexcept;
 
-	bool CheckAndPrefetchICache( uint32_t address ) noexcept;
+	// returns the number of instructions fetched
+	uint32_t CheckAndPrefetchICache( uint32_t address ) noexcept;
+
+	template <bool AddCycles, bool PreFetchRead, uint32_t FetchCount>
+	std::optional<Instruction> ReadInstruction( uint32_t address ) noexcept;
 
 private:
 	EventManager& m_eventManager;

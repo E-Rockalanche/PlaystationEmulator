@@ -55,7 +55,7 @@ void MipsR3000Cpu::RunUntilEvent() noexcept
 			// the exception handler may or may not modify the return address if the next instruction is a GTE command
 			// this usually results in polygon flickering
 			// to prevent this, delay the interrupt until after the GTE command
-			const auto instruction = m_memoryMap.FetchInstruction( m_pc );
+			const auto instruction = m_memoryMap.PeekInstruction( m_pc );
 			if ( instruction.has_value() && ( instruction->value & 0xfe000000 ) != 0x4a000000 )
 			{
 				// update current PC now so we can save the proper return address

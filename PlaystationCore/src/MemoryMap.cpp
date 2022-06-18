@@ -66,7 +66,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	else if ( Within( address, ScratchpadStart, ScratchpadSize ) )
 	{
 		AccessMemory<T, Read>( m_scratchpad, address - ScratchpadStart, value );
-		cycles = 1;
+		return; // 0 cycles
 	}
 	else if ( Within( address, MemControlStart, MemControlSize ) )
 	{
@@ -358,44 +358,108 @@ STDX_forceinline void MemoryMap::AccessCDRomDrive( uint32_t offset, T& value ) n
 	}
 }
 
-bool MemoryMap::CheckAndPrefetchICache( uint32_t address ) noexcept
+uint32_t MemoryMap::CheckAndPrefetchICache( uint32_t address ) noexcept
 {
 	dbExpects( address % 4 == 0 ); // instructions must be word-aligned
+
+	uint32_t fetchCount = 0;
 
 	const uint32_t index = ( address >> 2 ) & 0x3u;
 	const uint32_t line = ( address >> 4 ) & 0xffu;
 	const uint32_t tag = ( address >> 12 );
 
 	auto& flags = m_icacheFlags[ line ];
-
 	const bool cached = ( flags.tag == tag ) && ( flags.valid & ( 1u << index ) );
-
 	if ( !cached )
 	{
 		flags.tag = tag;
-		flags.valid = ( 0x3u << index ) & 0x3u;
+		flags.valid = ( 0xfu << index ) & 0xfu;
+		fetchCount = 4 - index;
 
 		// TODO: pre-fetch next instructions in 4-word block
 	}
 
-	return cached;
+	return fetchCount;
 }
 
 std::optional<Instruction> MemoryMap::FetchInstruction( uint32_t address ) noexcept
 {
 	dbExpects( address % 4 == 0 );
-	
-	// TODO: icaching
 
-	address &= 0x1fffffff;
+	const uint32_t segment = address >> 29;
+	switch ( segment )
+	{
+		case 0:
+		case 4:
+			// read cached
+			switch ( CheckAndPrefetchICache( address ) )
+			{
+				case 0:
+					// read from icache takes no cycles
+					return ReadInstruction<false, false, 0>( address );
+
+				case 1:
+					return ReadInstruction<true, true, 1>( address );
+
+				case 2:
+					return ReadInstruction<true, true, 2>( address );
+
+				case 3:
+					return ReadInstruction<true, true, 3>( address );
+
+				default:
+					dbBreak();
+					[[fallthrough]];
+				case 4:
+					return ReadInstruction<true, true, 4>( address );
+			}
+			break;
+
+		case 5:
+			// read uncached
+			return ReadInstruction<true, false, 1>( address );
+
+		default:
+			// raise exception
+			return std::nullopt;
+	}
+}
+
+std::optional<Instruction> MemoryMap::PeekInstruction( uint32_t address ) noexcept
+{
+	dbExpects( address % 4 == 0 );
+
+	const uint32_t segment = address >> 29;
+	switch ( segment )
+	{
+		case 0:
+		case 4:
+		case 5:
+			return ReadInstruction<false, false, 0>( address );
+
+		default:
+			return std::nullopt;
+	}
+}
+
+template <bool AddCycles, bool PreFetchRead, uint32_t FetchCount>
+STDX_forceinline std::optional<Instruction> MemoryMap::ReadInstruction( uint32_t address ) noexcept
+{
+	address &= RegionMasks[ address >> 29 ];
 
 	if ( address < RamMirrorSize )
 	{
+		if constexpr ( AddCycles )
+			m_eventManager.AddCycles( ( PreFetchRead ? 1 : RamReadCycles ) * FetchCount );
+
 		return Instruction( m_ram.Read<uint32_t>( address % RamSize ) );
 	}
 	else if ( Within( address, BiosStart, BiosSize ) )
 	{
-		return Instruction( m_bios.Read<uint32_t>( address - BiosStart ) );
+		if constexpr ( AddCycles )
+			m_eventManager.AddCycles( m_memoryControl.GetAccessCycles<uint32_t>( MemoryControl::DelaySizeType::Bios ) );
+
+		return Instruction( m_bios.Read<uint32_t>( address - BiosStart ) * FetchCount );
 	}
 	else
 	{
