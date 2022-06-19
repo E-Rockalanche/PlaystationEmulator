@@ -36,7 +36,7 @@ public:
 		return m_cdrom != nullptr;
 	}
 
-	std::pair<int16_t, int16_t> GetAudioFrame()
+	STDX_forceinline std::pair<int16_t, int16_t> GetAudioFrame()
 	{
 		const uint32_t frame = m_audioBuffer.Empty() ? 0 : m_audioBuffer.Pop();
 		const int16_t left = static_cast<int16_t>( frame );
@@ -60,6 +60,10 @@ private:
 	static constexpr uint32_t AudioFifoSize = 44100; // 1 second of audio
 
 	static constexpr cycles_t MotorStartCycles = CpuCyclesPerSecond;
+	static constexpr cycles_t GetIdCycles = 33868; // number from Duckstation
+	static constexpr cycles_t SpeedupCycles = static_cast<cycles_t>( 0.8 * CpuCyclesPerSecond );
+	static constexpr cycles_t SlowdownCycles = static_cast<cycles_t>( CpuCyclesPerSecond );
+	static constexpr cycles_t ReadTOCCycles = CpuCyclesPerSecond / 2;
 
 	static const std::array<uint8_t, 256> ExpectedCommandParameters;
 
@@ -88,7 +92,9 @@ private:
 		Reading,
 		ReadingNoRetry,
 		Playing,
-		ChangingSession
+		ChangingSession,
+		ChangingSpeedOrReadingTOC,
+		OpeningShell,
 	};
 
 	enum class Command : uint8_t
@@ -243,6 +249,7 @@ private:
 	void ShiftQueuedInterrupt() noexcept;
 
 	// drive
+	void ResetDriveState() noexcept;
 	void StartMotor() noexcept;
 	void StopMotor() noexcept;
 	void BeginSeeking( bool logical ) noexcept;
@@ -255,11 +262,16 @@ private:
 		return static_cast<cycles_t>( CpuCyclesPerSecond / ( CDRom::SectorsPerSecond * ( 1 + m_mode.doubleSpeed ) ) );
 	}
 
+	cycles_t GetSpeedChangeCycles() const noexcept
+	{
+		return m_mode.doubleSpeed ? SpeedupCycles : SlowdownCycles;
+	}
+
 	void UpdatePositionWhileSeeking() noexcept;
 
-	cycles_t GetSeekCycles( CDRom::LogicalSector seekposition ) noexcept;
+	cycles_t GetSeekCycles( CDRom::LogicalSector seekposition ) const noexcept;
 
-	cycles_t GetFirstResponseCycles( Command command ) noexcept;
+	cycles_t GetFirstResponseCycles( Command command ) const noexcept;
 
 	void ClearSectorBuffers() noexcept
 	{
@@ -268,11 +280,13 @@ private:
 	}
 
 	bool IsSeeking() const noexcept { return m_driveState == DriveState::SeekingLogical || m_driveState == DriveState::SeekingPhysical; }
-	bool IsReading() const noexcept { return m_driveState == DriveState::Reading; }
+	bool IsReading() const noexcept { return m_driveState == DriveState::Reading || m_driveState == DriveState::ReadingNoRetry; }
 	bool IsPlaying() const noexcept { return m_driveState == DriveState::Playing; }
 
 	// returns true if seek was successful
 	bool CompleteSeek( bool logical ) noexcept;
+
+	void ResetAudioDecoder() noexcept;
 
 	void SendDataEndResponse() noexcept;
 
@@ -328,17 +342,19 @@ private:
 	DriveStatus m_driveStatus;
 	ControllerMode m_mode;
 
-	struct XaFilter
+	struct XaFile
 	{
 		uint8_t file = 0;
 		uint8_t channel = 0;
-		bool set = false;
 	};
-	XaFilter m_xaFilter;
+
+	XaFile m_xaFilter;
+	std::optional<XaFile> m_xaCurrent;
 
 	CDRom::SubQ m_lastSubQ;
 
 	uint8_t m_playingTrackNumberBCD = 0;
+	uint8_t m_secondResponseParameter = 0;
 
 	bool m_muted = false;
 	bool m_muteADPCM = false;
