@@ -230,6 +230,8 @@ bool CDRom_Cue::Open( const fs::path& filename )
 		return false;
 	}
 
+	m_filename = filename;
+
 	AddLeadOutIndex();
 
 	return SeekTrack1();
