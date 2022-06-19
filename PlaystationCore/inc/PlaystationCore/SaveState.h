@@ -90,6 +90,9 @@ public:
 	template <typename T>
 	void operator()( std::optional<T>& opt );
 
+	template <typename T, typename F>
+	void operator()( std::optional<T>& opt, F customSerializer );
+
 	template <typename T>
 	void operator()( Math::Vector2<T>& v )
 	{
@@ -228,6 +231,21 @@ void SaveStateSerializer::operator()( std::optional<T>& opt )
 			opt.emplace();
 
 		( *this )( *opt );
+	}
+}
+
+template <typename T, typename F>
+void SaveStateSerializer::operator()( std::optional<T>& opt, F customSerializer )
+{
+	bool hasValue = opt.has_value();
+	( *this )( hasValue );
+
+	if ( hasValue )
+	{
+		if ( Reading() )
+			opt.emplace();
+
+		customSerializer( *opt );
 	}
 }
 
