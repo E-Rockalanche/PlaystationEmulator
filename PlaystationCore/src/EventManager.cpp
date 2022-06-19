@@ -60,6 +60,15 @@ void Event::Schedule( cycles_t cyclesFromNow )
 	m_manager.ScheduleNextEvent( this );
 }
 
+void Event::Delay( cycles_t cycles )
+{
+	dbExpects( cycles > 0 );
+	dbAssert( m_active );
+
+	m_cyclesUntilEvent += cycles;
+	m_manager.ScheduleNextEvent( this );
+}
+
 void Event::Cancel()
 {
 	if ( m_active )

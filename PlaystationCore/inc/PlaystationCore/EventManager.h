@@ -39,6 +39,9 @@ public:
 	// Schedule event to occur in the future
 	void Schedule( cycles_t cyclesFromNow );
 
+	// Delay event by a number of cycles
+	void Delay( cycles_t cycles );
+
 	// Cancel/disable event and reset pending cycles
 	void Cancel();
 
