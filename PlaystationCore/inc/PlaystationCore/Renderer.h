@@ -75,10 +75,8 @@ public:
 
 	void SetDisplayArea( const DisplayArea& vramDisplayArea, const DisplayArea& targetDisplayArea, float aspectRatio );
 
-	// update vram with pixel buffer
 	void UpdateVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, const uint16_t* pixels );
 
-	// read entire vram from frame buffer
 	void ReadVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t hieght, uint16_t* vram );
 
 	void FillVRam( uint32_t left, uint32_t top, uint32_t width, uint32_t height, uint8_t r, uint8_t g, uint8_t b );
