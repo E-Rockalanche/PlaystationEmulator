@@ -1812,20 +1812,15 @@ void Gpu::Serialize( SaveStateSerializer& serializer )
 
 	serializer( m_crtState.displayFrame );
 
-	bool hasTransferState = m_vramTransferState.has_value();
-	serializer( hasTransferState );
-	if ( hasTransferState )
-	{
-		if ( serializer.Reading() )
-			m_vramTransferState.emplace();
-
-		serializer( m_vramTransferState->left );
-		serializer( m_vramTransferState->top );
-		serializer( m_vramTransferState->width );
-		serializer( m_vramTransferState->height );
-		serializer( m_vramTransferState->dx );
-		serializer( m_vramTransferState->dy );
-	}
+	serializer( m_vramTransferState, [&]( auto& state )
+		{
+			serializer( state.left );
+			serializer( state.top );
+			serializer( state.width );
+			serializer( state.height );
+			serializer( state.dx );
+			serializer( state.dy );
+		} );
 
 	serializer( m_cropMode );
 
