@@ -8,6 +8,7 @@
 #include <stdx/bit.h>
 
 #include <array>
+#include <vector>
 
 namespace PSX
 {
@@ -165,7 +166,7 @@ private:
 
 	uint32_t GetChannelPriority( Channel channel ) const noexcept
 	{
-		return ( m_controlRegister >> ( static_cast<uint32_t>( channel ) * 4 ) ) & 0x03u;
+		return ( m_controlRegister >> ( static_cast<uint32_t>( channel ) * 4 ) ) & 0x07u;
 	}
 
 	bool IsChannelEnabled( Channel channel ) const noexcept
@@ -175,7 +176,6 @@ private:
 
 	bool CanTransferChannel( Channel channel ) const noexcept;
 
-	// returns false if chopping
 	DmaResult StartDma( Channel channel );
 
 	void TransferToRam( Channel channel, uint32_t address, uint32_t words, uint32_t addressStep );
@@ -184,6 +184,11 @@ private:
 	void ClearOrderTable( uint32_t address, uint32_t wordCount );
 
 	void FinishTransfer( Channel channel ) noexcept;
+
+	static constexpr bool NeedsTempBuffer( uint32_t address, uint32_t wordCount, uint32_t addressStep )
+	{
+		return ( addressStep == BackwardStep ) || ( ( ( address + wordCount * addressStep ) & DmaAddressMask ) < address );
+	}
 
 	// DMA is using DRAM Hyper Page mode, allowing it to access DRAM rows at 1 clock cycle per word
 	// (effectively around 17 clks per 16 words, due to required row address loading, probably plus some further minimal overload due to refresh cycles).
@@ -196,12 +201,6 @@ private:
 	static constexpr uint32_t GetWordsForCycles( cycles_t cycles ) noexcept
 	{
 		return static_cast<uint32_t>( ( cycles * 16 + 16 ) / 17 );
-	}
-
-	void ResizeTempBuffer( uint32_t newSize )
-	{
-		if ( newSize > m_tempBufferSize )
-			m_tempBuffer = std::make_unique<uint32_t[]>( newSize );
 	}
 
 	void ResumeDma();
@@ -223,8 +222,7 @@ private:
 	InterruptRegister m_interruptRegister;
 
 	// not serialized
-	std::unique_ptr<uint32_t[]> m_tempBuffer;
-	uint32_t m_tempBufferSize = 0;
+	std::vector<uint32_t> m_tempBuffer;
 };
 
 }

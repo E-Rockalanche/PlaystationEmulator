@@ -58,8 +58,7 @@ void Dma::Reset()
 
 	m_controlRegister = ControlRegisterResetValue;
 	m_interruptRegister.value = 0;
-	m_tempBuffer.reset();
-	m_tempBufferSize = 0;
+	m_tempBuffer.clear();
 }
 
 uint32_t Dma::Read( uint32_t index ) const noexcept
@@ -320,6 +319,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 			if ( toRam )
 			{
 				dbLogWarning( "Dma::StartDma -- cannot do linked list transfer to ram" );
+				dbBreak();
 				return DmaResult::Finished;
 			}
 
@@ -366,6 +366,10 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 
 			break;
 		}
+
+		case SyncMode::Unused:
+			dbBreak();
+			break;
 	}
 
 	if ( totalCycles > 0 )
@@ -422,11 +426,11 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 
 	uint32_t* dest = reinterpret_cast<uint32_t*>( m_ram.Data() + address );
 
-	const bool useTempBuffer = ( addressStep == BackwardStep ) || ( address + wordCount * 4 > RamSize ); // backward step or wrapping
+	const bool useTempBuffer = NeedsTempBuffer( address, wordCount, addressStep );
 	if ( useTempBuffer )
 	{
-		ResizeTempBuffer( wordCount );
-		dest = m_tempBuffer.get();
+		m_tempBuffer.resize( wordCount );
+		dest = m_tempBuffer.data();
 	}
 
 	switch ( channel )
@@ -449,8 +453,9 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 
 		default:
 			dbLogWarning( "Dma::TransferToRam -- invalid channel [%s]", ChannelNames[ (size_t)channel ] );
+			dbBreak();
 			// Can't pass dma chain-looping test if we fill with high bits
-			std::fill_n( dest, wordCount, 0xffffffffu );
+			// std::fill_n( dest, wordCount, 0xffffffffu );
 			break;
 	}
 
@@ -475,11 +480,11 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 
 	const uint32_t* src = reinterpret_cast<const uint32_t*>( m_ram.Data() + address );
 
-	if ( ( addressStep == BackwardStep ) || ( address + wordCount * 4 > RamSize ) )
+	if ( NeedsTempBuffer( address, wordCount, addressStep ) )
 	{
 		// backward step or wrapping
 
-		ResizeTempBuffer( wordCount );
+		m_tempBuffer.resize( wordCount );
 
 		uint32_t curAddress = address;
 		for ( uint32_t i = 0; i < wordCount; ++i )
@@ -488,7 +493,7 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 			curAddress = ( address + addressStep ) & DmaAddressMask;
 		}
 
-		src = m_tempBuffer.get();
+		src = m_tempBuffer.data();
 	}
 
 	switch ( channel )
@@ -507,6 +512,7 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 
 		default:
 			dbLogWarning( "Dma::TransferFromRam -- invalid channel [%s]", ChannelNames[ (size_t)channel ] );
+			dbBreak();
 			break;
 	}
 }
@@ -524,34 +530,59 @@ void Dma::ClearOrderTable( uint32_t address, uint32_t wordCount )
 
 void Dma::ResumeDma()
 {
-	// initialize empty list of channels to resume
-	struct ResumeEntry
+	if ( ( m_controlRegister & 0x07777777 ) == 0x07654321 )
 	{
-		Channel channel{};
-		uint32_t priority = 0;
-	};
-	std::array<ResumeEntry, ChannelCount> m_resumeChannels;
-	size_t resumeCount = 0;
+		// default priority order
 
-	// insert channels that can resume
-	for ( size_t i = 0; i < ChannelCount; ++i )
-	{
-		const auto channel = static_cast<Channel>( i );
-		if ( CanTransferChannel( channel ) )
-			m_resumeChannels[ resumeCount++ ] = { channel, GetChannelPriority( channel ) };
+		for ( size_t i = ChannelCount; i-- > 0; )
+		{
+			const auto channel = static_cast<Channel>( i );
+			if ( CanTransferChannel( channel ) )
+			{
+				if ( StartDma( channel ) == DmaResult::Chopping )
+					break;
+			}
+		}
 	}
-
-	// sort channels by priority
-	std::sort(
-		m_resumeChannels.data(),
-		m_resumeChannels.data() + resumeCount,
-		[]( auto& lhs, auto& rhs ) { return lhs.priority > rhs.priority; } );
-
-	// resume DMAs (break if chopping again)
-	for ( size_t i = 0; i < resumeCount; ++i )
+	else
 	{
-		if ( StartDma( m_resumeChannels[ i ].channel ) == DmaResult::Chopping )
-			break;
+		// custom priority order
+
+		// initialize empty list of channels to resume
+		struct ResumeEntry
+		{
+			Channel channel{};
+			uint32_t priority = 0;
+		};
+		std::array<ResumeEntry, ChannelCount> m_resumeChannels;
+		size_t resumeCount = 0;
+
+		// insert channels that can resume
+		for ( size_t i = 0; i < ChannelCount; ++i )
+		{
+			const auto channel = static_cast<Channel>( i );
+			if ( CanTransferChannel( channel ) )
+				m_resumeChannels[ resumeCount++ ] = { channel, GetChannelPriority( channel ) };
+		}
+
+		// sort channels by priority
+		std::sort(
+			m_resumeChannels.data(),
+			m_resumeChannels.data() + resumeCount,
+			[]( auto& lhs, auto& rhs )
+			{
+				if ( lhs.priority != rhs.priority )
+					return lhs.priority > rhs.priority;
+				else
+					return lhs.channel > rhs.channel;
+			} );
+
+		// resume DMAs (break if chopping again)
+		for ( size_t i = 0; i < resumeCount; ++i )
+		{
+			if ( StartDma( m_resumeChannels[ i ].channel ) == DmaResult::Chopping )
+				break;
+		}
 	}
 }
 
