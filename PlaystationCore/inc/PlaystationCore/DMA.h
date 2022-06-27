@@ -187,7 +187,7 @@ private:
 
 	static constexpr bool NeedsTempBuffer( uint32_t address, uint32_t wordCount, uint32_t addressStep )
 	{
-		return ( addressStep == BackwardStep ) || ( ( ( address + wordCount * addressStep ) & DmaAddressMask ) < address );
+		return ( addressStep == BackwardStep ) || ( ( address & DmaAddressMask ) + wordCount * 4 > RamSize );
 	}
 
 	// DMA is using DRAM Hyper Page mode, allowing it to access DRAM rows at 1 clock cycle per word
