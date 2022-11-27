@@ -164,9 +164,14 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 					const Channel channel = static_cast<Channel>( channelIndex );
 
 					if ( channel == Channel::RamOrderTable )
+					{
 						state.control.value = ( value & 0x51000000 ) | 0x00000002; // only bits 24, 28, and 30 of OTC are writeable. bit 1 is always 1 (address step backwards)
+						state.request = state.control.startTrigger;
+					}
 					else
+					{
 						state.control.value = value & ChannelState::Control::WriteMask;
+					}
 
 					if ( CanTransferChannel( channel ) )
 						StartDma( channel );
@@ -225,13 +230,15 @@ void Dma::SetRequest( Channel channel, bool request ) noexcept
 
 bool Dma::CanTransferChannel( Channel channel ) const noexcept
 {
-	if ( IsChannelEnabled( channel ) )
-	{
-		auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
-		return state.control.startBusy && ( state.request || state.control.startTrigger );
-	}
+	if ( !IsChannelEnabled( channel ) )
+		return false;
 
-	return false;
+	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
+	if ( !state.control.startBusy )
+		return false;
+
+	// Duckstation doesn't check startTrigger?
+	return state.request; // || state.control.startTrigger;
 }
 
 Dma::DmaResult Dma::StartDma( Channel channel )
