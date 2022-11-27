@@ -104,10 +104,11 @@ struct Position
 	constexpr Position() = default;
 	constexpr Position( int16_t x_, int16_t y_ ) : x{ x_ }, y{ y_ } {}
 	explicit constexpr Position( uint32_t param )
-		: x{ static_cast<int16_t>( param << 5 ) >> 5 }
-		, y{ static_cast<int16_t>( param >> 11 ) >> 5 }
+		: x{ static_cast<int16_t>( static_cast<int16_t>( param << 5 ) >> 5 ) }
+		, y{ static_cast<int16_t>( static_cast<int16_t>( param >> 11 ) >> 5 ) }
 	{}
 
+	// x and y are 11 bit sign extended
 	int16_t x = 0;
 	int16_t y = 0;
 	int16_t z = 0;
