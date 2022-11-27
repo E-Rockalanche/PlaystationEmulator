@@ -120,6 +120,9 @@ private:
 		uint16_t blockCount = 0;
 		Control control;
 		bool request = false;
+
+		// DEBUG
+		bool transferring = false;
 	};
 
 	union InterruptRegister

@@ -10,7 +10,7 @@
 
 #include <stdx/bit.h>
 
-#define DMA_LOG( ... ) dbLogDebug( __VA_ARGS__ )
+#define DMA_TRACE( ... ) dbLogDebug( __VA_ARGS__ )
 
 namespace PSX
 {
@@ -84,17 +84,18 @@ uint32_t Dma::Read( uint32_t index ) const noexcept
 			{
 				case ChannelRegister::BaseAddress:
 					value =  state.baseAddress;
-					DMA_LOG( "Dma::Read -- channel %u base address [%X]", channelIndex, value );
+					DMA_TRACE( "Dma::Read -- channel %u base address [%08X]", channelIndex, value );
 					break;
 
 				case ChannelRegister::BlockControl:
-					value = static_cast<uint32_t>( state.wordCount | ( state.blockCount << 16 ) );
-					DMA_LOG( "Dma::Read -- channel %u block control [%X]", channelIndex, value );
+					value = static_cast<uint32_t>( state.wordCount ) | ( static_cast<uint32_t>( state.blockCount ) << 16 );
+					DMA_TRACE( "Dma::Read -- channel %u block control [%08X]", channelIndex, value );
 					break;
 
 				case ChannelRegister::ChannelControl:
 					value = state.control.value;
-					DMA_LOG( "Dma::Read -- channel %u channel control [%X]", channelIndex, value );
+					// reads from channel 2 frequently
+					// DMA_TRACE( "Dma::Read -- channel %u channel control [%08X]", channelIndex, value );
 					break;
 
 				default:
@@ -106,11 +107,11 @@ uint32_t Dma::Read( uint32_t index ) const noexcept
 		}
 
 		case Register::Control:
-			DMA_LOG( "Dma::Read -- control [%X]", m_controlRegister );
+			DMA_TRACE( "Dma::Read -- control [%08X]", m_controlRegister );
 			return m_controlRegister;
 
 		case Register::Interrupt:
-			DMA_LOG( "Dma::Read -- interrupt [%X]", m_interruptRegister.value );
+			DMA_TRACE( "Dma::Read -- interrupt [%08X]", m_interruptRegister.value );
 			return m_interruptRegister.value;
 
 		case Register::Unknown1:
@@ -143,19 +144,19 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 			switch ( static_cast<ChannelRegister>( registerIndex ) )
 			{
 				case ChannelRegister::BaseAddress:
-					DMA_LOG( "Dma::Write -- channel %u base address [%X]", channelIndex, value );
-					state.baseAddress = value & 0x00ffffff;
+					state.SetBaseAddress( value );
+					DMA_TRACE( "Dma::Write -- channel %u base address [%08X]", channelIndex, state.baseAddress );
 					break;
 
 				case ChannelRegister::BlockControl:
-					DMA_LOG( "Dma::Write -- channel %u block control [%X]", channelIndex, value );
+					DMA_TRACE( "Dma::Write -- channel %u block control [%08X]", channelIndex, value );
 					state.wordCount = static_cast<uint16_t>( value );
 					state.blockCount = static_cast<uint16_t>( value >> 16 );
 					break;
 
 				case ChannelRegister::ChannelControl:
 				{
-					DMA_LOG( "Dma::Write -- channel %u channel control [%X]", channelIndex, value );
+					DMA_TRACE( "Dma::Write -- channel %u channel control [%08X]", channelIndex, value );
 
 					const Channel channel = static_cast<Channel>( channelIndex );
 
@@ -178,13 +179,13 @@ void Dma::Write( uint32_t index, uint32_t value ) noexcept
 		}
 
 		case Register::Control:
-			DMA_LOG( "Dma::Write -- control [%X]", value );
+			DMA_TRACE( "Dma::Write -- control [%08X]", value );
 			m_controlRegister = value;
 			break;
 
 		case Register::Interrupt:
 		{
-			DMA_LOG( "Dma::Write -- interrupt [%X]", value );
+			DMA_TRACE( "Dma::Write -- interrupt [%08X]", value );
 
 			const bool oldIrqMasterFlag = m_interruptRegister.irqMasterFlag;
 
@@ -233,6 +234,10 @@ bool Dma::CanTransferChannel( Channel channel ) const noexcept
 Dma::DmaResult Dma::StartDma( Channel channel )
 {
 	auto& state = m_channels[ static_cast<uint32_t>( channel ) ];
+
+	dbAssert( !state.transferring );
+	state.transferring = true;
+
 	state.control.startTrigger = false;
 
 	const uint32_t startAddress = state.baseAddress;
@@ -248,7 +253,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 		{
 			const uint32_t totalWords = state.GetWordCount();
 
-			DMA_LOG( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: $%X, words: $%X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, totalWords, (int32_t)addressStep );
+			DMA_TRACE( "Dma::StartDma -- Manual [channel: %s, toRam: %i, address: $%08X, words: $%08X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, totalWords, (int32_t)addressStep );
 
 			uint32_t words = totalWords;
 			result = DmaResult::Finished;
@@ -262,7 +267,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 				}
 
 				state.wordCount = static_cast<uint16_t>( totalWords - words );
-				state.SetBaseAddress( state.baseAddress + words * addressStep );
+				state.SetBaseAddress( state.baseAddress + ( words * addressStep ) );
 			}
 
 			if ( toRam )
@@ -281,7 +286,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 			uint32_t blocksRemaining = state.GetBlockCount();
 			uint32_t currentAddress = startAddress;
 
-			DMA_LOG( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: $%X, blocks: $%X, blockSize: $%X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
+			DMA_TRACE( "Dma::StartDma -- Request [channel: %s, toRam: %i, address: $%08X, blocks: $%08X, blockSize: $%08X, step: %i", ChannelNames[ (size_t)channel ], toRam, startAddress, blocksRemaining, blockSize, (int32_t)addressStep );
 
 			cycles_t remainingCycles = state.control.choppingEnable ? state.GetChoppingDmaWindowSize() : InfiniteCycles;
 
@@ -331,7 +336,7 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 
 			uint32_t currentAddress = state.baseAddress;
 
-			DMA_LOG( "Dma::StartDma -- LinkedList [channel: %s, address: $%X]", ChannelNames[ (size_t)channel ], currentAddress );
+			DMA_TRACE( "Dma::StartDma -- LinkedList [channel: %s, address: $%08X]", ChannelNames[ (size_t)channel ], currentAddress );
 
 			cycles_t remainingCycles = state.control.choppingEnable ? state.GetChoppingDmaWindowSize() : InfiniteCycles;
 
@@ -382,12 +387,15 @@ Dma::DmaResult Dma::StartDma( Channel channel )
 			break;
 
 		case DmaResult::Chopping:
+			dbBreak();
 			m_resumeDmaEvent->Schedule( state.GetChoppingCpuWindowSize() );
 			break;
 
 		case DmaResult::WaitRequest:
 			break;
 	}
+
+	state.transferring = false;
 
 	return result;
 }
@@ -444,6 +452,7 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 			break;
 
 		case Channel::CdRom:
+			DMA_TRACE( "DMA CDROM -> RAM $%08X count=%u step=%i", address, wordCount, (int32_t)addressStep );
 			m_cdromDrive.DmaRead( dest, wordCount );
 			break;
 
@@ -499,6 +508,7 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 	switch ( channel )
 	{
 		case Channel::MDecIn:
+			DMA_TRACE( "DMA RAM $%08X -> MDEC count=%u, step=%i", address, wordCount, addressStep );
 			m_mdec.DmaIn( src, wordCount );
 			break;
 
