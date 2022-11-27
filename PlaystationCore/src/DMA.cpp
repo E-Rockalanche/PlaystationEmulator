@@ -56,6 +56,9 @@ void Dma::Reset()
 	for ( auto& channel : m_channels )
 		channel = {};
 
+	// OTC is always backwards
+	m_channels[ static_cast<size_t>( Channel::RamOrderTable ) ].control.memoryAddressStep = 1;
+
 	m_controlRegister = ControlRegisterResetValue;
 	m_interruptRegister.value = 0;
 	m_tempBuffer.clear();
@@ -428,6 +431,7 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 
 	if ( channel == Channel::RamOrderTable )
 	{
+		dbAssert( addressStep == BackwardStep );
 		ClearOrderTable( address, wordCount );
 		return;
 	}
@@ -480,7 +484,6 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 	}
 }
 
-
 void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount, uint32_t addressStep )
 {
 	dbExpects( addressStep == ForwardStep || addressStep == BackwardStep );
@@ -499,7 +502,7 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 		for ( uint32_t i = 0; i < wordCount; ++i )
 		{
 			m_tempBuffer[ i ] = m_ram.Read<uint32_t>( curAddress );
-			curAddress = ( address + addressStep ) & DmaAddressMask;
+			curAddress = ( curAddress + addressStep ) & DmaAddressMask;
 		}
 
 		src = m_tempBuffer.data();
@@ -544,7 +547,7 @@ void Dma::ResumeDma()
 	{
 		// default priority order
 
-		for ( size_t i = ChannelCount; i-- > 0; )
+		for ( int i = ChannelCount; i >= 0; --i )
 		{
 			const auto channel = static_cast<Channel>( i );
 			if ( CanTransferChannel( channel ) )
@@ -561,8 +564,8 @@ void Dma::ResumeDma()
 		// initialize empty list of channels to resume
 		struct ResumeEntry
 		{
-			Channel channel{};
-			uint32_t priority = 0;
+			Channel channel;
+			uint32_t priority;
 		};
 		std::array<ResumeEntry, ChannelCount> m_resumeChannels;
 		size_t resumeCount = 0;
