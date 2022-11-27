@@ -269,7 +269,7 @@ uint8_t CDRomDrive::Read( uint32_t registerIndex ) noexcept
 			{
 				// interrupt flag
 				const uint8_t value = m_interruptFlags | InterruptFlag::AlwaysOne;
-				CDROMDRIVE_TRACE( "CDRomDrive::Read -- interrupt flags [%02X]", value );
+				// CDROMDRIVE_TRACE( "CDRomDrive::Read -- interrupt flags [%02X]", value ); // frequent log
 				return value;
 			}
 			else
@@ -1894,7 +1894,7 @@ void CDRomDrive::RequestData() noexcept
 		dbLogWarning( "CDRomDrive::RequestData -- sector buffer %u is empty", m_readSectorBuffer );
 
 		// Duckstation reads old bytes
-		// m_dataBuffer.Push( sector.bytes.data(), DataBufferSize );
+		m_dataBuffer.Push( sector.bytes.data(), DataBufferSize );
 	}
 
 	CDROMDRIVE_TRACE( "CDRomDrive::RequestData -- loaded %u bytes from buffer %u", m_dataBuffer.Size(), m_readSectorBuffer );
@@ -1915,6 +1915,12 @@ void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
 {
 	m_currentSectorHeaders = SectorHeaders{ sector.header, sector.mode2.subHeader };
 
+	const uint32_t writeBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
+
+	// TODO: after comparing with Duckstation logs move log after adpcm branch
+	CDROMDRIVE_TRACE( "CDRomDrive::ProcessDataSector -- Read sector %u: mode %u submode 0x%02X into buffer %u",
+		m_currentPosition, sector.header.mode, sector.mode2.subHeader.subMode.value, writeBuffer );
+
 	if ( m_mode.xaadpcm && ( sector.header.mode == 2 ) )
 	{
 		if ( sector.mode2.subHeader.subMode.audio && sector.mode2.subHeader.subMode.realTime )
@@ -1924,14 +1930,14 @@ void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
 		}
 	}
 
-	m_writeSectorBuffer = ( m_writeSectorBuffer + 1 ) % NumSectorBuffers;
+	m_writeSectorBuffer = writeBuffer;
 	auto& buffer = m_sectorBuffers[ m_writeSectorBuffer ];
 
 	if ( buffer.size > 0 )
 		dbLogWarning( "CDRomDrive::ExecuteDriveState -- overwriting buffer [%u]", m_writeSectorBuffer );
 
 	if ( m_mode.ignoreBit )
-		dbLogWarning( "CDRomDrive::ExecuteDriveState -- mode ignore bit set on sector read" );
+		dbLogWarning( "CDRomDrive::ExecuteDriveState -- ignore bit set on read of sector %u", m_currentPosition );
 
 	if ( m_mode.sectorSize )
 	{
@@ -1940,6 +1946,13 @@ void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
 	}
 	else
 	{
+		// DEBUG
+		if ( sector.header.mode != 2 )
+		{
+			dbLogWarning( "CDRomDrive::ExecuteDriveState -- sector is not mode 2" );
+			dbBreak();
+		}
+
 		auto readSectorData = [&buffer]( const uint8_t* src )
 		{
 			std::copy_n( src, CDRom::DataBytesPerSector, buffer.bytes.data() );
@@ -1972,10 +1985,10 @@ void CDRomDrive::ProcessDataSector( const CDRom::Sector& sector )
 	{
 		const uint32_t missedSectors = ( m_writeSectorBuffer - m_readSectorBuffer ) % NumSectorBuffers;
 		if ( missedSectors > 1 )
-			dbLogWarning( "CDRomDrive::ProcessDataSector -- interrupt not processed in time. Missed %u sectors", missedSectors - 1 );
+			dbLogWarning( "CDRomDrive::ProcessDataSector -- interrupt not processed in time, missed %u sectors", missedSectors - 1 );
 	}
 
-	// TODO: interrupt retry
+	// TODO: interrupt retry?
 	SendAsyncStatusAndInterrupt( InterruptResponse::ReceivedData );
 }
 
