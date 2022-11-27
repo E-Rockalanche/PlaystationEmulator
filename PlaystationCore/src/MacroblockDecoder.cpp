@@ -8,6 +8,8 @@
 
 #include <algorithm>
 
+#define MDEC_TRACE( ... ) dbLogDebug( __VA_ARGS__ )
+
 namespace PSX
 {
 
@@ -59,7 +61,7 @@ void MacroblockDecoder::Reset()
 
 	m_status.value = 0;
 
-	m_remainingHalfWords = 2;
+	m_remainingHalfWords = 0;
 
 	m_enableDataOut = false;
 	m_enableDataIn = false;
@@ -121,6 +123,7 @@ uint32_t MacroblockDecoder::ReadData()
 	}
 
 	const uint32_t value = m_dataOutBuffer.Pop();
+	MDEC_TRACE( "MacroblockDecoder::ReadData -- [%08X]", value );
 
 	// process more data if we were waiting for output fifo to empty
 	if ( m_dataOutBuffer.Empty() )
@@ -131,12 +134,28 @@ uint32_t MacroblockDecoder::ReadData()
 	return value;
 }
 
+uint32_t MacroblockDecoder::Read( uint32_t offset )
+{
+	dbExpects( offset < 2 );
+	if ( offset == 0 )
+	{
+		const uint32_t value = ReadData();
+		MDEC_TRACE( "MacroblockDecoder::Read -- data [%08X]", value );
+		return value;
+	}
+	else
+	{
+		MDEC_TRACE( "MacroblockDecoder::Read -- status [%08X]", m_status.value );
+		return m_status.value;
+	}
+}
+
 void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 {
 	dbExpects( offset < 2 );
 	if ( offset == 0 )
 	{
-		// command/parameter register
+		MDEC_TRACE( "MacroblockDecoder::Write -- command/parameter [%08X]", value );
 
 		m_dataInBuffer.Push( static_cast<uint16_t>( value ) );
 		m_dataInBuffer.Push( static_cast<uint16_t>( value >> 16 ) );
@@ -144,7 +163,7 @@ void MacroblockDecoder::Write( uint32_t offset, uint32_t value )
 	}
 	else
 	{
-		// control/reset register
+		MDEC_TRACE( "MacroblockDecoder::Write -- control/reset [%08X]", value );
 
 		if ( value & ( 1u << 31 ) )
 		{
@@ -219,11 +238,13 @@ void MacroblockDecoder::ProcessInput()
 			{
 				if ( DecodeMacroblock() )
 				{
+					MDEC_TRACE( "MacroblockDecoder::ProcessInput -- decoded macroblock" );
 					ScheduleOutput();
 					return; // block needs to be read
 				}
 				else if ( m_remainingHalfWords == 0 && m_currentBlock != BlockIndex::Count )
 				{
+					MDEC_TRACE( "MacroblockDecoder::ProcessInput -- not enough data to decode macroblock" );
 					// didn't get enough data to decode all blocks. Probably because of dummy data at the end
 					m_currentBlock = 0;
 					m_currentK = 64;
@@ -249,6 +270,8 @@ void MacroblockDecoder::ProcessInput()
 				if ( m_color )
 					m_dataInBuffer.Pop( reinterpret_cast<uint16_t*>( m_colorTable.data() ), 32 ); // 64 bytes
 
+				MDEC_TRACE( "MacroblockDecoder::ProcessInput -- read quant table" );
+
 				m_remainingHalfWords = 0;
 				m_state = State::Idle;
 				break;
@@ -260,6 +283,8 @@ void MacroblockDecoder::ProcessInput()
 					return;
 
 				m_dataInBuffer.Pop( reinterpret_cast<uint16_t*>( m_scaleTable.data() ), 64 );
+
+				MDEC_TRACE( "MacroblockDecoder::ProcessInput -- read scale table" );
 
 				m_remainingHalfWords = 0;
 				m_state = State::Idle;
@@ -298,7 +323,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 	{
 		case Command::DecodeMacroblock:
 		{
-			dbLogDebug( "MacroblockDecoder::StartCommand -- DecodeMacroblock [%u]", commandWord.parameterWords );
+			MDEC_TRACE( "MacroblockDecoder::StartCommand -- DecodeMacroblock [%u]", commandWord.parameterWords );
 			m_state = State::DecodingMacroblock;
 			m_remainingHalfWords = commandWord.parameterWords * 2;
 			break;
@@ -308,7 +333,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		{
 			// The command word is followed by 64 unsigned parameter bytes for the Luminance Quant Table (used for Y1..Y4),
 			// and if Command.Bit0 was set, by another 64 unsigned parameter bytes for the Color Quant Table (used for Cb and Cr).
-			dbLogDebug( "MacroblockDecoder::StartCommand -- SetQuantTable [color=%i]", value & 0x01 );
+			MDEC_TRACE( "MacroblockDecoder::StartCommand -- SetQuantTable [color=%i]", value & 0x01 );
 			m_state = State::ReadingQuantTable;
 			m_color = value & 0x01;
 			m_remainingHalfWords = ( 1 + m_color ) * 32;
@@ -319,7 +344,7 @@ void MacroblockDecoder::StartCommand( uint32_t value )
 		{
 			// The command is followed by 64 signed halfwords with 14bit fractional part, the values should be usually/always the same values
 			// (based on the standard JPEG constants, although, MDEC(3) allows to use other values than that constants).
-			dbLogDebug( "MacroblockDecoder::StartCommand -- SetScaleTable" );
+			MDEC_TRACE( "MacroblockDecoder::StartCommand -- SetScaleTable" );
 			m_state = State::ReadingScaleTable;
 			m_remainingHalfWords = 64;
 			break;

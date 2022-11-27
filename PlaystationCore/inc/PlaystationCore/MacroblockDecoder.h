@@ -17,15 +17,7 @@ public:
 
 	void Reset();
 
-	uint32_t Read( uint32_t offset )
-	{
-		dbExpects( offset < 2 );
-		if ( offset == 0 )
-			return ReadData();
-		else
-			return m_status.value;
-	}
-
+	uint32_t Read( uint32_t offset );
 	void Write( uint32_t offset, uint32_t value );
 
 	void DmaIn( const uint32_t* input, uint32_t count );
