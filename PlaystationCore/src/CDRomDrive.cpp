@@ -177,7 +177,7 @@ void CDRomDrive::Reset()
 	m_secondResponseCommand = std::nullopt;
 
 	m_driveStatus.value = 0;
-	m_driveStatus.motorOn = ( m_cdrom != nullptr );
+	m_driveStatus.motorOn = CanReadDisk();
 	m_mode.value = 0;
 
 	m_xaFilter = XaFile{};
@@ -233,40 +233,53 @@ uint8_t CDRomDrive::Read( uint32_t registerIndex ) noexcept
 			if ( !m_responseBuffer.Empty() )
 			{
 				const uint8_t value = m_responseBuffer.Pop();
-				CDROMDRIVE_TRACE( "CDRomDrive::Read() -- response FIFO [%X]", value );
+				CDROMDRIVE_TRACE( "CDRomDrive::Read -- response FIFO [%X]", value );
 				UpdateStatus();
 				return value;
 			}
 			else
 			{
-				dbLogWarning( "CDRomDrive::Read() -- response FIFO is empty" );
+				dbLogWarning( "CDRomDrive::Read -- response FIFO is empty" );
+				// TODO: When reading further bytes: The buffer is padded with 00h's to the end of the 16-bytes, and does then restart at the first response byte
+				// (that, without receiving a new response, so it'll always return the same 16 bytes, until a new command/response has been sent/received)
 				return 0;
 			}
 		}
 
 		case 2: // data FIFO (all indices) 8 or 16 bit
 		{
-			const uint8_t value = !m_dataBuffer.Empty() ? m_dataBuffer.Pop() : uint8_t( 0xff );
-			CDROMDRIVE_TRACE( "CDRomDrive::Read() -- data fifo [%X]", value );
-			UpdateStatus();
-			return value;
+			if ( !m_dataBuffer.Empty() )
+			{
+				const uint8_t value = m_dataBuffer.Pop();
+				CDROMDRIVE_TRACE( "CDRomDrive::Read -- data fifo [%02X]", value );
+				UpdateStatus();
+				return value;
+			}
+			else
+			{
+				dbLogWarning( "CDRomDrive::Read -- data FIFO is empty" );
+				// TODO: when trying to read further bytes, then the PSX will repeat the byte at index [800h-8] or [924h-4] as padding value
+				return 0;
+			}
 		}
 
 		case 3:
-			switch ( m_status.index )
+		{
+			if ( m_status.index & 0x1 )
 			{
-				case 0:
-				case 2:
-					// interrupt enable
-					CDROMDRIVE_TRACE( "CDRomDrive::Read() -- interrupt enable [%X]", m_interruptEnable );
-					return m_interruptEnable | InterruptFlag::AlwaysOne;
-
-				case 1:
-				case 3:
-					// interrupt flag
-					return m_interruptFlags | InterruptFlag::AlwaysOne;
+				// interrupt flag
+				const uint8_t value = m_interruptFlags | InterruptFlag::AlwaysOne;
+				CDROMDRIVE_TRACE( "CDRomDrive::Read -- interrupt flags [%02X]", value );
+				return value;
 			}
-			break;
+			else
+			{
+				// interrupt enable
+				const uint8_t value = m_interruptEnable | InterruptFlag::AlwaysOne;
+				CDROMDRIVE_TRACE( "CDRomDrive::Read -- interrupt enable [%02X]", value );
+				return value;
+			}
+		}
 	}
 
 	dbBreak();
@@ -285,20 +298,20 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 			switch ( m_status.index )
 			{
 				case 0: // command register
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- send command [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- send command [%X]", value );
 					SendCommand( static_cast<Command>( value ) );
 					break;
 
 				case 1: // sound map data out
-					dbLogWarning( "CDRomDrive::Write() -- ignoring sound map data out [%X]", value );
+					dbLogWarning( "CDRomDrive::Write -- ignoring sound map data out [%X]", value );
 					break;
 
 				case 2: // sound map coding info
-					dbLogWarning( "CDRomDrive::Write() -- ignoring sound map coding info [%X]", value );
+					dbLogWarning( "CDRomDrive::Write -- ignoring sound map coding info [%X]", value );
 					break;
 
 				case 3: // audio volume for right-cd-out to right-spu-input
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- right-cd-out to right-spu-input [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- right-cd-out to right-spu-input [%X]", value );
 					m_nextVolumes.rightToRight = value;
 					break;
 			}
@@ -308,24 +321,24 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 			switch ( m_status.index )
 			{
 				case 0: // parameter fifo
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- paramater [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- paramater [%X]", value );
 					m_parameterBuffer.Push( value );
 					UpdateStatus();
 					break;
 
 				case 1: // interrupt enable
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- interrupt enable [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- interrupt enable [%X]", value );
 					m_interruptEnable = value & InterruptFlag::WriteMask;
 					CheckInterrupt();
 					break;
 
 				case 2: // left-cd-out to left-spu-input
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- left-cd-out to left-spu-input [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- left-cd-out to left-spu-input [%X]", value );
 					m_nextVolumes.leftToLeft = value;
 					break;
 
 				case 3: // right-cd-out to left-cd-input
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- right-cd-out to left-cd-input [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- right-cd-out to left-cd-input [%X]", value );
 					m_nextVolumes.rightToLeft = value;
 					break;
 			}
@@ -336,7 +349,7 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 			{
 				case 0: // request register
 				{
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- data request [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- data request [%X]", value );
 
 					if ( (value & RequestRegister::WantData) != 0 )
 						RequestData();
@@ -349,14 +362,8 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 
 				case 1: // ack interrupt flags
 				{
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- interrupt flag [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- interrupt flag [%X]", value );
 					m_interruptFlags &= ~( value & InterruptFlag::WriteMask ); // write 1 to ack/reset
-
-					if ( (value & InterruptFlag::ResetParameterFifo) != 0 )
-					{
-						m_parameterBuffer.Clear();
-						UpdateStatus();
-					}
 
 					if ( m_interruptFlags == 0 )
 					{
@@ -365,21 +372,27 @@ void CDRomDrive::Write( uint32_t registerIndex, uint8_t value ) noexcept
 						else
 							UpdateCommandEvent();
 					}
+
+					if ( ( value & InterruptFlag::ResetParameterFifo ) != 0 )
+					{
+						m_parameterBuffer.Clear();
+						UpdateStatus();
+					}
 					break;
 				}
 
 				case 2: // audio volume for left-cd-out to right-spu-input
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- left-cd-out to right-spu-input [%X]", value );
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- left-cd-out to right-spu-input [%X]", value );
 					m_nextVolumes.leftToRight = value;
 					break;
 
 				case 3: // audio volume apply (write bit5=1)
 				{
-					CDROMDRIVE_TRACE( "CDRomDrive::Write() -- audio volume apply" );
-					m_muteADPCM = ((value & AudioVolumeApply::MuteADPCM) != 0);
+					CDROMDRIVE_TRACE( "CDRomDrive::Write -- audio volume apply" );
+					m_muteADPCM = ( ( value & AudioVolumeApply::MuteADPCM ) != 0 );
 
 					// TODO: change audio volume
-					if ( (value & AudioVolumeApply::ChangeAudioVolume) != 0 )
+					if ( ( value & AudioVolumeApply::ChangeAudioVolume ) != 0 )
 						m_volumes = m_nextVolumes;
 
 					break;
@@ -430,6 +443,10 @@ void CDRomDrive::DmaRead( uint32_t* data, uint32_t count )
 		dbLogWarning( "CDRomDrive::DmaRead -- data fifo is empty" );
 		std::fill_n( reinterpret_cast<uint8_t*>( data ) + available, requestedBytes - available, uint8_t( 0xff ) );
 	}
+	else if ( !m_dataBuffer.Empty() )
+	{
+		dbLogWarning( "CDRomDrive::DmaRead -- %u bytes remaining", m_dataBuffer.Size() );
+	}
 
 	UpdateStatus();
 }
@@ -478,7 +495,7 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 			return;
 		}
 
-		dbLogWarning( "CDRomDrive::SendCommand() -- Overriding command [%X] with [%X]", *m_pendingCommand, command );
+		dbLogWarning( "CDRomDrive::SendCommand -- Overriding command [%X] with [%X]", *m_pendingCommand, command );
 		// don't cancel the command event. Keep the current pending cycles
 
 		if ( m_commandEvent->IsActive() )
@@ -491,7 +508,7 @@ void CDRomDrive::SendCommand( Command command ) noexcept
 
 	if ( m_secondResponseCommand.has_value() )
 	{
-		dbLogWarning( "CDRomDrive::SendCommand() -- Canceling second response [%X]", *m_secondResponseCommand );
+		dbLogWarning( "CDRomDrive::SendCommand -- Canceling second response [%X]", *m_secondResponseCommand );
 		m_secondResponseCommand.reset();
 		m_secondResponseEvent->Cancel();
 	}
@@ -625,9 +642,7 @@ void CDRomDrive::StartMotor() noexcept
 
 void CDRomDrive::StopMotor() noexcept
 {
-	m_driveStatus.read = false;
-	m_driveStatus.seek = false;
-	m_driveStatus.play = false;
+	m_driveStatus.Clear();
 	m_driveStatus.motorOn = false;
 
 	ResetDriveState();
@@ -648,20 +663,12 @@ void CDRomDrive::BeginSeeking( bool logical ) noexcept
 	const auto seekPos = m_seekLocation.ToLogicalSector();
 	const cycles_t seekCycles = GetSeekCycles( seekPos );
 
-	if ( !m_driveStatus.motorOn )
-	{
-		m_driveStatus.motorOn = true;
-		m_driveState = DriveState::Idle; // suppress override state warning
-	}
-
 	if ( !m_pendingSeek )
 		dbLogWarning( "CDRomDrive::BeginSeeking -- no seek location set" );
 
 	m_pendingSeek = false;
 
-	m_driveStatus.read = false;
-	m_driveStatus.play = false;
-	m_driveStatus.seek = true;
+	m_driveStatus.SetSeeking();
 
 	m_currentSectorHeaders.reset();
 
@@ -683,39 +690,55 @@ void CDRomDrive::BeginSeeking( bool logical ) noexcept
 
 void CDRomDrive::BeginReading() noexcept
 {
+	const bool afterSeek = m_pendingRead;
+
 	ClearSectorBuffers();
 	m_pendingPlay = false;
 
-	if ( m_pendingSeek )
+	if ( m_pendingSeek && !afterSeek )
 	{
+		CDROMDRIVE_TRACE( "CDRomDrive::BeginReading -- scheduling read after pending seek finishes" );
+
 		m_pendingRead = true;
-		BeginSeeking( true );
+		static constexpr bool Logical = true;
+		BeginSeeking( Logical );
 		return;
 	}
 
 	if ( IsSeeking() )
 	{
+		CDROMDRIVE_TRACE( "CDRomDrive::BeginReading -- scheduling read after current seek finishes" );
+
 		m_pendingRead = true;
 		return;
 	}
+
+	CDROMDRIVE_TRACE( "CDRomDrive::BeginReading -- [%u]", m_currentPosition );
 
 	ResetAudioDecoder();
 
 	m_pendingRead = false;
 
-	m_driveStatus.seek = false;
-	m_driveStatus.play = false;
-	m_driveStatus.read = true;
+	// Duckstation sets the read bit after the first sector is read
+	m_driveStatus.SetReading();
 
 	m_readSectorBuffer = 0;
 	m_writeSectorBuffer = 0;
 
-	ScheduleDriveEvent( DriveState::Reading, GetReadCycles() );
+	cycles_t cycles = GetReadCycles();
+
+	// first read takes longer
+	if ( !afterSeek )
+		cycles += GetSeekCycles( m_currentPosition );
+
+	ScheduleDriveEvent( DriveState::Reading, cycles );
 }
 
 void CDRomDrive::BeginPlaying( uint8_t trackBCD ) noexcept
 {
 	dbAssert( m_cdrom );
+
+	const bool afterSeek = m_pendingPlay;
 
 	m_pendingRead = false;
 
@@ -736,8 +759,10 @@ void CDRomDrive::BeginPlaying( uint8_t trackBCD ) noexcept
 		m_pendingSeek = true;
 	}
 
-	if ( m_pendingSeek )
+	if ( m_pendingSeek /* && !afterSeek */ )
 	{
+		CDROMDRIVE_TRACE( "CDRomDrive::BeginPlaying -- scheduling play after pending seek finishes" );
+
 		m_pendingPlay = true;
 		BeginSeeking( false );
 		return;
@@ -747,9 +772,8 @@ void CDRomDrive::BeginPlaying( uint8_t trackBCD ) noexcept
 
 	m_pendingPlay = false;
 
-	m_driveStatus.seek = false;
-	m_driveStatus.play = true;
-	m_driveStatus.read = false;
+	// Duckstation sets the play bit after the first sector is read
+	m_driveStatus.SetPlaying();
 
 	ClearSectorBuffers();
 	m_readSectorBuffer = 0;
@@ -757,7 +781,11 @@ void CDRomDrive::BeginPlaying( uint8_t trackBCD ) noexcept
 
 	m_currentSectorHeaders.reset();
 
-	ScheduleDriveEvent( DriveState::Playing, GetReadCycles() );
+	cycles_t cycles = GetReadCycles();
+	if ( !afterSeek )
+		cycles += GetSeekCycles( m_currentPosition );
+
+	ScheduleDriveEvent( DriveState::Playing, cycles );
 }
 
 bool CDRomDrive::CompleteSeek( bool logical ) noexcept
@@ -939,7 +967,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 	dbAssert( m_pendingCommand );
 	const Command command = *m_pendingCommand;
 	m_pendingCommand.reset();
-	CDROMDRIVE_TRACE( "CDRomDrive::ExecuteCommand -- [%02X]", command );
+	CDROMDRIVE_TRACE( "CDRomDrive::ExecuteCommand -- command=%02X stat=%02X", command, m_driveStatus.value );
 
 	// explicitely cancel so we don't keep pending cycles on next command
 	m_commandEvent->Cancel();
@@ -992,7 +1020,8 @@ void CDRomDrive::ExecuteCommand() noexcept
 			const bool oldSpeed = m_mode.doubleSpeed;
 
 			m_mode.value = m_parameterBuffer.Pop();
-			CDROMDRIVE_TRACE( "CDRomDrive::ExecuteCommand -- SetMode [cdda=%i, autoPause: %i, report=%i, xaFilter=%i, ignore=%i, sectorSize=%i, xaadpcm=%i, doubleSpeed=%i]",
+			CDROMDRIVE_TRACE( "CDRomDrive::ExecuteCommand -- SetMode [%0X] [cdda=%i, autoPause: %i, report=%i, xaFilter=%i, ignore=%i, sectorSize=%i, xaadpcm=%i, doubleSpeed=%i]",
+				m_mode.value,
 				m_mode.cdda, m_mode.autoPause, m_mode.report, m_mode.xaFilter, m_mode.ignoreBit, m_mode.sectorSize, m_mode.xaadpcm, m_mode.doubleSpeed );
 
 			if ( m_mode.doubleSpeed != oldSpeed )
@@ -1031,9 +1060,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			SendStatusAndInterrupt();
 
 			m_mode.value = 0;
-			m_driveStatus.seek = false;
-			m_driveStatus.read = false;
-			m_driveStatus.play = false;
+			m_driveStatus.Clear();
 
 			if ( m_driveState != DriveState::StartingMotor )
 				ResetDriveState();
@@ -1169,6 +1196,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 			if ( IsSeeking() )
 			{
 				// Duckstation says this is supposed to produce an error, but it completes the seek instead
+				dbLogWarning( "CDRomDrive::ExecuteCommand -- Paused while seeking. Jumping to seek target" );
 				m_pendingRead = false;
 				m_pendingPlay = false;
 				const bool logical = ( m_driveState == DriveState::SeekingLogical );
@@ -1177,9 +1205,7 @@ void CDRomDrive::ExecuteCommand() noexcept
 
 			ResetDriveState();
 
-			m_driveStatus.read = false;
-			m_driveStatus.play = false;
-			m_driveStatus.seek = false;
+			m_driveStatus.Clear();
 
 			// from Duckstation: "Reset audio buffer here - control room cutscene audio repeats in Dino Crisis otherwise."
 			ResetAudioDecoder();
@@ -1655,23 +1681,22 @@ void CDRomDrive::ExecuteCommandSecondResponse() noexcept
 		case Command::GetID:
 		{
 			CDROMDRIVE_TRACE( "CDRomDrive::ExecuteCommandSecondResponse -- GetID" );
-			m_driveStatus.read = false;
-			m_driveStatus.seek = false;
-			m_driveStatus.play = false;
-			m_driveStatus.motorOn = ( m_cdrom != nullptr );
+			m_driveStatus.Clear();
+			m_driveStatus.motorOn = CanReadDisk();
 
+			static constexpr size_t ResponseSize = 8;
 			if ( CanReadDisk() )
 			{
 				CDROMDRIVE_TRACE( "CDRomDrive::ExecuteCommandSecondResponse -- SCEA" );
-				static const uint8_t LicensedResponse[]{ 0x02, 0x00, 0x20, 0x00, 'S', 'C', 'E', 'A' };
-				m_secondResponseBuffer.Push( LicensedResponse, 8 );
+				static const std::array<uint8_t, ResponseSize> LicensedResponse{ 0x02, 0x00, 0x20, 0x00, 'S', 'C', 'E', 'A' };
+				m_secondResponseBuffer.Push( LicensedResponse.data(), ResponseSize );
 				m_queuedInterrupt = InterruptResponse::Second;
 			}
 			else
 			{
 				CDROMDRIVE_TRACE( "CDRomDrive::ExecuteCommandSecondResponse -- no disk" );
-				static const uint8_t NoDiskResponse[]{ 0x08, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-				m_secondResponseBuffer.Push( NoDiskResponse, 8 );
+				static const std::array<uint8_t, ResponseSize> NoDiskResponse{ 0x08, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+				m_secondResponseBuffer.Push( NoDiskResponse.data(), ResponseSize );
 				m_queuedInterrupt = InterruptResponse::Error;
 			}
 			break;
@@ -1701,9 +1726,7 @@ void CDRomDrive::ExecuteCommandSecondResponse() noexcept
 void CDRomDrive::SendDataEndResponse() noexcept
 {
 	SendAsyncStatusAndInterrupt( InterruptResponse::DataEnd );
-	m_driveStatus.play = false;
-	m_driveStatus.read = false;
-	m_driveStatus.seek = false;
+	m_driveStatus.Clear();
 	m_driveState = DriveState::Idle;
 }
 
@@ -1719,10 +1742,8 @@ void CDRomDrive::ExecuteDriveState() noexcept
 
 		case DriveState::StartingMotor:
 		{
-			CDROMDRIVE_TRACE( " CDRomDrive::ExecuteDriveState -- motor on complete" );
-			m_driveStatus.read = false;
-			m_driveStatus.seek = false;
-			m_driveStatus.play = false;
+			CDROMDRIVE_TRACE( "CDRomDrive::ExecuteDriveState -- motor on complete" );
+			m_driveStatus.Clear();
 			m_driveStatus.motorOn = true;
 			break;
 		}
@@ -1736,7 +1757,7 @@ void CDRomDrive::ExecuteDriveState() noexcept
 
 		case DriveState::OpeningShell:
 		{
-			CDROMDRIVE_TRACE( " CDRomDrive::ExecuteDriveState -- shell opened" );
+			CDROMDRIVE_TRACE( "CDRomDrive::ExecuteDriveState -- shell opened" );
 
 			if ( m_cdrom )
 				StartMotor();
@@ -1754,15 +1775,17 @@ void CDRomDrive::ExecuteDriveState() noexcept
 
 				if ( m_pendingRead )
 				{
+					dbAssert( !m_pendingPlay );
 					BeginReading();
 				}
 				else if ( m_pendingPlay )
 				{
+					dbAssert( !m_pendingRead );
 					BeginPlaying( m_playingTrackNumberBCD );
 				}
 				else
 				{
-					m_driveStatus.seek = false;
+					m_driveStatus.Clear();
 
 					// response only sent if there is no pending play or read
 					SendAsyncStatusAndInterrupt();
@@ -1772,7 +1795,8 @@ void CDRomDrive::ExecuteDriveState() noexcept
 			{
 				dbLogWarning( "CDRomDrive::ExecuteDriveState -- seek failed [%u:%u:%u]", m_seekLocation.minute, m_seekLocation.second, m_seekLocation.sector );
 
-				m_driveStatus.seek = false;
+				m_driveStatus.Clear();
+
 				m_pendingRead = false;
 				m_pendingPlay = false;
 
@@ -1789,6 +1813,11 @@ void CDRomDrive::ExecuteDriveState() noexcept
 			CDROMDRIVE_TRACE( "CDRomDrive::ExecuteDriveState -- read complete" );
 
 			m_currentPosition = m_cdrom->GetCurrentSeekSector();
+
+			if ( IsPlaying() )
+				m_driveStatus.SetPlaying();
+			else
+				m_driveStatus.SetReading();
 
 			CDRom::Sector sector;
 			if ( !m_cdrom->ReadSector( sector, m_lastSubQ ) )
@@ -1841,13 +1870,15 @@ void CDRomDrive::ExecuteDriveState() noexcept
 
 	if ( m_interruptFlags == 0 && m_queuedInterrupt != 0 )
 		ShiftQueuedInterrupt();
+	else
+		UpdateStatus();
 }
 
 void CDRomDrive::RequestData() noexcept
 {
 	if ( !m_dataBuffer.Empty() )
 	{
-		CDROMDRIVE_TRACE( "CDRomDrive::RequestData -- data buffer is not empty yet [%u]", m_dataBuffer.Size() );
+		dbLogWarning( "CDRomDrive::RequestData -- data buffer is not empty yet [%u]", m_dataBuffer.Size() );
 		return;
 	}
 
@@ -1860,9 +1891,10 @@ void CDRomDrive::RequestData() noexcept
 	}
 	else
 	{
-		// Duckstation reads old bytes
 		dbLogWarning( "CDRomDrive::RequestData -- sector buffer %u is empty", m_readSectorBuffer );
-		m_dataBuffer.Push( sector.bytes.data(), DataBufferSize );
+
+		// Duckstation reads old bytes
+		// m_dataBuffer.Push( sector.bytes.data(), DataBufferSize );
 	}
 
 	CDROMDRIVE_TRACE( "CDRomDrive::RequestData -- loaded %u bytes from buffer %u", m_dataBuffer.Size(), m_readSectorBuffer );

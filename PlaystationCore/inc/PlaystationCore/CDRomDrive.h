@@ -152,6 +152,37 @@ private:
 
 	union DriveStatus
 	{
+		void SetSeeking()
+		{
+			motorOn = true;
+			read = false;
+			seek = true;
+			play = false;
+		}
+
+		void SetReading()
+		{
+			motorOn = true;
+			read = true;
+			seek = false;
+			play = false;
+		}
+
+		void SetPlaying()
+		{
+			motorOn = true;
+			read = false;
+			seek = false;
+			play = true;
+		}
+
+		void Clear()
+		{
+			read = false;
+			seek = false;
+			play = false;
+		}
+
 		struct
 		{
 			uint8_t : 1;
