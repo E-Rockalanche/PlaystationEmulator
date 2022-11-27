@@ -436,13 +436,16 @@ void Dma::TransferToRam( Channel channel, uint32_t address, uint32_t wordCount, 
 		return;
 	}
 
-	uint32_t* dest = reinterpret_cast<uint32_t*>( m_ram.Data() + address );
-
+	uint32_t* dest = nullptr;
 	const bool useTempBuffer = NeedsTempBuffer( address, wordCount, addressStep );
 	if ( useTempBuffer )
 	{
 		m_tempBuffer.resize( wordCount );
 		dest = m_tempBuffer.data();
+	}
+	else
+	{
+		dest = reinterpret_cast<uint32_t*>( m_ram.Data() + address );
 	}
 
 	switch ( channel )
@@ -490,8 +493,7 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 
 	address &= DmaAddressMask;
 
-	const uint32_t* src = reinterpret_cast<const uint32_t*>( m_ram.Data() + address );
-
+	const uint32_t* src = nullptr;
 	if ( NeedsTempBuffer( address, wordCount, addressStep ) )
 	{
 		// backward step or wrapping
@@ -506,6 +508,10 @@ void Dma::TransferFromRam( Channel channel, uint32_t address, uint32_t wordCount
 		}
 
 		src = m_tempBuffer.data();
+	}
+	else
+	{
+		src = reinterpret_cast<const uint32_t*>( m_ram.Data() + address );
 	}
 
 	switch ( channel )
