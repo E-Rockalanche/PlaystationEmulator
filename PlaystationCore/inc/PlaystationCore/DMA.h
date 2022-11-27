@@ -129,7 +129,7 @@ private:
 	{
 		void UpdateIrqMasterFlag() noexcept
 		{
-			irqMasterFlag = forceIrq || ( irqMasterEnable && ( ( irqEnables & irqFlags ) != 0 ) );
+			irqMasterFlag = bool( forceIrq ) || bool( bool( irqMasterEnable ) && bool( ( irqEnables & irqFlags ) != 0 ) );
 		}
 
 		struct
@@ -188,9 +188,10 @@ private:
 
 	void FinishTransfer( Channel channel ) noexcept;
 
-	static constexpr bool NeedsTempBuffer( uint32_t address, uint32_t wordCount, uint32_t addressStep )
+	static constexpr bool NeedsTempBuffer( uint32_t address, uint32_t wordCount, uint32_t addressStep ) noexcept
 	{
-		return ( addressStep == BackwardStep ) || ( ( address & DmaAddressMask ) + wordCount * 4 > RamSize );
+		return ( addressStep == BackwardStep ) ||								// transferring memory backwards
+			( ( ( address + wordCount * 4 ) & DmaAddressMask ) <= address );	// wrapping ram address space
 	}
 
 	// DMA is using DRAM Hyper Page mode, allowing it to access DRAM rows at 1 clock cycle per word
