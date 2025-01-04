@@ -172,7 +172,7 @@ private:
 	static_assert( sizeof( ICacheFlags ) == 4 );
 
 private:
-	template <typename T, bool Read>
+	template <typename T, bool ReadMode>
 	void Access( uint32_t address, T& value ) noexcept;
 
 	// returns byte shift amount for unaligned register address
@@ -196,34 +196,34 @@ private:
 		return static_cast<T>( value >> GetShift<RegType>( address ) );
 	}
 
-	template <typename T, bool Read, typename MemoryType>
+	template <typename T, bool ReadMode, typename MemoryType>
 	STDX_forceinline static void AccessMemory( MemoryType& memory, uint32_t offset, T& value ) noexcept
 	{
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 			value = memory.template Read<T>( offset );
 		else
 			memory.template Write<T>( offset, value );
 	}
 
-	template <typename T, bool Read, typename Component>
+	template <typename T, bool ReadMode, typename Component>
 	STDX_forceinline static void AccessComponent32( Component& component, uint32_t offset, T& value ) noexcept
 	{
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 			value = ShiftValueForRead<T>( component.Read( offset / 4 ), offset );
 		else
 			component.Write( offset / 4, ShiftValueForWrite<uint32_t>( value, offset ) );
 	}
 
-	template <typename T, bool Read>
+	template <typename T, bool ReadMode>
 	void AccessControllerPort( uint32_t offset, T& value ) noexcept;
 
-	template <typename T, bool Read>
+	template <typename T, bool ReadMode>
 	void AccessSerialPort( uint32_t offset, T& value ) noexcept;
 
-	template <typename T, bool Read>
+	template <typename T, bool ReadMode>
 	void AccessSpu( uint32_t offset, T& value ) noexcept;
 
-	template <typename T, bool Read>
+	template <typename T, bool ReadMode>
 	void AccessCDRomDrive( uint32_t offset, T& value ) noexcept;
 
 	bool CheckAndPrefetchICache( uint32_t address ) noexcept;

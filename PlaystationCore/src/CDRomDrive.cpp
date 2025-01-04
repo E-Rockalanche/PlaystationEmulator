@@ -424,7 +424,7 @@ void CDRomDrive::SetCDRom( std::unique_ptr<CDRom> cdrom )
 void CDRomDrive::DmaRead( uint32_t* data, uint32_t count )
 {
 	const uint32_t requestedBytes = count * 4;
-	const uint32_t available = std::min( requestedBytes, m_dataBuffer.Size() );
+	const uint32_t available = std::min( requestedBytes, static_cast<uint32_t>( m_dataBuffer.Size() ) );
 	m_dataBuffer.Pop( reinterpret_cast<uint8_t*>( data ), available );
 
 	if ( available < requestedBytes )
@@ -1876,8 +1876,8 @@ void CDRomDrive::ProcessCDDASector( const CDRom::Sector& sector )
 
 	if ( m_audioBuffer.Capacity() < NumFrames )
 	{
-		const uint32_t toDrop = NumFrames - m_audioBuffer.Capacity();
-		dbLogWarning( "CDRomDrive::ProcessCDDASector -- dropping %u audio samples", toDrop );
+		const size_t toDrop = NumFrames - m_audioBuffer.Capacity();
+		dbLogWarning( "CDRomDrive::ProcessCDDASector -- dropping %zu audio samples", toDrop );
 		m_audioBuffer.Ignore( toDrop );
 	}
 

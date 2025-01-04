@@ -783,19 +783,19 @@ void Renderer::DrawBatch()
 		// opaque only
 		glDisable( GL_BLEND );
 		glUniform1i( m_drawTransparentPixelsLoc, false );
-		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
+		glDrawArrays( GL_TRIANGLES, 0, static_cast<GLsizei>( m_vertices.size() ) );
 
 		// transparent only
 		glEnable( GL_BLEND );
 		glUniform1i( m_drawOpaquePixelsLoc, false );
 		glUniform1i( m_drawTransparentPixelsLoc, true );
-		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
+		glDrawArrays( GL_TRIANGLES, 0, static_cast<GLsizei>( m_vertices.size() ) );
 
 		glUniform1i( m_drawOpaquePixelsLoc, true );
 	}
 	else
 	{
-		glDrawArrays( GL_TRIANGLES, 0, m_vertices.size() );
+		glDrawArrays( GL_TRIANGLES, 0, static_cast<GLsizei>( m_vertices.size() ) );
 	}
 
 	dbCheckRenderErrors();

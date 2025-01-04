@@ -69,7 +69,7 @@ public:
 	}
 	
 	template <typename T>
-	static Buffer Create( BufferUsage usage, GLsizei size, const T* data = nullptr )
+	static Buffer Create( BufferUsage usage, size_t size, const T* data = nullptr )
 	{
 		Buffer buffer = Create();
 		buffer.SetData( usage, size * sizeof( T ), data );
@@ -109,18 +109,18 @@ public:
 
 	// reallocates buffer to new size
 	template <typename T>
-	void SetData( BufferUsage usage, GLsizei size, const T* data = nullptr )
+	void SetData( BufferUsage usage, size_t size, const T* data = nullptr )
 	{
 		Bind();
-		glBufferData( static_cast<GLuint>( Type ), size * sizeof( T ), data, static_cast<GLuint>( usage ) );
+		glBufferData( static_cast<GLuint>( Type ), static_cast<GLsizei>( size * sizeof( T ) ), data, static_cast<GLuint>( usage ) );
 		dbCheckRenderErrors();
 	}
 
 	template <typename T>
-	void SubData( GLsizei size, const T* data, size_t offset = 0 )
+	void SubData( size_t size, const T* data, size_t offset = 0 )
 	{
 		Bind();
-		glBufferSubData( static_cast<GLuint>( Type ), offset * sizeof( T ), size * sizeof( T ), data );
+		glBufferSubData( static_cast<GLuint>( Type ), offset * sizeof( T ), static_cast<GLsizei>( size * sizeof( T ) ), data );
 		dbCheckRenderErrors();
 	}
 

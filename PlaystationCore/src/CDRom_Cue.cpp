@@ -57,7 +57,7 @@ bool CDRom_Cue::Open( const fs::path& filename )
 		if ( cueTrack == nullptr )
 			break;
 
-		uint32_t fileIndex = FindFileEntryIndex( cueFile->filename );
+		size_t fileIndex = FindFileEntryIndex( cueFile->filename );
 		uint32_t fileSectorCount = 0;
 
 		const fs::path binFilename = parentDir / cueFile->filename;
@@ -81,7 +81,7 @@ bool CDRom_Cue::Open( const fs::path& filename )
 				return false;
 			}
 
-			fileIndex = static_cast<uint32_t>( m_binFiles.size() );
+			fileIndex = m_binFiles.size();
 			m_binFiles.push_back( FileEntry{ cueFile->filename, std::move( fin ), fileSectorCount } );
 		}
 		else
@@ -146,7 +146,7 @@ bool CDRom_Cue::Open( const fs::path& filename )
 			pregap.trackType = trackType;
 			pregap.pregap = true;
 
-			pregap.fileIndex = fileIndex;
+			pregap.fileIndex = static_cast<uint32_t>( fileIndex );
 			pregap.filePosition = trackFileStart - pregapLength;
 
 			m_indices.push_back( pregap );
@@ -215,7 +215,7 @@ bool CDRom_Cue::Open( const fs::path& filename )
 			index.length = indexLength;
 			index.trackType = trackType;
 			index.pregap = false;
-			index.fileIndex = fileIndex;
+			index.fileIndex = static_cast<uint32_t>( fileIndex );
 			index.filePosition = trackFileStart + currentTrackPosition;
 			m_indices.push_back( index );
 

@@ -947,7 +947,7 @@ void Spu::WriteVoiceRegister( uint32_t offset, uint16_t value ) noexcept
 void Spu::DmaWrite( const uint32_t* dataIn, uint32_t count ) noexcept
 {
 	const uint32_t halfwords = count * 2;
-	const uint32_t available = std::min( halfwords, m_transferBuffer.Capacity() );
+	const uint32_t available = std::min( halfwords, static_cast<uint32_t>( m_transferBuffer.Capacity() ) );
 
 	if ( available < halfwords )
 		dbLogWarning( "Spu::DmaWrite -- fifo buffer overflow" );
@@ -963,7 +963,7 @@ void Spu::DmaRead( uint32_t* dataOut, uint32_t count ) noexcept
 	const uint32_t halfwords = count * 2;
 	uint16_t* dest = reinterpret_cast<uint16_t*>( dataOut );
 
-	const uint32_t available = std::min( halfwords, m_transferBuffer.Size() );
+	const uint32_t available = std::min( halfwords, static_cast<uint32_t>( m_transferBuffer.Size() ) );
 
 	for ( uint32_t i = 0; i < available; ++i )
 		dest[ i ] = m_transferBuffer.Pop();
@@ -1089,7 +1089,7 @@ void Spu::UpdateDmaRequest() noexcept
 
 void Spu::ScheduleTransferEvent() noexcept
 {
-	auto schedule = [this]( uint32_t halfwords )
+	auto schedule = [this]( size_t halfwords )
 	{
 		if ( halfwords == 0 )
 			m_transferEvent->Cancel();
@@ -1146,8 +1146,8 @@ void Spu::UpdateTransferEvent( cycles_t cycles ) noexcept
 
 void Spu::ScheduleGenerateSamplesEvent() noexcept
 {
-	const uint32_t framesForQueue = std::min<uint32_t>( m_audioQueue.Capacity() / 2, m_audioQueue.GetDeviceBufferSize() ); // two samples per frame
-	const uint32_t batchFrames = ( m_control.enable && m_control.irqEnable ) ? 1 : std::max<uint32_t>( framesForQueue, 1 );
+	const uint32_t framesForQueue = static_cast<uint32_t>( std::min( m_audioQueue.Capacity() / 2, m_audioQueue.GetDeviceBufferSize() ) ); // two samples per frame
+	const uint32_t batchFrames = ( m_control.enable && m_control.irqEnable ) ? 1u : std::max( framesForQueue, 1u );
 	const cycles_t cycles = batchFrames * CyclesPerAudioFrame - m_pendingCarryCycles;
 	m_generateSamplesEvent->Schedule( cycles );
 }
@@ -1173,7 +1173,7 @@ void Spu::GenerateSamples( cycles_t cycles ) noexcept
 	while ( remainingFrames > 0 )
 	{
 		auto writer = m_audioQueue.GetBatchWriter();
-		const size_t batchFrames = std::min( remainingFrames, writer.GetBatchSize() / 2 );
+		const uint32_t batchFrames = std::min( remainingFrames, static_cast<uint32_t>( writer.GetBatchSize() / 2u ) );
 
 		for ( uint32_t i = 0; i < batchFrames; ++i )
 		{

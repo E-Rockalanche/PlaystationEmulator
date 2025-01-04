@@ -313,7 +313,7 @@ void Gpu::ProcessCommandBuffer() noexcept
 					dbAssert( m_vramTransferState.has_value() );
 					dbAssert( !m_vramTransferState->IsFinished() );
 
-					const uint32_t available = std::min( m_remainingParamaters, m_commandBuffer.Size() );
+					const uint32_t available = std::min( m_remainingParamaters, static_cast<uint32_t>( m_commandBuffer.Size() ) );
 					for ( uint32_t i = 0; i < available; ++i )
 						m_transferBuffer.push_back( m_commandBuffer.Pop() );
 
@@ -345,7 +345,7 @@ void Gpu::ProcessCommandBuffer() noexcept
 					static constexpr uint32_t TerminationCode = 0x50005000; // supposedly 0x55555555, but Wild Arms 2 uses 0x50005000
 
 					const uint32_t paramsPerVertex = RenderCommand{ m_transferBuffer.front() }.shading ? 2 : 1;
-					uint32_t paramIndex = m_transferBuffer.size();
+					const uint32_t paramIndex = static_cast<uint32_t>( m_transferBuffer.size() );
 
 					while ( !m_commandBuffer.Empty() )
 					{
@@ -405,7 +405,7 @@ void Gpu::DmaIn( const uint32_t* input, uint32_t count ) noexcept
 	if ( count > m_commandBuffer.Capacity() )
 	{
 		dbLogWarning( "GPU::DmaIn -- command buffer overrun" );
-		count = m_commandBuffer.Capacity();
+		count = static_cast<uint32_t>( m_commandBuffer.Capacity() );
 	}
 
 	m_commandBuffer.Push( input, count );
@@ -477,7 +477,7 @@ void Gpu::FinishVRamWrite() noexcept
 	}
 	else
 	{
-		const uint32_t pixelCount = m_transferBuffer.size() * 2;
+		const uint32_t pixelCount = static_cast<uint32_t>( m_transferBuffer.size() * 2u );
 		const uint32_t fullLines = pixelCount / state.width;
 		const uint32_t lastLineWidth = pixelCount % state.width;
 

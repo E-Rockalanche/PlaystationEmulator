@@ -37,12 +37,12 @@ void MemoryMap::Reset()
 	m_icacheFlags.fill( ICacheFlags() );
 }
 
-template <typename T, bool Read>
+template <typename T, bool ReadMode>
 void MemoryMap::Access( uint32_t address, T& value ) noexcept
 {
 	static_assert( std::is_unsigned_v<T> ); // don't want to duplicate Access function for signed and unsigned types
 
-	cycles_t cycles = Read ? DeviceReadCycles : 0;
+	cycles_t cycles = ReadMode ? DeviceReadCycles : 0;
 
 	// upper 3 bits determine segment
 	// convert virtual address to physical address
@@ -50,14 +50,14 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 
 	if ( address <= RamMirrorSize ) // ram starts at 0
 	{
-		AccessMemory<T, Read>( m_ram, address % RamSize, value );
-		if constexpr ( Read )
+		AccessMemory<T, ReadMode>( m_ram, address % RamSize, value );
+		if constexpr ( ReadMode )
 			cycles = RamReadCycles;
 	}
 	else if ( Within( address, BiosStart, BiosSize ) )
 	{
 		// read only
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 		{
 			value = m_bios.Read<T>( address - BiosStart );
 			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Bios );
@@ -65,64 +65,64 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	}
 	else if ( Within( address, ScratchpadStart, ScratchpadSize ) )
 	{
-		AccessMemory<T, Read>( m_scratchpad, address - ScratchpadStart, value );
+		AccessMemory<T, ReadMode>( m_scratchpad, address - ScratchpadStart, value );
 		cycles = 1;
 	}
 	else if ( Within( address, MemControlStart, MemControlSize ) )
 	{
-		AccessComponent32<T, Read>( m_memoryControl, address - MemControlStart, value );
+		AccessComponent32<T, ReadMode>( m_memoryControl, address - MemControlStart, value );
 	}
 	else if ( Within( address, ControllerStart, ControllerSize ) )
 	{
-		AccessControllerPort<T, Read>( address - ControllerStart, value );
+		AccessControllerPort<T, ReadMode>( address - ControllerStart, value );
 	}
 	else if ( Within( address, SerialPortStart, SerialPortSize ) )
 	{
-		AccessSerialPort<T, Read>( address - SerialPortStart, value );
+		AccessSerialPort<T, ReadMode>( address - SerialPortStart, value );
 	}
 	else if ( Within( address, MemControlRamStart, MemControlRamSize ) )
 	{
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 			value = ShiftValueForRead<T>( m_memoryControl.ReadRamSize(), address );
 		else
 			m_memoryControl.WriteRamSize( ShiftValueForWrite<uint32_t>( value, address ) );
 	}
 	else if ( Within( address, InterruptControlStart, InterruptControlSize ) )
 	{
-		AccessComponent32<T, Read>( m_interruptControl, address - InterruptControlStart, value );
+		AccessComponent32<T, ReadMode>( m_interruptControl, address - InterruptControlStart, value );
 	}
 	else if ( Within( address, DmaStart, DmaSize ) )
 	{
-		AccessComponent32<T, Read>( m_dma, address - DmaStart, value );
+		AccessComponent32<T, ReadMode>( m_dma, address - DmaStart, value );
 	}
 	else if ( Within( address, TimersStart, TimersSize ) )
 	{
-		AccessComponent32<T, Read>( m_timers, address - TimersStart, value );
+		AccessComponent32<T, ReadMode>( m_timers, address - TimersStart, value );
 	}
 	else if ( Within( address, CdRomStart, CdRomSize ) )
 	{
-		AccessCDRomDrive<T, Read>( address - CdRomStart, value );
+		AccessCDRomDrive<T, ReadMode>( address - CdRomStart, value );
 
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::CDRom );
 	}
 	else if ( Within( address, GpuStart, GpuSize ) )
 	{
-		AccessComponent32<T, Read>( m_gpu, address - GpuStart, value );
+		AccessComponent32<T, ReadMode>( m_gpu, address - GpuStart, value );
 	}
 	else if ( Within( address, MdecStart, MdecSize ) )
 	{
-		AccessComponent32<T, Read>( m_mdec, address - MdecStart, value );
+		AccessComponent32<T, ReadMode>( m_mdec, address - MdecStart, value );
 	}
 	else if ( Within( address, SpuStart, SpuSize ) )
 	{
-		AccessSpu<T, Read>( address - SpuStart, value );
-		if constexpr ( Read )
+		AccessSpu<T, ReadMode>( address - SpuStart, value );
+		if constexpr ( ReadMode )
 			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Spu );
 	}
 	else if ( Within( address, CacheControlStart, CacheControlSize ) )
 	{
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 		{
 			value = ShiftValueForRead<T>( m_memoryControl.ReadCacheControl(), address );
 			cycles = 1;
@@ -135,7 +135,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	else if ( Within( address, Expansion1Start, Expansion1Size ) )
 	{
 		// TODO
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 		{
 			value = T( -1 );
 			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Expansion1 );
@@ -143,7 +143,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	}
 	else if ( Within( address, Expansion2Start, Expansion2Size ) )
 	{
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 		{
 			value = m_dualSerialPort
 				? static_cast<T>( m_dualSerialPort->Read( address - Expansion2Start ) )
@@ -158,7 +158,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	}
 	else if ( Within( address, Expansion3Start, Expansion3Size ) )
 	{
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 		{
 			value = T( -1 );
 			cycles = m_memoryControl.GetAccessCycles<T>( MemoryControl::DelaySizeType::Expansion3 );
@@ -166,7 +166,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 	}
 	else
 	{
-		if constexpr ( Read )
+		if constexpr ( ReadMode )
 		{
 			dbLogWarning( "Unhandled memory read [%X]", address );
 			value = T( -1 );
@@ -178,7 +178,7 @@ void MemoryMap::Access( uint32_t address, T& value ) noexcept
 		}
 	}
 
-	if constexpr ( Read )
+	if constexpr ( ReadMode )
 		m_eventManager.AddCycles( cycles );
 }
 
@@ -202,10 +202,10 @@ void MemoryMap::Access<uint32_t, true>( uint32_t address, uint32_t& value ) noex
 template
 void MemoryMap::Access<uint32_t, false>( uint32_t address, uint32_t& value ) noexcept;
 
-template <typename T, bool Read>
+template <typename T, bool ReadMode>
 STDX_forceinline void MemoryMap::AccessControllerPort( uint32_t offset, T& value ) noexcept
 {
-	if constexpr ( Read )
+	if constexpr ( ReadMode )
 	{
 		switch ( offset / 2 )
 		{
@@ -250,10 +250,10 @@ STDX_forceinline void MemoryMap::AccessControllerPort( uint32_t offset, T& value
 	}
 }
 
-template <typename T, bool Read>
+template <typename T, bool ReadMode>
 STDX_forceinline void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) noexcept
 {
-	if constexpr ( Read )
+	if constexpr ( ReadMode )
 	{
 		switch ( offset / 2 )
 		{
@@ -298,12 +298,12 @@ STDX_forceinline void MemoryMap::AccessSerialPort( uint32_t offset, T& value ) n
 	}
 }
 
-template <typename T, bool Read>
+template <typename T, bool ReadMode>
 STDX_forceinline void MemoryMap::AccessSpu( uint32_t offset, T& value ) noexcept
 {
 	const auto shortOffset = offset / 2;
 
-	if constexpr ( Read )
+	if constexpr ( ReadMode )
 	{
 		if constexpr ( sizeof( T ) >= 2 )
 			value = m_spu.Read( shortOffset );
@@ -327,10 +327,10 @@ STDX_forceinline void MemoryMap::AccessSpu( uint32_t offset, T& value ) noexcept
 	}
 }
 
-template <typename T, bool Read>
+template <typename T, bool ReadMode>
 STDX_forceinline void MemoryMap::AccessCDRomDrive( uint32_t offset, T& value ) noexcept
 {
-	if constexpr ( Read )
+	if constexpr ( ReadMode )
 	{
 		value = m_cdRomDrive.Read( offset );
 

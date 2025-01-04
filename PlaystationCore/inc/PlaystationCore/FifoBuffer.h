@@ -21,7 +21,7 @@ struct FifoBufferStorage;
 template <typename T, size_t BufferSize>
 struct FifoBufferStorage<T, BufferSize, false>
 {
-	using size_type = uint32_t;
+	using size_type = size_t;
 
 	T* GetData() noexcept { return m_data.data(); }
 	const T* GetData() const noexcept { return m_data.data(); }
@@ -35,7 +35,7 @@ struct FifoBufferStorage<T, BufferSize, false>
 template <typename T, size_t BufferSize>
 struct FifoBufferStorage<T, BufferSize, true>
 {
-	using size_type = uint32_t;
+	using size_type = size_t;
 
 	FifoBufferStorage() : m_data{ std::make_unique<T[]>( BufferSize ) } {}
 
